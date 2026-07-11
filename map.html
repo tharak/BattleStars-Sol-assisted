@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Successor Stars — Strategic Map</title>
+<link rel="stylesheet" href="battle/styles.css">
+<style>
+  #mapwrap{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;display:inline-block}
+  canvas{display:block;border-radius:4px}
+  #topbar{display:flex;align-items:center;gap:12px;margin:10px 0}
+  #breadcrumb{font-size:14px}
+  #breadcrumb a{color:var(--blue)} #breadcrumb span{color:var(--gold)}
+  #hint{color:var(--dim);min-height:1.2em;margin:6px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Successor Stars — strategic map <span class="tag">Universe → System → Body → Battle</span></h1>
+  <p style="color:var(--dim);max-width:70ch">Zoom hierarchy test: the universe currently contains only
+  Sol. Click a populated hex to zoom in, click a breadcrumb (or Zoom Out / Esc) to zoom back out.
+  A celestial body's "Enter Battle" hex hands off to the existing
+  <a href="battle.html">battle rules prototype</a>.</p>
+
+  <div id="topbar">
+    <button id="zoomOut">◀ Zoom Out</button>
+    <div id="breadcrumb"></div>
+  </div>
+  <div id="hint"></div>
+
+  <div id="mapwrap"><canvas id="cv"></canvas></div>
+</div>
+<script type="module" src="map/main.js"></script>
+</body>
+</html>
