@@ -1,10 +1,11 @@
 // Generic hex-grid canvas renderer shared by the three strategic zoom levels
-// (Universe, System, CelestialBody). Each level is just a rectangular grid
-// of pointy-top hexes at its own scale -- unlike the Battle board (see
-// battle/config.js) these don't need a hexagonal board mask, so this stays
-// decoupled from battle/hexmath.js entirely.
+// (Universe, System, CelestialBody). Each level is a rectangular bounding
+// grid of pointy-top hexes at its own scale; a level can optionally supply
+// an `inBounds(c,r)` predicate (e.g. a hex-radius mask, see battle/config.js's
+// inBounds) to carve a non-rectangular board out of that grid -- cells
+// outside it are simply skipped by both drawing and hit-testing.
 
-export function makeHexGrid(canvas, { cols, rows, hs, ox = 40, oy = 40 }) {
+export function makeHexGrid(canvas, { cols, rows, hs, ox = 40, oy = 40, inBounds = () => true }) {
   const ctx = canvas.getContext("2d");
   const hw = hs * Math.sqrt(3);
 
@@ -26,11 +27,12 @@ export function makeHexGrid(canvas, { cols, rows, hs, ox = 40, oy = 40 }) {
   function pixelToHex(x, y) {
     let best = null, bd = 1e9;
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (!inBounds(c, r)) continue;
       const [hx, hy] = hexCenter(c, r), d = (hx - x) ** 2 + (hy - y) ** 2;
       if (d < bd) { bd = d; best = [c, r]; }
     }
     return bd <= (hs * 1.05) ** 2 ? best : null;
   }
 
-  return { ctx, hs, hexCenter, hexPath, pixelToHex, cols, rows };
+  return { ctx, hs, hexCenter, hexPath, pixelToHex, cols, rows, inBounds };
 }

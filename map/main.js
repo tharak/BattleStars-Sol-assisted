@@ -1,5 +1,6 @@
 import { makeHexGrid } from "./hexgrid.js";
 import { UNIVERSE, SYSTEMS, celestialBodyLevel, bodyLabel } from "./levels.js";
+import { hexDist } from "../battle/hexmath.js";
 
 const canvas = document.getElementById("cv");
 const breadcrumb = document.getElementById("breadcrumb");
@@ -27,7 +28,10 @@ const STROKE = {
 function render() {
   const entry = path[path.length - 1];
   const data = levelData(entry);
-  const grid = makeHexGrid(canvas, { cols: data.cols, rows: data.rows, hs: data.hs });
+  const inBounds = data.center && data.radius != null
+    ? (c, r) => hexDist(data.center, [c, r]) <= data.radius
+    : undefined;
+  const grid = makeHexGrid(canvas, { cols: data.cols, rows: data.rows, hs: data.hs, ...(inBounds && { inBounds }) });
   const byPos = new Map(data.cells.map(c => [c.pos[0] + "," + c.pos[1], c]));
 
   grid.ctx.fillStyle = "#0b0e14";
@@ -36,6 +40,7 @@ function render() {
   // Two passes: every hex fill/stroke first, then labels on top -- otherwise
   // a later row's opaque hex fill paints over an earlier row's label text.
   for (let r = 0; r < data.rows; r++) for (let c = 0; c < data.cols; c++) {
+    if (!grid.inBounds(c, r)) continue;
     const [x, y] = grid.hexCenter(c, r);
     const cell = byPos.get(c + "," + r);
     grid.hexPath(x, y, grid.hs - 1.5);
