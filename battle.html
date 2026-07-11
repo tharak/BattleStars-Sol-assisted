@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Successor Stars — Battle Rules Prototype v0.2.1</title>
+<link rel="stylesheet" href="battle/styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= MENU ================= -->
+  <div id="menu">
+    <h1>Successor Stars — battle rules prototype <span class="tag">v0.2.1</span></h1>
+    <p style="color:var(--dim);max-width:70ch">Digital playtest of the paper rules
+    (<a href="https://github.com/tharak/BattleStars/blob/main/battle-rules.md">battle-rules.md</a>,
+    GDD §5.4–§5.5). Zero formation modifiers — formations are only positions and facings.
+    The AI is the same dumb advance-and-shoot logic as the Monte-Carlo baseline; the point
+    of playing is to test what <em>human</em> maneuver adds. Pick a test:</p>
+    <div class="opts" id="sidepick">
+      <b>Control:</b>
+      <label><input type="radio" name="ctrl" value="0" checked> Play Blue (left)</label>
+      <label><input type="radio" name="ctrl" value="1"> Play Red (right)</label>
+      <label><input type="radio" name="ctrl" value="2"> Hotseat (both)</label>
+      <label><input type="radio" name="ctrl" value="3"> Spectate (AI vs AI)</label>
+    </div>
+    <div class="opts" id="sizepick">
+      <b>Fleet size:</b>
+      <label><input type="radio" name="fsize" value="5"> 5 squadrons (breaks at 3)</label>
+      <label><input type="radio" name="fsize" value="9" checked> 9 squadrons (breaks at 5)</label>
+      <label><input type="radio" name="fsize" value="12"> 12 squadrons (breaks at 7)</label>
+    </div>
+    <div class="opts" id="movepick">
+      <b>Movement:</b>
+      <label><input type="radio" name="movemode" value="0" checked> Interleaved (one squadron at a time, alternating sides, as usual)</label>
+      <label><input type="radio" name="movemode" value="1"> All-at-once (each side moves &amp; fires every squadron it has before the other side gets a turn — you go first)</label>
+    </div>
+    <div class="opts" id="deploypick">
+      <b>Deployment:</b>
+      <label><input type="radio" name="deploymode" value="0" checked> Manual placement (place your own squadrons by hand before the battle)</label>
+      <label><input type="radio" name="deploymode" value="1"> Battle formation (both sides use the scenario's fixed formation below, like a spectated match)</label>
+    </div>
+    <p style="color:var(--dim);max-width:70ch;font-size:12.5px">With manual placement, any side you
+    control deploys its own squadrons by hand before the battle starts (click your shaded zone) and
+    the AI picks a random formation once you're done. With battle formation, both sides start in the
+    scenario's exact fixed formation — useful for testing whether your play beats the baseline in
+    that specific matchup. Spectated (AI vs AI) matches always use the fixed formation.</p>
+    <div id="scenlist"></div>
+  </div>
+
+  <!-- ================= BATTLE ================= -->
+  <div id="battle">
+    <div class="cols">
+      <div id="boardbox"><canvas id="cv" width="920" height="620"></canvas></div>
+      <div id="side">
+        <div class="panel" id="status"></div>
+        <div class="panel">
+          <div id="actinfo" style="min-height:40px"></div>
+          <div id="controls">
+            <button id="btnL">&#10226; Left</button>
+            <button id="btnF">&#8593; Forward</button>
+            <button id="btnR">&#10227; Right</button>
+            <button id="btnB" title="1 hex astern, keeps facing — costs all 3 MP">&#8595; Back (3 MP)</button>
+            <button id="btnFire" class="danger">Fire</button>
+            <button id="btnEnd" class="primary">End activation</button>
+          </div>
+          <div id="setupControls" style="display:none;flex-wrap:wrap;gap:6px">
+            <button id="btnSetupL">&#10226; Turn</button>
+            <button id="btnSetupR">&#10227; Turn</button>
+            <button id="btnSetupFlag">&#9733; Set flagship</button>
+            <button id="btnSetupRemove" class="danger">Remove</button>
+            <button id="btnSetupConfirm" class="primary">Confirm deployment</button>
+          </div>
+          <div class="kbd" id="kbdHint"><kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>W</kbd> forward ·
+            <kbd>S</kbd> back · <kbd>F</kbd> fire mode · <kbd>Space</kbd> end · click a
+            unit to select / a highlighted enemy to shoot</div>
+        </div>
+        <div class="panel"><div id="log"></div></div>
+        <div class="panel" style="display:flex;gap:6px;flex-wrap:wrap">
+          <button id="btnMenu">Menu</button>
+          <button id="btnRestart">Restart</button>
+          <button id="btnStep" style="display:none">Step</button>
+          <button id="btnAuto" style="display:none">Auto ▶</button>
+        </div>
+        <details class="panel"><summary>Rules crib sheet</summary>
+          <table><tr><th>Fire into target's…</th><th>Hit on</th><th>Critical supply</th></tr>
+            <tr><td>Front arc</td><td>5+</td><td>6</td></tr>
+            <tr><td>Flank arc</td><td>4+</td><td>5+</td></tr>
+            <tr><td>Rear arc</td><td>3+</td><td>4+</td></tr></table>
+          <div style="font-size:12.5px;color:var(--dim)">
+          Dice = Strength (Shaken: half, round up) · range 3 · fire only into your own
+          front arc · LOS blocked by any squadron.<br>
+          Move: 3 MP; 1/hex forward, 1/60° turn, or all 3 to back up one hex (facing
+          kept). In command (≤4 of flagship): move <b>and</b> fire; outside: move
+          <b>or</b> fire.<br>
+          Morale (d6 ≥ 4) on: taking losses · friend routs/dies within 2 · flagship lost.
+          Mods: +1 steady friend adjacent, +1 in command, −1 hit from flank/rear, −1 low
+          <em>or</em> critical supply, −1 flagship lost. Fail: Steady→Shaken→Routed.<br>
+          Supply (v0.2): <b>low</b> = −1 morale only · <b>critical</b> = −1 morale and the
+          worse to-hit column.<br>
+          Fleet breaks at more than half destroyed/fled (3 of 5 · 5 of 9 · 7 of 12).
+          Draw at turn 15.</div>
+        </details>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="overlay"><div class="card">
+  <h1 id="ovTitle"></h1><p id="ovBody"></p>
+  <p id="ovResult" style="font-family:ui-monospace,monospace;font-size:12.5px;color:var(--dim)"></p>
+  <button id="ovCopy">Copy result line</button>
+  <button id="ovAgain" class="primary">Play again</button>
+  <button id="ovMenu">Menu</button>
+</div></div>
+
+<script type="module" src="battle/main.js"></script>
+</body>
+</html>
