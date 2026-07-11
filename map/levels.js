@@ -102,12 +102,32 @@ const MOONS = {
   neptune: ["Triton"],
 };
 
+// Starting fleets: each faction's 12 ships are placed on their home body's
+// own CelestialBody map (not the Star Map -- the planet itself is the tile
+// there; ships live one level down, "at" that planet).
+export const FACTIONS = {
+  blue:  { label: "Blue",  startAt: "earth" },
+  green: { label: "Green", startAt: "saturn" },
+  red:   { label: "Red",   startAt: "jupiter" },
+};
+const SHIPS_PER_FACTION = 12;
+
+function shipsAt(bodyId) {
+  const entry = Object.entries(FACTIONS).find(([, f]) => f.startAt === bodyId);
+  if (!entry) return [];
+  const [faction, { label }] = entry;
+  return Array.from({ length: SHIPS_PER_FACTION }, (_, i) => ({
+    id: `${faction}-ship-${i + 1}`, label: `${label[0]}${i + 1}`, kind: "ship", faction,
+  }));
+}
+
 export function celestialBodyLevel(systemId, bodyId) {
   const label = bodyLabel(systemId, bodyId);
   const moons = MOONS[bodyId] || [];
   const items = [
     ...moons.map(name => ({ id: name.toLowerCase(), label: name, kind: "moon" })),
     { id: "battle", label: "Enter Battle", kind: "battle-link", href: "battle.html" },
+    ...shipsAt(bodyId),
   ];
   const board = radialBoard({ id: bodyId, label, kind: "body-center", size: SIZE[bodyId] || 0 }, items);
   return { title: label, hs: hsForRadius(board.radius), ...board };

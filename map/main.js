@@ -66,8 +66,18 @@ const MOON_COLORS = {
   triton:   { fill: "#2a3050", stroke: "#8098d8" },
 };
 
+// Faction fleet colors (see FACTIONS in levels.js) -- a ship cell carries
+// its faction on `cell.faction`, checked before the id-based lookups since
+// ship ids are per-ship (blue-ship-1, ...), not shared like planets/moons.
+const FACTION_COLORS = {
+  blue:  { fill: "#1a3a6e", stroke: "#4a9eff" },
+  green: { fill: "#1a5c2a", stroke: "#4ade80" },
+  red:   { fill: "#5c1a1a", stroke: "#ff4a4a" },
+};
+
 function colorsFor(cell) {
-  const p = PLANET_COLORS[cell.id] || MOON_COLORS[cell.id];
+  const f = cell.faction && FACTION_COLORS[cell.faction];
+  const p = f || PLANET_COLORS[cell.id] || MOON_COLORS[cell.id];
   return p || { fill: FILL[cell.kind] || "#1a2133", stroke: STROKE[cell.kind] || "#2a3350" };
 }
 
@@ -169,6 +179,7 @@ function render() {
     if (!cell) { setHint("Empty space — nothing here."); return; }
     if (cell.href) { window.location.href = cell.href; return; }
     if (cell.enter) { zoomIn(cell.enter, cell.label); return; }
+    if (cell.kind === "ship") { setHint(`${cell.label} — a ${cell.faction} squadron.`); return; }
     setHint(cell.kind === "belt" ? "Asteroid Belt — no bodies to explore." : `${cell.label} — nothing to zoom into yet.`);
   };
 
