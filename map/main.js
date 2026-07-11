@@ -18,11 +18,11 @@ function levelData(entry) {
 
 const FILL = {
   system: "#3a2f6a", star: "#5a4a1a", planet: "#1a3a5c", belt: "#2a2a2a",
-  "body-center": "#5a4a1a", "battle-link": "#5c1a2a", moon: "#2e3644",
+  "body-center": "#5a4a1a", moon: "#2e3644",
 };
 const STROKE = {
   system: "#a78bfa", star: "#ffd166", planet: "#4a9eff", belt: "#666",
-  "body-center": "#ffd166", "battle-link": "#ff5a5a", moon: "#9fb3c8",
+  "body-center": "#ffd166", moon: "#9fb3c8",
 };
 
 // Per-planet colors (loosely evocative of the real thing) override the
@@ -66,9 +66,9 @@ const MOON_COLORS = {
   triton:   { fill: "#2a3050", stroke: "#8098d8" },
 };
 
-// Faction fleet colors (see FACTIONS in levels.js) -- a ship cell carries
+// Faction fleet colors (see FACTIONS in levels.js) -- a fleet cell carries
 // its faction on `cell.faction`, checked before the id-based lookups since
-// ship ids are per-ship (blue-ship-1, ...), not shared like planets/moons.
+// fleet ids are per-faction (blue-fleet, ...), not shared like planets/moons.
 const FACTION_COLORS = {
   blue:  { fill: "#1a3a6e", stroke: "#4a9eff" },
   green: { fill: "#1a5c2a", stroke: "#4ade80" },
@@ -103,7 +103,7 @@ function footprintPx(board, hs) {
 
 // The board one zoom level down from this cell, if it has one -- a system
 // (Sol's planets), a body (a planet's moons), or null for cells that don't
-// lead anywhere further down this chain (a moon, the Enter Battle link).
+// lead anywhere further down this chain (a moon, a fleet).
 function subBoardFor(enter) {
   if (enter?.level === "system") return SYSTEMS[enter.systemId];
   if (enter?.level === "body") return celestialBodyLevel(enter.systemId, enter.bodyId);
@@ -139,9 +139,12 @@ function render() {
   const grid = makeHexGrid(canvas, { cols: data.cols, rows: data.rows, hs: data.hs, ...(inBounds && { inBounds }) });
   // A cell can be a multi-hex blob (cell.size = hexDist radius, not just a
   // single hex), so "what's at (c,r)" is a distance test against every
-  // cell rather than an exact-position lookup. Blobs are placed (see
-  // radialBoard in levels.js) so they never overlap, so at most one matches.
-  const cellAt = (c, r) => data.cells.find(cell => hexDist(cell.pos, [c, r]) <= (cell.size || 0));
+  // cell rather than an exact-position lookup. Non-fleet cells are placed
+  // (see radialBoard in levels.js) so they never overlap -- but fleets are
+  // meant to be able to share a hex (that's what triggers a battle), so
+  // cellsAt can return more than one match there.
+  const cellsAt = (c, r) => data.cells.filter(cell => hexDist(cell.pos, [c, r]) <= (cell.size || 0));
+  const cellAt = (c, r) => cellsAt(c, r)[0];
 
   grid.ctx.fillStyle = "#0b0e14";
   grid.ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -175,11 +178,19 @@ function render() {
     const rect = canvas.getBoundingClientRect();
     const h = grid.pixelToHex(ev.clientX - rect.left, ev.clientY - rect.top);
     if (!h) return;
-    const cell = cellAt(h[0], h[1]);
-    if (!cell) { setHint("Empty space — nothing here."); return; }
-    if (cell.href) { window.location.href = cell.href; return; }
+    const hits = cellsAt(h[0], h[1]);
+    if (!hits.length) { setHint("Empty space — nothing here."); return; }
+    // Two different factions' fleets sharing a hex is a battle -- there's
+    // no "Enter Battle" hex anymore, this is the only way in.
+    const factions = new Set(hits.filter(c => c.kind === "fleet").map(c => c.faction));
+    if (factions.size > 1) { window.location.href = "battle.html"; return; }
+    const cell = hits[0];
     if (cell.enter) { zoomIn(cell.enter, cell.label); return; }
-    if (cell.kind === "ship") { setHint(`${cell.label} — a ${cell.faction} squadron.`); return; }
+    if (cell.kind === "fleet") {
+      const name = cell.faction[0].toUpperCase() + cell.faction.slice(1);
+      setHint(`${name} Fleet — ${cell.count} ship${cell.count === 1 ? "" : "s"}.`);
+      return;
+    }
     setHint(cell.kind === "belt" ? "Asteroid Belt — no bodies to explore." : `${cell.label} — nothing to zoom into yet.`);
   };
 
