@@ -1,19 +1,24 @@
 import { makeHexGrid } from "./hexgrid.js";
-import { UNIVERSE, SYSTEMS, celestialBodyLevel } from "./levels.js";
+import { UNIVERSE, SYSTEMS, celestialBodyLevel, formationBoard, FLEET_FORMATIONS, FORMATION_NAMES } from "./levels.js";
 import { hexDist } from "../battle/hexmath.js";
 
 const canvas = document.getElementById("cv");
 const breadcrumb = document.getElementById("breadcrumb");
 const zoomOutBtn = document.getElementById("zoomOut");
 const hint = document.getElementById("hint");
+const formationControls = document.getElementById("formationControls");
+const formationButtons = document.getElementById("formationButtons");
+const saveFormationBtn = document.getElementById("saveFormation");
 
-// Navigation stack: [{level:"universe"}, {level:"system",systemId}, {level:"body",systemId,bodyId}]
+// Navigation stack: [{level:"universe"}, {level:"system",systemId},
+// {level:"body",systemId,bodyId}, {level:"formation",faction,formationName}]
 let path = [{ level: "universe", label: "Universe" }];
 
 function levelData(entry) {
   if (entry.level === "universe") return UNIVERSE;
   if (entry.level === "system") return SYSTEMS[entry.systemId];
-  return celestialBodyLevel(entry.systemId, entry.bodyId);
+  if (entry.level === "body") return celestialBodyLevel(entry.systemId, entry.bodyId);
+  return formationBoard(entry.faction, entry.formationName);
 }
 
 const FILL = {
@@ -180,17 +185,49 @@ function render() {
     if (!h) return;
     const hits = cellsAt(h[0], h[1]);
     if (!hits.length) { setHint("Empty space — nothing here."); return; }
-    // Zooming a fleet always opens the Battle map -- alone, that's where
-    // you set its formation; sharing the hex with another faction's fleet,
-    // it's a battle. There's no "Enter Battle" hex anymore, this is the
-    // only way in.
-    if (hits.some(c => c.kind === "fleet")) { window.location.href = "battle.html"; return; }
+    const fleets = hits.filter(c => c.kind === "fleet");
+    if (fleets.length) {
+      const factions = new Set(fleets.map(c => c.faction));
+      // Two different factions sharing the hex -- that's a battle. There's
+      // no "Enter Battle" hex anymore, this is the only way in.
+      if (factions.size > 1) { window.location.href = "battle.html"; return; }
+      // Just one faction here: go set its formation, not fight.
+      const fleet = fleets[0];
+      zoomIn(
+        { level: "formation", faction: fleet.faction, formationName: FLEET_FORMATIONS[fleet.faction] },
+        `${fleet.faction[0].toUpperCase()}${fleet.faction.slice(1)} Formation`,
+      );
+      return;
+    }
     const cell = hits[0];
     if (cell.enter) { zoomIn(cell.enter, cell.label); return; }
+    if (cell.kind === "ownship") { setHint(cell.label === "★" ? "Flagship" : `Ship ${cell.label}`); return; }
     setHint(cell.kind === "belt" ? "Asteroid Belt — no bodies to explore." : `${cell.label} — nothing to zoom into yet.`);
   };
 
+  renderFormationControls(entry);
   renderBreadcrumb();
+}
+
+// The Formation Setup screen's controls (pick a formation, save it) live
+// outside the canvas -- shown only while the top of the nav stack is a
+// "formation" level, hidden otherwise.
+function renderFormationControls(entry) {
+  const active = entry.level === "formation";
+  formationControls.style.display = active ? "flex" : "none";
+  if (!active) return;
+  formationButtons.innerHTML = "";
+  for (const name of FORMATION_NAMES) {
+    const btn = document.createElement("button");
+    btn.textContent = name[0].toUpperCase() + name.slice(1);
+    if (name === entry.formationName) btn.className = "primary";
+    btn.onclick = () => { entry.formationName = name; render(); };
+    formationButtons.appendChild(btn);
+  }
+  saveFormationBtn.onclick = () => {
+    FLEET_FORMATIONS[entry.faction] = entry.formationName;
+    zoomOut();
+  };
 }
 
 function zoomIn(enter, label) {

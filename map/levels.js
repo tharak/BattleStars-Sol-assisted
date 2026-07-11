@@ -6,6 +6,8 @@
 // moons -- others just get an empty ring around them.
 
 import { neighbor } from "../battle/hexmath.js";
+import { formationLayout } from "../battle/formations.js";
+export { FORMATION_NAMES } from "../battle/config.js";
 
 // "Radius" as specified counts hex rings *including* the center ring, so
 // radius 1 = just the center hex, radius 2 = center + one ring = 7 hexes,
@@ -123,6 +125,31 @@ function fleetAt(bodyId) {
   return [{
     id: `${faction}-fleet`, label: String(SHIPS_PER_FACTION), kind: "fleet", faction, count: SHIPS_PER_FACTION,
   }];
+}
+
+// Each faction's chosen formation, in memory only (resets on reload) --
+// set from the Formation Setup screen (main.js), read again once a battle
+// actually triggers so deployment isn't just random. "line" until chosen.
+export const FLEET_FORMATIONS = { blue: "line", green: "line", red: "line" };
+
+// Formation Setup is a hex board too, but a small fixed one -- not packed
+// via radialBoard, since battle/formations.js's layouts (fwd/lat offsets
+// from a 12-ship formation, same math the actual Battle board uses) are
+// already designed not to self-overlap. Radius 9 comfortably fits every
+// formation's fwd (-4..4) / lat (-6..5) range.
+const FORMATION_BOARD_RINGS = toRings(9);
+export function formationBoard(faction, formationName) {
+  const { u, flag } = formationLayout(formationName, SHIPS_PER_FACTION);
+  const hexRadius = rings(FORMATION_BOARD_RINGS);
+  const center = [hexRadius, hexRadius];
+  const cells = u.map(([fwd, lat], i) => ({
+    id: `ship${i}`, label: i === flag ? "★" : String(i + 1),
+    kind: "ownship", faction, pos: [center[0] + fwd, center[1] + lat],
+  }));
+  return {
+    cols: hexRadius * 2 + 1, rows: hexRadius * 2 + 1, center, radius: FORMATION_BOARD_RINGS,
+    hs: hsForRadius(FORMATION_BOARD_RINGS), cells,
+  };
 }
 
 export function celestialBodyLevel(systemId, bodyId) {

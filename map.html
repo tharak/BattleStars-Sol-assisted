@@ -12,6 +12,9 @@
   #breadcrumb{font-size:14px}
   #breadcrumb a{color:var(--blue)} #breadcrumb span{color:var(--gold)}
   #hint{color:var(--dim);min-height:1.2em;margin:6px 0}
+  #formationControls{align-items:center;gap:10px;background:var(--panel);
+    border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:0 0 10px}
+  #formationButtons{display:flex;gap:6px;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -20,14 +23,19 @@
   <p style="color:var(--dim);max-width:70ch">Zoom hierarchy test: the universe currently contains only
   Sol. Click a populated hex to zoom in, click a breadcrumb (or Zoom Out / Esc) to zoom back out.
   Three factions (Blue, Green, Red) each start with a 12-ship fleet at their home planet;
-  clicking a fleet opens the existing <a href="battle.html">battle rules prototype</a> to set
-  its formation -- or to fight, if it's sharing a hex with another faction's fleet.</p>
+  clicking a fleet alone opens Formation Setup to pick its layout, or -- if it's sharing a hex
+  with another faction's fleet -- hands off to the existing <a href="battle.html">battle rules prototype</a>.</p>
 
   <div id="topbar">
     <button id="zoomOut">◀ Zoom Out</button>
     <div id="breadcrumb"></div>
   </div>
   <div id="hint"></div>
+  <div id="formationControls" style="display:none">
+    <b>Formation:</b>
+    <div id="formationButtons"></div>
+    <button id="saveFormation" class="primary">Save</button>
+  </div>
 
   <div id="mapwrap"><canvas id="cv"></canvas></div>
 </div>
