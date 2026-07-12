@@ -67,14 +67,14 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
   // Zoom toward wherever the cursor is (native to this camera type/Three
   // version) rather than always toward the view center.
   controls.zoomToCursor = true;
-  // Left button is deliberately left unbound (see mouseButtons below) so
-  // it's free for body/fleet click-and-drag interaction later -- rotate
-  // moves to the middle button, and right-drag pans (screenSpacePanning
-  // false keeps that pan flat on the ground plane, the same math the
-  // arrow keys use in panCamera() below, rather than tilting with the
-  // camera).
+  // Left-drag rotates (also the button map/main.js's click handler uses to
+  // select/focus bodies and fleets -- see the "start"/"change"/"end" event
+  // wiring below that lets it tell a rotate-drag apart from a real click);
+  // right-drag pans (screenSpacePanning false keeps that pan flat on the
+  // ground plane, the same math the arrow keys use in panCamera() below,
+  // rather than tilting with the camera).
   controls.screenSpacePanning = false;
-  controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN };
+  controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: null, RIGHT: THREE.MOUSE.PAN };
   canvas.addEventListener("contextmenu", ev => ev.preventDefault());
 
   const renderFrame = () => {

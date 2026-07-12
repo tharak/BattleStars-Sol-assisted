@@ -217,9 +217,20 @@ function closeEnoughForBattle(fleets) {
 
 let scene3d = null;
 let webglFailed = false;
+// Left-drag rotates the camera (see scene3d.js's mouseButtons) but a plain
+// left click also needs to keep selecting/focusing bodies and fleets --
+// OrbitControls' own "start"/"change"/"end" events tell a real rotate-drag
+// (a "change" fired somewhere between start and end) apart from a
+// stationary click, so the click handler below can ignore the click that
+// fires right after a rotate-drag releases.
+let sceneDragging = false;
+let sceneJustDragged = false;
 function ensureScene3D() {
   if (scene3d) return scene3d;
   scene3d = createSystemScene({ canvas: canvas3d, labelContainer: mapwrap3d, sizePx: CANVAS_PX, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM });
+  scene3d.controls.addEventListener("start", () => { sceneDragging = true; sceneJustDragged = false; });
+  scene3d.controls.addEventListener("change", () => { if (sceneDragging) sceneJustDragged = true; });
+  scene3d.controls.addEventListener("end", () => { sceneDragging = false; });
   return scene3d;
 }
 
@@ -250,6 +261,7 @@ function renderSystem3D(entry, data) {
   });
 
   canvas3d.onclick = ev => {
+    if (sceneJustDragged) { sceneJustDragged = false; return; }
     const hit = scene.pick(ev.clientX, ev.clientY);
 
     if (hit?.kind === "fleet") {
