@@ -15,16 +15,21 @@
   #formationControls{align-items:center;gap:10px;background:var(--panel);
     border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:0 0 10px}
   #formationButtons{display:flex;gap:6px;flex-wrap:wrap}
+  #battleControls{align-items:center;gap:10px;background:var(--panel);
+    border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:0 0 10px}
+  #mapwrap{overflow:auto;max-width:100%}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Successor Stars — strategic map <span class="tag">Universe → System → Body → Battle</span></h1>
-  <p style="color:var(--dim);max-width:70ch">Zoom hierarchy test: the universe currently contains only
-  Sol. Click a populated hex to zoom in, click a breadcrumb (or Zoom Out / Esc) to zoom back out.
-  Three factions (Blue, Green, Red) each start with a 12-ship fleet at their home planet;
-  clicking a fleet alone opens Formation Setup to pick its layout, or -- if it's sharing a hex
-  with another faction's fleet -- hands off to the existing <a href="battle.html">battle rules prototype</a>.</p>
+  <p style="color:var(--dim);max-width:70ch">Real (to-scale, log-compressed for legibility) positions and
+  sizes: bodies sit at their true current orbital angle and distance. Click a body to zoom in, click a
+  breadcrumb (or Zoom Out / Esc) to zoom back out. Three factions (Blue, Green, Red) each start with a
+  12-ship fleet near their home planet, visible on the System map; click a fleet to select it, then click
+  a destination to move it, or click the same fleet again to open Formation Setup. Move two different
+  factions' fleets close enough together and a Battle button appears, handing off to the existing
+  <a href="battle.html">battle rules prototype</a>.</p>
 
   <div id="topbar">
     <button id="zoomOut">◀ Zoom Out</button>
@@ -35,6 +40,10 @@
     <b>Formation:</b>
     <div id="formationButtons"></div>
     <button id="saveFormation" class="primary">Save</button>
+  </div>
+  <div id="battleControls" style="display:none">
+    <b>Fleets are close enough to engage.</b>
+    <button id="battleBtn" class="primary">⚔ Battle</button>
   </div>
 
   <div id="mapwrap"><canvas id="cv"></canvas></div>

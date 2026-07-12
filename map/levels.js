@@ -1,102 +1,115 @@
 // Data for the three strategic zoom levels. Battle (the fourth level) is
 // battle.html/battle/* unchanged -- CelestialBody hexes link out to it.
 //
-// This is a test fixture, not real astronomy: Sol is the only system in the
-// universe for now, and we only have moon data for the bodies with notable
-// moons -- others just get an empty ring around them.
+// Universe/System/Body are a real (to-scale, log-compressed for legibility)
+// orbital view: distance from parent, size, and angular position are
+// genuine -- not a stylized layout -- computed live at render time (see
+// map/orbits.js for the math, map/orbitmap.js for how it's drawn). Formation
+// Setup, just below, is unrelated and still a small fixed hex board (its
+// ship layouts are hex-native, not orbital -- see battle/formations.js).
+//
+// This is still a test fixture in the sense that Sol is the only system in
+// the universe so far, and only "well-known" moons (the ones with a common
+// name) are modeled, not every rock ever catalogued.
 
 import { neighbor } from "../battle/hexmath.js";
 import { formationLayout } from "../battle/formations.js";
 export { FORMATION_NAMES } from "../battle/config.js";
+import {
+  AU_KM, BODY_RADIUS_KM, MAJOR_MOON_RADIUS_KM, PARENT_GM_KM3S2,
+  keplerPeriodDays, angleAtDeg, J2000_MS, hashAngleDeg,
+} from "./orbits.js";
 
 // "Radius" as specified counts hex rings *including* the center ring, so
-// radius 1 = just the center hex, radius 2 = center + one ring = 7 hexes,
-// radius 13 = center + 12 rings = 469 hexes. hexDist() (and every other
-// hex-math helper here) instead counts rings *around* the center, so the
-// conversion is always ringRadius - 1. Every board's exposed `radius` field
-// (and cell `size`s that describe a board, not a body -- see below) uses
-// this ring convention throughout; only radialBoard's internals convert to
-// hexDist for the actual hex math (masking, walking).
+// radius 1 = just the center hex, radius 2 = center + one ring = 7 hexes.
+// Only Formation Setup (still a hex board) needs this now.
 const rings = n => n - 1;
 const toRings = hexRadius => hexRadius + 1;
-
-// Every map -- Universe, System, or CelestialBody -- is at least this big,
-// regardless of how little it has in it (a moonless body still gets a full
-// board, just mostly empty space around it). A board only grows past this
-// if its own content doesn't fit -- see radialBoard().
-const MIN_BOARD_RINGS = 13;
-
-// Relative body sizes, in hex-blob radius (0 = a single hex). Not to
-// scale -- just per spec: Mars/Mercury radius 1 (a bare single hex read as
-// "missing" next to the bigger planets), Earth/Venus radius 2,
-// Uranus/Neptune radius 1, Jupiter/Saturn radius 2, Sun radius 2.
-export const SIZE = {
-  sun: 2, mercury: 1, venus: 2, earth: 2, mars: 1, belt: 0,
-  jupiter: 2, saturn: 2, uranus: 1, neptune: 1,
-};
-
-// A radial board is a hexagon (same inBounds hex-radius mask idea as the
-// Battle board in battle/config.js) with one object -- a star or a body --
-// at its exact middle, and satellites radiating outward from it: each one
-// walks straight out in one of 6 directions (round-robin, via hexmath's
-// neighbor()) far enough that its own hex-blob (cell.size, a hexDist<=size
-// disc, not just a single hex) never touches the previous blob on the same
-// ray, the center's blob, or its own gap. Board radius (in rings) is
-// whichever is bigger: MIN_BOARD_RINGS, or wherever that packing ends up.
-function radialBoard(centerCell, items, gap = 1) {
-  const centerRadius = centerCell.size || 0;
-  const frontier = {}; // dir -> outer edge (hex distance from center) claimed so far
-  const placements = items.map((item, i) => {
-    const dir = i % 6, r = item.size || 0;
-    // An item can specify its own gap (e.g. a moon placed by real relative
-    // distance), overriding the board's default for everyone else.
-    const dist = (frontier[dir] ?? centerRadius) + r + (item.gap ?? gap);
-    frontier[dir] = dist + r;
-    return { item, dir, dist };
-  });
-  const hexRadius = Math.max(centerRadius, rings(MIN_BOARD_RINGS), ...Object.values(frontier), 0);
-  const center = [hexRadius, hexRadius];
-  const walk = (dir, steps) => { let p = center; for (let i = 0; i < steps; i++) p = neighbor(p, dir); return p; };
-  const cells = [{ ...centerCell, pos: center }];
-  for (const { item, dir, dist } of placements) cells.push({ ...item, pos: walk(dir, dist) });
-  return { cols: hexRadius * 2 + 1, rows: hexRadius * 2 + 1, center, radius: toRings(hexRadius), cells };
-}
-
 const hsForRadius = ringRadius => Math.max(16, Math.round(216 / rings(ringRadius)));
 
-// The universe is otherwise-empty space with Sol as its one system so far,
-// drawn at ring-radius 2 (7 hexes: the center plus one ring) -- reuse
-// radialBoard with Sol itself as the "center object" and no satellites.
-export const UNIVERSE = (() => {
-  const board = radialBoard(
-    { id: "sol", label: "Sol", kind: "system", size: rings(2), enter: { level: "system", systemId: "sol" } },
-    [],
-  );
-  return { title: "Universe", hs: hsForRadius(board.radius), ...board };
-})();
+// ---------------------------------------------------------------------
+// Real solar-system data
+// ---------------------------------------------------------------------
 
-export const SYSTEMS = {
+// Semi-major axis, AU, for the Sun's 8 planets -- and a representative
+// distance for the asteroid belt, which isn't a single real body so it
+// doesn't get a "real" orbit the way a planet or moon does.
+const PLANET_AXIS_AU = {
+  mercury: 0.387, venus: 0.723, earth: 1.000, mars: 1.524,
+  jupiter: 5.203, saturn: 9.537, uranus: 19.191, neptune: 30.069,
+};
+const BELT_AXIS_AU = 2.7;
+
+// Mean longitude at the J2000.0 epoch (degrees) and each planet's real
+// orbital period (days) -- the standard "Keplerian elements for
+// approximate positions of the major planets" (Standish/JPL,
+// ssd.jpl.nasa.gov/planets/approx_pos.html). Projected forward to "now" via
+// angleAtDeg (mean motion) every render, not baked to one hardcoded date.
+const PLANET_ORBIT = {
+  mercury: { refAngleDeg: 252.250324, periodDays: 87.969 },
+  venus:   { refAngleDeg: 181.979099, periodDays: 224.701 },
+  earth:   { refAngleDeg: 100.464572, periodDays: 365.256 },
+  mars:    { refAngleDeg: 355.446568, periodDays: 686.980 },
+  jupiter: { refAngleDeg: 34.396441,  periodDays: 4332.817 },
+  saturn:  { refAngleDeg: 49.954244,  periodDays: 10755.884 },
+  uranus:  { refAngleDeg: 313.238105, periodDays: 30687.401 },
+  neptune: { refAngleDeg: 304.87997,  periodDays: 60189.659 },
+};
+const planetOrbit = id => ({ ...PLANET_ORBIT[id], refEpochMs: J2000_MS });
+
+const SYSTEMS_DEF = {
   sol: {
     title: "Sol System",
-    ...(() => {
-      const board = radialBoard({ id: "sun", label: "Sun", kind: "star", size: SIZE.sun }, [
-        { id: "mercury", label: "Mercury", kind: "planet", size: SIZE.mercury, enter: { level: "body", systemId: "sol", bodyId: "mercury" } },
-        { id: "venus",   label: "Venus",   kind: "planet", size: SIZE.venus,   enter: { level: "body", systemId: "sol", bodyId: "venus" } },
-        { id: "earth",   label: "Earth",   kind: "planet", size: SIZE.earth,   enter: { level: "body", systemId: "sol", bodyId: "earth" } },
-        { id: "mars",    label: "Mars",    kind: "planet", size: SIZE.mars,    enter: { level: "body", systemId: "sol", bodyId: "mars" } },
-        { id: "belt",    label: "Asteroid Belt", kind: "belt", size: SIZE.belt },
-        { id: "jupiter", label: "Jupiter", kind: "planet", size: SIZE.jupiter, enter: { level: "body", systemId: "sol", bodyId: "jupiter" } },
-        { id: "saturn",  label: "Saturn",  kind: "planet", size: SIZE.saturn,  enter: { level: "body", systemId: "sol", bodyId: "saturn" } },
-        { id: "uranus",  label: "Uranus",  kind: "planet", size: SIZE.uranus,  enter: { level: "body", systemId: "sol", bodyId: "uranus" } },
-        { id: "neptune", label: "Neptune", kind: "planet", size: SIZE.neptune, enter: { level: "body", systemId: "sol", bodyId: "neptune" } },
-      ], 3);
-      return { ...board, hs: hsForRadius(board.radius) };
-    })(),
+    star: { id: "sun", label: "Sun", kind: "star" },
+    planets: [
+      { id: "mercury", label: "Mercury" },
+      { id: "venus",   label: "Venus" },
+      { id: "earth",   label: "Earth" },
+      { id: "mars",    label: "Mars" },
+      { id: "belt",    label: "Asteroid Belt", kind: "belt" },
+      { id: "jupiter", label: "Jupiter" },
+      { id: "saturn",  label: "Saturn" },
+      { id: "uranus",  label: "Uranus" },
+      { id: "neptune", label: "Neptune" },
+    ],
   },
 };
 
+// The universe is otherwise-empty space with Sol as its one system so far
+// -- it just sits at the origin, real position not meaningful with only
+// one system to place.
+export function universeLevel() {
+  return {
+    title: "Universe",
+    center: null,
+    bodies: [{
+      id: "sol", label: "Sol", kind: "system", radiusKm: BODY_RADIUS_KM.sun,
+      distanceKm: 0, orbit: null, enter: { level: "system", systemId: "sol" },
+    }],
+  };
+}
+
+export function systemLevel(systemId) {
+  const def = SYSTEMS_DEF[systemId];
+  const bodies = def.planets.map(p => {
+    if (p.kind === "belt") {
+      return {
+        id: p.id, label: p.label, kind: "belt", radiusKm: 0,
+        distanceKm: BELT_AXIS_AU * AU_KM,
+        orbit: { refAngleDeg: hashAngleDeg(p.id), refEpochMs: J2000_MS, periodDays: 365.25636 * BELT_AXIS_AU ** 1.5 },
+      };
+    }
+    return {
+      id: p.id, label: p.label, kind: "planet", radiusKm: BODY_RADIUS_KM[p.id],
+      distanceKm: PLANET_AXIS_AU[p.id] * AU_KM, orbit: planetOrbit(p.id),
+      enter: { level: "body", systemId, bodyId: p.id },
+    };
+  });
+  return { title: def.title, center: { ...def.star, radiusKm: BODY_RADIUS_KM[def.star.id] }, bodies };
+}
+
 // Only the bodies with well-known moons get any -- everyone else just has
-// an empty ring around them (still hexagonal, still centered on the body).
+// an empty view around them.
 const MOONS = {
   earth:   ["Moon"],
   mars:    ["Phobos", "Deimos"],
@@ -140,8 +153,8 @@ const MOONS = {
 
 // Real orbital distance from the parent, in parent-radii (semi-major axis
 // / parent radius) -- Phobos orbits barely above Mars, Iapetus is nearly
-// a AU-scale outlier around Saturn. Used only to rank/scale hex spacing
-// (gapForRatio below), not as a literal to-scale distance.
+// an AU-scale outlier around Saturn. Multiplied by the parent's real radius
+// (BODY_RADIUS_KM) to get each moon's real distanceKm.
 const MOON_DISTANCE_RATIO = {
   moon: 60.3, phobos: 2.76, deimos: 6.92,
   naiad: 1.96, thalassa: 2.03, despina: 2.13, galatea: 2.52, larissa: 2.99,
@@ -191,30 +204,99 @@ const MOON_DISTANCE_RATIO = {
   stephano: 314, trinculo: 335, sycorax: 481, margaret: 569, prospero: 640,
   setebos: 691, ferdinand: 805,
 };
-// Log-compressed so the ~22x real spread (Phobos to Iapetus) becomes a
-// manageable ~2-5 hex gap while still ordering/spacing moons the same way
-// their real distances do.
-const gapForRatio = ratio => Math.max(1, Math.round(1 + 2 * Math.log10(ratio)));
 
-// Starting fleets: each faction's ships are placed as a single hex on
-// their home body's own CelestialBody map (not the Star Map -- the planet
-// itself is the tile there; fleets live one level down, "at" that planet).
-// A fleet is one hex regardless of ship count -- there's no "Enter Battle"
-// hex anymore; landing two different factions' fleets on the same hex is
-// what triggers a battle (see main.js's click handling), once fleets can
-// move there.
+// The ~18 moons anyone's actually heard of get a genuine reference angle +
+// period sourced from JPL's "Planetary Satellite Mean Elements"
+// (ssd.jpl.nasa.gov/sats/elem, epoch 2000-01-01.5 TDB, mean anomaly) --
+// projected forward to "now" the same way the planets are. Triton's period
+// is negative: its orbit is retrograde. Everyone else (the ~150 minor/
+// irregular moons) gets moonOrbit()'s fallback below: a real period
+// (Kepler's third law from their real distance) but a synthetic phase,
+// since reliable reference-epoch data for that many small, often poorly-
+// constrained bodies isn't practically available -- see orbits.js's header.
+const MAJOR_MOON_ORBIT = {
+  moon:     { refAngleDeg: 135.27, periodDays: 27.322 },
+  phobos:   { refAngleDeg: 189.7,  periodDays: 0.3187 },
+  deimos:   { refAngleDeg: 205.0,  periodDays: 1.2625 },
+  io:       { refAngleDeg: 330.9,  periodDays: 1.762732 },
+  europa:   { refAngleDeg: 345.4,  periodDays: 3.525463 },
+  ganymede: { refAngleDeg: 324.8,  periodDays: 7.155588 },
+  callisto: { refAngleDeg: 87.4,   periodDays: 16.69044 },
+  tethys:   { refAngleDeg: 0.0,    periodDays: 1.887802 },
+  dione:    { refAngleDeg: 212.0,  periodDays: 2.736916 },
+  rhea:     { refAngleDeg: 31.5,   periodDays: 4.517503 },
+  titan:    { refAngleDeg: 11.7,   periodDays: 15.945448 },
+  iapetus:  { refAngleDeg: 74.8,   periodDays: 79.331002 },
+  ariel:    { refAngleDeg: 193.5,  periodDays: 2.520379 },
+  umbriel:  { refAngleDeg: 253.0,  periodDays: 4.144177 },
+  titania:  { refAngleDeg: 68.1,   periodDays: 8.705869 },
+  oberon:   { refAngleDeg: 143.6,  periodDays: 13.463237 },
+  miranda:  { refAngleDeg: 73.0,   periodDays: 1.413479 },
+  triton:   { refAngleDeg: 63.0,   periodDays: -5.876994 },
+};
+
+function moonRadiusKm(id) {
+  if (MAJOR_MOON_RADIUS_KM[id] != null) return MAJOR_MOON_RADIUS_KM[id];
+  // Minor/irregular moon: real radius isn't reliably known for most of
+  // these small captured bodies, so use a small stable synthetic size (2-11
+  // km) rather than claim false precision.
+  return 2 + (hashAngleDeg(id + "-size") % 10);
+}
+function moonOrbit(id, parentId, distanceKm) {
+  const major = MAJOR_MOON_ORBIT[id];
+  if (major) return { ...major, refEpochMs: J2000_MS };
+  const periodDays = keplerPeriodDays(distanceKm, PARENT_GM_KM3S2[parentId]);
+  return { refAngleDeg: hashAngleDeg(id), refEpochMs: J2000_MS, periodDays };
+}
+
+export function bodyLevel(systemId, bodyId) {
+  const label = bodyLabel(systemId, bodyId);
+  const parentRadiusKm = BODY_RADIUS_KM[bodyId] || 0;
+  const moonNames = MOONS[bodyId] || [];
+  const bodies = moonNames.map(name => {
+    const id = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const distanceKm = (MOON_DISTANCE_RATIO[id] || 10) * parentRadiusKm;
+    return { id, label: name, kind: "moon", radiusKm: moonRadiusKm(id), distanceKm, orbit: moonOrbit(id, bodyId, distanceKm) };
+  });
+  return { title: label, center: { id: bodyId, label, kind: "body-center", radiusKm: parentRadiusKm }, bodies };
+}
+
+function bodyLabel(systemId, bodyId) {
+  const p = SYSTEMS_DEF[systemId].planets.find(x => x.id === bodyId);
+  return p ? p.label : bodyId;
+}
+
+// ---------------------------------------------------------------------
+// Fleets: each faction's real position in the Sol system (Sun-centered
+// xKm,yKm), movable by the player -- in-memory only, like FLEET_FORMATIONS
+// below (resets on reload). Rendered at the System level, near whichever
+// planet they're currently at; a Battle is triggered from there once two
+// different factions' fleets are close enough (see map/main.js).
+// ---------------------------------------------------------------------
+
 export const FACTIONS = {
   blue:  { label: "Blue",  startAt: "earth" },
   green: { label: "Green", startAt: "saturn" },
   red:   { label: "Red",   startAt: "jupiter" },
 };
-const SHIPS_PER_FACTION = 12;
+export const SHIPS_PER_FACTION = 12;
 
-function fleetAt(bodyId) {
-  const entry = Object.entries(FACTIONS).find(([, f]) => f.startAt === bodyId);
-  if (!entry) return [];
-  const [faction] = entry;
-  return [{ id: `${faction}-fleet`, label: String(SHIPS_PER_FACTION), kind: "fleet", faction }];
+export const FLEET_POSITIONS = {};
+
+// A fleet starts just off its home planet's real current position (a fixed
+// angular nudge, not a literal overlap) so its marker doesn't sit exactly
+// on top of the planet's own.
+export function initFleetPositions(nowMs = Date.now()) {
+  for (const [faction, f] of Object.entries(FACTIONS)) {
+    if (FLEET_POSITIONS[faction]) continue;
+    const distanceKm = PLANET_AXIS_AU[f.startAt] * AU_KM;
+    const angleDeg = angleAtDeg(nowMs, planetOrbit(f.startAt)) + 10;
+    const rad = angleDeg * Math.PI / 180;
+    FLEET_POSITIONS[faction] = { xKm: distanceKm * Math.cos(rad), yKm: distanceKm * Math.sin(rad) };
+  }
+}
+export function moveFleet(faction, xKm, yKm) {
+  FLEET_POSITIONS[faction] = { xKm, yKm };
 }
 
 // Each faction's chosen formation, in memory only (resets on reload) --
@@ -222,10 +304,10 @@ function fleetAt(bodyId) {
 // actually triggers so deployment isn't just random. "line" until chosen.
 export const FLEET_FORMATIONS = { blue: "line", green: "line", red: "line" };
 
-// Formation Setup is a hex board too, but a small fixed one -- not packed
-// via radialBoard, since battle/formations.js's layouts (fwd/lat offsets
-// from a 12-ship formation, same math the actual Battle board uses) are
-// already designed not to self-overlap. Radius 9 comfortably fits every
+// Formation Setup is a hex board -- not the orbital view above, since
+// battle/formations.js's layouts (fwd/lat offsets from a 12-ship
+// formation, same math the actual Battle board uses) are already designed
+// not to self-overlap on a hex grid. Radius 9 comfortably fits every
 // formation's fwd (-4..4) / lat (-6..5) range.
 const FORMATION_BOARD_RINGS = toRings(9);
 // Same facing convention deployFormation (battle/formations.js) uses for
@@ -247,23 +329,4 @@ export function formationBoard(faction, formationName) {
     cols: hexRadius * 2 + 1, rows: hexRadius * 2 + 1, center, radius: FORMATION_BOARD_RINGS,
     hs: hsForRadius(FORMATION_BOARD_RINGS), cells,
   };
-}
-
-export function celestialBodyLevel(systemId, bodyId) {
-  const label = bodyLabel(systemId, bodyId);
-  const moons = MOONS[bodyId] || [];
-  const items = [
-    ...moons.map(name => {
-      const id = name.toLowerCase();
-      return { id, label: name, kind: "moon", gap: gapForRatio(MOON_DISTANCE_RATIO[id] || 10) };
-    }),
-    ...fleetAt(bodyId),
-  ];
-  const board = radialBoard({ id: bodyId, label, kind: "body-center", size: SIZE[bodyId] || 0 }, items);
-  return { title: label, hs: hsForRadius(board.radius), ...board };
-}
-
-export function bodyLabel(systemId, bodyId) {
-  const cell = SYSTEMS[systemId].cells.find(c => c.id === bodyId);
-  return cell ? cell.label : bodyId;
 }
