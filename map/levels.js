@@ -100,9 +100,38 @@ export const SYSTEMS = {
 const MOONS = {
   earth:   ["Moon"],
   mars:    ["Phobos", "Deimos"],
-  jupiter: ["Io", "Europa", "Ganymede", "Callisto"],
-  saturn:  ["Titan", "Rhea", "Iapetus", "Dione", "Tethys"],
-  uranus:  ["Titania", "Oberon", "Miranda", "Ariel", "Umbriel"],
+  jupiter: [
+    "Metis", "Adrastea", "Amalthea", "Thebe", "Io", "Europa",
+    "Ganymede", "Callisto", "Themisto", "Leda", "Ersa", "Himalia",
+    "Pandia", "Lysithea", "Elara", "Dia", "Carpo", "Valetudo",
+    "Euporie", "Eupheme", "Mneme", "Euanthe", "Harpalyke", "Orthosie",
+    "Helike", "Praxidike", "Thelxinoe", "Thyone", "Ananke", "Iocaste",
+    "Hermippe", "Philophrosyne", "Pasithee", "Eurydome", "Chaldene", "Isonoe",
+    "Kallichore", "Erinome", "Kale", "Eirene", "Aitne", "Eukelade",
+    "Arche", "Taygete", "Carme", "Herse", "Kalyke", "Hegemone",
+    "Pasiphae", "Sponde", "Megaclite", "Cyllene", "Sinope", "Aoede",
+    "Autonoe", "Callirrhoe", "Kore",
+  ],
+  saturn: [
+    "Pan", "Daphnis", "Atlas", "Prometheus", "Pandora", "Epimetheus",
+    "Janus", "Aegaeon", "Mimas", "Methone", "Anthe", "Pallene",
+    "Enceladus", "Tethys", "Telesto", "Calypso", "Helene", "Polydeuces",
+    "Dione", "Rhea", "Titan", "Hyperion", "Iapetus", "Kiviuq",
+    "Ijiraq", "Phoebe", "Paaliaq", "Skathi", "Albiorix", "Bebhionn",
+    "Erriapus", "Skoll", "Tarqeq", "Siarnaq", "Tarvos", "Hyrrokkin",
+    "Greip", "Mundilfari", "Gridr", "Bergelmir", "Jarnsaxa", "Narvi",
+    "Suttungr", "Hati", "Eggther", "Farbauti", "Thrymr", "Bestla",
+    "Angrboda", "Aegir", "Beli", "Gerd", "Gunnlod", "Skrymir",
+    "Alvaldi", "Kari", "Geirrod", "Fenrir", "Surtur", "Loge",
+    "Ymir", "Thiazzi", "Fornjot",
+  ],
+  uranus: [
+    "Cordelia", "Ophelia", "Bianca", "Cressida", "Desdemona", "Juliet",
+    "Portia", "Rosalind", "Cupid", "Belinda", "Perdita", "Puck",
+    "Mab", "Miranda", "Ariel", "Umbriel", "Titania", "Oberon",
+    "Francisco", "Caliban", "Stephano", "Trinculo", "Sycorax", "Margaret",
+    "Prospero", "Setebos", "Ferdinand",
+  ],
   neptune: [
     "Naiad", "Thalassa", "Despina", "Galatea", "Larissa", "Hippocamp", "Proteus",
     "Triton", "Nereid", "Halimede", "Sao", "Laomedeia", "Psamathe", "Neso",
@@ -115,12 +144,52 @@ const MOONS = {
 // (gapForRatio below), not as a literal to-scale distance.
 const MOON_DISTANCE_RATIO = {
   moon: 60.3, phobos: 2.76, deimos: 6.92,
-  io: 6.03, europa: 9.6, ganymede: 15.3, callisto: 26.9,
-  titan: 20.98, rhea: 9.05, iapetus: 61.15, dione: 6.48, tethys: 5.06,
-  titania: 17.2, oberon: 23.0, miranda: 5.12, ariel: 7.53, umbriel: 10.49,
   naiad: 1.96, thalassa: 2.03, despina: 2.13, galatea: 2.52, larissa: 2.99,
   hippocamp: 4.28, proteus: 4.78, triton: 14.4, nereid: 223.97,
   halimede: 674.7, sao: 918.7, laomedeia: 959.0, psamathe: 1896.6, neso: 1965.3,
+  // Jupiter (57 officially named moons -- all currently-known moons minus
+  // ~58 with only a provisional S/year designation; see Wikipedia "Moons of
+  // Jupiter" semi-major-axis table, cross-checked Galilean four against NASA/JPL).
+  metis: 1.83, adrastea: 1.85, amalthea: 2.59, thebe: 3.17, io: 6.03,
+  europa: 9.6, ganymede: 15.3, callisto: 26.9, themisto: 106, leda: 159,
+  ersa: 163, himalia: 164, pandia: 164, lysithea: 167, elara: 168,
+  dia: 175, carpo: 244, valetudo: 267, euporie: 276, eupheme: 297,
+  mneme: 298, euanthe: 298, harpalyke: 299, orthosie: 299, helike: 299,
+  praxidike: 299, thelxinoe: 300, thyone: 300, ananke: 301, iocaste: 301,
+  hermippe: 302, philophrosyne: 323, pasithee: 327, eurydome: 327, chaldene: 328,
+  isonoe: 329, kallichore: 329, erinome: 329, kale: 330, eirene: 330,
+  aitne: 330, eukelade: 330, arche: 330, taygete: 330, carme: 331,
+  herse: 331, kalyke: 333, hegemone: 334, pasiphae: 336, sponde: 337,
+  megaclite: 338, cyllene: 338, sinope: 339, aoede: 340, autonoe: 340,
+  callirrhoe: 340, kore: 346,
+  // Saturn (63 officially named moons -- all currently-known moons minus
+  // ~230 with only a provisional S/year designation, mostly the small
+  // irregular satellites announced in 2019-2023 batches; see Wikipedia
+  // "Moons of Saturn", sourced from JPL Solar System Dynamics "Planetary
+  // Satellite Mean Elements", cross-checked Titan/Iapetus against NASA NSSDC).
+  pan: 2.29, daphnis: 2.34, atlas: 2.36, prometheus: 2.39, pandora: 2.43,
+  epimetheus: 2.6, janus: 2.6, aegaeon: 2.88, mimas: 3.19, methone: 3.34,
+  anthe: 3.4, pallene: 3.65, enceladus: 4.09, tethys: 5.07, telesto: 5.07,
+  calypso: 5.07, helene: 6.48, polydeuces: 6.48, dione: 6.49, rhea: 9.05,
+  titan: 21, hyperion: 25.4, iapetus: 61.2, kiviuq: 194, ijiraq: 195,
+  phoebe: 222, paaliaq: 258, skathi: 267, albiorix: 280, bebhionn: 292,
+  erriapus: 301, skoll: 303, tarqeq: 305, siarnaq: 307, tarvos: 313,
+  hyrrokkin: 315, greip: 316, mundilfari: 319, gridr: 331, bergelmir: 331,
+  jarnsaxa: 331, narvi: 331, suttungr: 333, hati: 338, eggther: 341,
+  farbauti: 348, thrymr: 349, bestla: 349, angrboda: 354, aegir: 355,
+  beli: 356, gerd: 360, gunnlod: 363, skrymir: 368, alvaldi: 378,
+  kari: 378, geirrod: 382, fenrir: 383, surtur: 391, loge: 394,
+  ymir: 394, thiazzi: 405, fornjot: 428,
+  // Uranus (27 officially named moons; S/2023 U1 and S/2025 U1 -- the
+  // latter a JWST discovery -- are still provisional and excluded here.
+  // See Wikipedia "Moons of Uranus", cross-checked the five major moons
+  // against NASA NSSDCA's fact sheet).
+  cordelia: 1.96, ophelia: 2.12, bianca: 2.33, cressida: 2.44, desdemona: 2.47,
+  juliet: 2.54, portia: 2.61, rosalind: 2.76, cupid: 2.93, belinda: 2.97,
+  perdita: 3.01, puck: 3.39, mab: 3.85, miranda: 5.12, ariel: 7.53,
+  umbriel: 10.5, titania: 17.2, oberon: 23, francisco: 169, caliban: 283,
+  stephano: 314, trinculo: 335, sycorax: 481, margaret: 569, prospero: 640,
+  setebos: 691, ferdinand: 805,
 };
 // Log-compressed so the ~22x real spread (Phobos to Iapetus) becomes a
 // manageable ~2-5 hex gap while still ordering/spacing moons the same way
