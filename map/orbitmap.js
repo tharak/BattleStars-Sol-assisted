@@ -85,8 +85,18 @@ export function layoutSystemWithMoons(data, { maxPixel = 420, localMaxPixel = 22
   const centerRadiusKm = data.center?.radiusKm || 0;
   const maxDistanceKm = Math.max(1, ...data.bodies.map(b => b.distanceKm));
   const dist = makeDistanceScale(maxDistanceKm, maxPixel, Math.max(1, centerRadiusKm));
-  const maxRadiusKm = Math.max(centerRadiusKm, 1, ...data.bodies.map(b => b.radiusKm || 0));
-  const size = makeSizeScale(maxRadiusKm);
+  const allRadiiKm = data.bodies.flatMap(b => [b.radiusKm || 0, ...(b.moons || []).map(m => m.radiusKm || 0)]);
+  const maxRadiusKm = Math.max(centerRadiusKm, 1, ...allRadiiKm);
+  // One shared, Sun-anchored size scale for the Sun, every planet, AND
+  // every moon -- a moon's dot is always drawn to the same physical-size
+  // curve as its planet's, just further along it, so "planet clearly
+  // bigger than its own moons" holds regardless of which planet or moon
+  // (draw-time zoom clamping in main.js additionally caps how big a moon
+  // dot can grow, so it can never rival its planet even at max zoom).
+  // A low floor (vs. the old fixed 3px) keeps real moons -- all far
+  // smaller than any planet -- visibly different in size from each other
+  // rather than every one flattening to an identical floor dot.
+  const size = makeSizeScale(maxRadiusKm, { min: 0.6, max: 34 });
 
   const planets = data.bodies.map(b => {
     const angleDeg = b.orbit ? angleAtDeg(nowMs, b.orbit) : 0;
@@ -100,15 +110,13 @@ export function layoutSystemWithMoons(data, { maxPixel = 420, localMaxPixel = 22
     if (moons.length) {
       const localMaxDistanceKm = Math.max(1, ...moons.map(m => m.distanceKm));
       const localDist = makeDistanceScale(localMaxDistanceKm, localMaxPixel, Math.max(1, b.radiusKm || 1));
-      const localMaxRadiusKm = Math.max(b.radiusKm || 1, 1, ...moons.map(m => m.radiusKm || 0));
-      const localSize = makeSizeScale(localMaxRadiusKm, { min: 0.6, max: 6 });
       placedMoons = moons.map(m => {
         const mAngleDeg = m.orbit ? angleAtDeg(nowMs, m.orbit) : 0;
         const mRad = mAngleDeg * Math.PI / 180;
         const lr = localDist.toPixel(m.distanceKm);
         return {
           ...m, x: x + lr * Math.cos(mRad), y: y + lr * Math.sin(mRad),
-          rPx: localSize(m.radiusKm || 0), angleDeg: mAngleDeg,
+          rPx: size(m.radiusKm || 0), angleDeg: mAngleDeg,
           parentId: b.id, parentLabel: b.label, localRingPx: lr,
         };
       });

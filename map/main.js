@@ -142,6 +142,8 @@ function renderUniverse(entry, data) {
     setHint(`${hitBody.label} — nothing to zoom into yet.`);
   };
   canvas.onwheel = null;
+  canvas.onmousedown = null;
+  canvas.style.cursor = "";
 
   battleControls.style.display = "none";
   renderFormationControls(entry);
@@ -164,6 +166,27 @@ const MIN_ZOOM = 1, MAX_ZOOM = 60;
 const FOCUS_ZOOM = 20;
 const WHEEL_SENSITIVITY = 0.0015;
 const KEY_ZOOM_FACTOR = 1.3;
+const KEY_PAN_PX = 60;
+const DRAG_THRESHOLD_PX = 4;
+// A planet and a moon share one physical size curve (see
+// layoutSystemWithMoons), but their on-screen ceilings differ so a moon
+// dot can never grow to rival its planet's even at max zoom.
+const BODY_MAX_SCREEN_PX = 46;
+const MOON_MAX_SCREEN_PX = 20;
+const FLEET_SHIP_BASE_PX = 5;
+
+// A small ship-arrow triangle, proportionally scaled from its own size `s`
+// (unlike battle/hexmath.js's facingArrowPoints, whose fixed hs-4/hs-11
+// offsets go negative -- and the triangle inverts -- below hs~11, too big
+// for these small fleet icons).
+function shipTriangle(x, y, s, angleDeg) {
+  const a = angleDeg * Math.PI / 180;
+  return [
+    [x + Math.cos(a) * s, y + Math.sin(a) * s],
+    [x + Math.cos(a + 2.6) * s * 0.6, y + Math.sin(a + 2.6) * s * 0.6],
+    [x + Math.cos(a - 2.6) * s * 0.6, y + Math.sin(a - 2.6) * s * 0.6],
+  ];
+}
 // How close (in on-screen pixels, at the System view's base zoom -- fixed
 // regardless of the camera's current zoom, so the Battle button doesn't
 // flicker on/off just because you scrolled) two different factions' fleets
@@ -175,6 +198,30 @@ const BATTLE_PROXIMITY_PX = 40;
 // clicking the Sun.
 const camera = { x: 0, y: 0, zoom: 1 };
 const clampZoom = z => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
+
+// Click-and-drag panning. Tracked at module scope (not inside renderSystem)
+// since a drag can outlive any single render -- mousemove/mouseup listen on
+// window so the drag keeps tracking even if the cursor leaves the canvas.
+// justDragged suppresses the click that fires right after mouseup releases
+// a drag, so releasing a pan doesn't also select/move a fleet or focus a
+// planet underneath the cursor.
+let dragState = null;
+let justDragged = false;
+window.addEventListener("mousemove", ev => {
+  if (!dragState) return;
+  const dx = ev.clientX - dragState.startClientX;
+  const dy = ev.clientY - dragState.startClientY;
+  if (Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) dragState.moved = true;
+  camera.x = dragState.startCameraX - dx / camera.zoom;
+  camera.y = dragState.startCameraY - dy / camera.zoom;
+  render();
+});
+window.addEventListener("mouseup", () => {
+  if (!dragState) return;
+  justDragged = dragState.moved;
+  dragState = null;
+  canvas.style.cursor = "grab";
+});
 
 // A fleet's pixel position uses the exact same log-distance scale as every
 // real body in this view, so "close" on screen means close in the system,
@@ -211,6 +258,15 @@ function renderSystem(entry, data) {
   const fleets = placeFleets(layout);
   const battleReady = closeEnoughForBattle(fleets);
 
+  // A moon's screen size is capped well below a planet's (both start from
+  // the same physical size curve -- see layoutSystemWithMoons -- but a
+  // moon can never grow past this even at max zoom), so "planet clearly
+  // bigger than its own moons" holds regardless of zoom level.
+  const screenRadius = body => {
+    const cap = body.kind === "moon" ? MOON_MAX_SCREEN_PX : BODY_MAX_SCREEN_PX;
+    return Math.min(Math.max(body.rPx * camera.zoom, 1.2), cap);
+  };
+
   ctx.fillStyle = BOARD_TINT.bg;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.save();
@@ -227,7 +283,7 @@ function renderSystem(entry, data) {
   };
   const drawDot = (body, selected) => {
     const [sx, sy] = worldToScreen(camera, body.x, body.y);
-    const rPx = Math.min(Math.max(body.rPx * camera.zoom, 1.2), 46);
+    const rPx = screenRadius(body);
     const colors = colorsFor(body);
     ctx.beginPath();
     ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
@@ -245,6 +301,34 @@ function renderSystem(entry, data) {
     return [sx, sy, rPx];
   };
 
+  // A fleet isn't a real orbiting body, so it's drawn as its own thing: 3
+  // small ship-arrow triangles (reusing the same wedge shape Formation
+  // Setup/Battle use for a ship's facing) arranged in a "<" wedge, all
+  // pointing left. Returns the wedge's rough footprint radius, used as its
+  // click target.
+  const drawFleet = (fleet, selected) => {
+    const [sx, sy] = worldToScreen(camera, fleet.x, fleet.y);
+    const s = Math.min(Math.max(FLEET_SHIP_BASE_PX * camera.zoom, 3), 14);
+    const colors = colorsFor(fleet);
+    const offsets = [[-s * 1.1, 0], [s * 0.55, -s * 1.05], [s * 0.55, s * 1.05]];
+    for (const [dx, dy] of offsets) {
+      const [tip, b1, b2] = shipTriangle(sx + dx, sy + dy, s, 180);
+      ctx.beginPath();
+      ctx.moveTo(...tip); ctx.lineTo(...b1); ctx.lineTo(...b2);
+      ctx.closePath();
+      ctx.fillStyle = colors.fill;
+      ctx.fill();
+      ctx.lineWidth = selected ? 2.5 : 1.5;
+      ctx.strokeStyle = selected ? "#ffffff" : colors.stroke;
+      ctx.stroke();
+    }
+    ctx.font = "bold 11px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#d7deef";
+    ctx.fillText(fleet.label, sx, sy + s * 1.05 + 15);
+    return Math.max(s * 1.8, 10);
+  };
+
   if (layout.center) drawDot(layout.center, false);
   for (const p of layout.planets) {
     drawRing(...worldToScreen(camera, 0, 0), Math.hypot(p.x, p.y));
@@ -254,16 +338,27 @@ function renderSystem(entry, data) {
       drawDot(m, false);
     }
   }
-  for (const f of fleets) drawDot(f, f.faction === selectedFleet);
+  for (const f of fleets) f.hitRPx = drawFleet(f, f.faction === selectedFleet);
   ctx.restore();
 
+  canvas.onmousedown = ev => {
+    if (ev.button !== 0) return;
+    dragState = { startClientX: ev.clientX, startClientY: ev.clientY, startCameraX: camera.x, startCameraY: camera.y, moved: false };
+    canvas.style.cursor = "grabbing";
+  };
+  canvas.style.cursor = "grab";
+
   canvas.onclick = ev => {
+    if (justDragged) { justDragged = false; return; }
     const rect = canvas.getBoundingClientRect();
     const x = (ev.clientX - rect.left) - cx, y = (ev.clientY - rect.top) - cy;
 
     const screenPos = b => worldToScreen(camera, b.x, b.y);
-    const screenR = b => Math.min(Math.max(b.rPx * camera.zoom, 1.2), 46);
-    const within = b => { const [sx, sy] = screenPos(b); return Math.hypot(x - sx, y - sy) <= Math.max(screenR(b), 10); };
+    const within = b => {
+      const [sx, sy] = screenPos(b);
+      const tap = b.kind === "fleet" ? b.hitRPx : Math.max(screenRadius(b), 10);
+      return Math.hypot(x - sx, y - sy) <= tap;
+    };
 
     const hitFleet = fleets.find(within);
     if (hitFleet) {
@@ -387,6 +482,8 @@ function renderHex(entry, data) {
     setHint(cell.isFlag ? "Flagship" : `Ship ${cell.label}`);
   };
   canvas.onwheel = null;
+  canvas.onmousedown = null;
+  canvas.style.cursor = "";
 
   battleControls.style.display = "none";
   renderFormationControls(entry);
@@ -460,6 +557,15 @@ document.addEventListener("keydown", ev => {
   if (path[path.length - 1].level !== "system") return;
   if (ev.key === "=" || ev.key === "+") { zoomSystemByKey(KEY_ZOOM_FACTOR); }
   else if (ev.key === "-" || ev.key === "_") { zoomSystemByKey(1 / KEY_ZOOM_FACTOR); }
+  else if (ev.key.startsWith("Arrow")) {
+    ev.preventDefault();
+    const step = KEY_PAN_PX / camera.zoom;
+    if (ev.key === "ArrowLeft") camera.x -= step;
+    else if (ev.key === "ArrowRight") camera.x += step;
+    else if (ev.key === "ArrowUp") camera.y -= step;
+    else if (ev.key === "ArrowDown") camera.y += step;
+    render();
+  }
 });
 
 render();
