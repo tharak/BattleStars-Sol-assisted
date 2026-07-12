@@ -418,6 +418,17 @@ function renderSystem2D(entry, data) {
     const [sx, sy] = worldToScreen(camera2d, fleet.x, fleet.y);
     const s = Math.min(Math.max(FLEET_SHIP_BASE_PX * camera2d.zoom, 3), 14);
     const colors = colorsFor(fleet);
+    const tapRadius = Math.max(s * 1.8, 10);
+    // The 3 ship triangles alone are a fiddly click target -- a ring at the
+    // actual tap radius (see the `within()` check below) both marks where
+    // to click and makes that area visually obvious.
+    ctx.beginPath();
+    ctx.arc(sx, sy, tapRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = selected ? "#ffffff" : colors.stroke;
+    ctx.globalAlpha = selected ? 0.9 : 0.55;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
     const offsets = [[-s * 1.1, 0], [s * 0.55, -s * 1.05], [s * 0.55, s * 1.05]];
     for (const [dx, dy] of offsets) {
       const [tip, b1, b2] = shipTriangle(sx + dx, sy + dy, s, 180);
@@ -434,7 +445,7 @@ function renderSystem2D(entry, data) {
     ctx.textAlign = "center";
     ctx.fillStyle = "#d7deef";
     ctx.fillText(fleet.label, sx, sy + s * 1.05 + 15);
-    return Math.max(s * 1.8, 10);
+    return tapRadius;
   };
 
   if (layout.center) drawDot(layout.center, false);

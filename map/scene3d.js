@@ -177,6 +177,24 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
         group.add(edges);
       }
     }
+    // The 3 ship cones alone are a tiny, fiddly click target -- a visible
+    // ring around the whole wedge both shows where to click and (via the
+    // matching invisible disc just inside it) IS the actual click target,
+    // the same generous tap radius the 2D fallback's drawFleet uses.
+    const tapRadius = Math.max(s * 1.8, 10);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(tapRadius * 0.92, tapRadius, 32),
+      new THREE.MeshBasicMaterial({ color: selected ? 0xffffff : colorHex, transparent: true, opacity: selected ? 0.9 : 0.55, side: THREE.DoubleSide }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    group.add(ring);
+    const hitDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(tapRadius, 24),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }),
+    );
+    hitDisc.rotation.x = -Math.PI / 2;
+    group.add(hitDisc);
+
     group.userData = data;
     objectGroup.add(group);
     const lbl = makeLabel(label);
