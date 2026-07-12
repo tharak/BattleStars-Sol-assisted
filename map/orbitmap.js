@@ -130,6 +130,18 @@ export function layoutSystemWithMoons(data, { maxPixel = 420, localMaxPixel = 22
   return { center, planets, dist, size };
 }
 
+// A 2D pan (x,y, in the same world-px units layoutOrbitalBoard/
+// layoutSystemWithMoons use) plus a zoom multiplier -- screen coordinates
+// are canvas-center-relative, same convention as everything else here.
+// Used by the 2D System-map fallback (map/main.js) for browsers where
+// WebGL/map/scene3d.js's real 3D view isn't available.
+export function worldToScreen(camera, x, y) {
+  return [(x - camera.x) * camera.zoom, (y - camera.y) * camera.zoom];
+}
+export function screenToWorld(camera, sx, sy) {
+  return [camera.x + sx / camera.zoom, camera.y + sy / camera.zoom];
+}
+
 // Nearest body (real or extra, e.g. a fleet marker) within its own click
 // radius -- or a minimum tap target, since some real bodies render smaller
 // than a comfortable click target -- of (x,y). Null if nothing's close

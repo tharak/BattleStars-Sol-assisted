@@ -1,5 +1,8 @@
 import { makeHexGrid } from "./hexgrid.js";
-import { layoutOrbitalBoard, drawOrbitalBoard, hitTest, pixelToKm, layoutSystemWithMoons } from "./orbitmap.js";
+import {
+  layoutOrbitalBoard, drawOrbitalBoard, hitTest, pixelToKm,
+  layoutSystemWithMoons, worldToScreen, screenToWorld,
+} from "./orbitmap.js";
 import { createSystemScene } from "./scene3d.js";
 import {
   universeLevel, systemLevel, formationBoard,
@@ -147,22 +150,30 @@ function renderUniverse(entry, data) {
     if (hitBody.enter) { zoomIn(hitBody.enter, hitBody.label); return; }
     setHint(`${hitBody.label} — nothing to zoom into yet.`);
   };
+  canvas.onwheel = null;
+  canvas.onmousedown = null;
+  canvas.style.cursor = "";
+
   battleControls.style.display = "none";
   renderFormationControls(entry);
   renderBreadcrumb();
 }
 
 // ---------------------------------------------------------------------
-// System: the merged Star+Body view, rendered as a real 3D scene (Three.js
-// -- see map/scene3d.js) instead of the flat 2D canvas. Planets sit at
-// their real (log-compressed) distance from the Sun; each planet's own
-// moons nest inside it at their own small local scale (see
-// layoutSystemWithMoons in orbitmap.js) -- invisible at the default zoom,
-// the way real moons really are lost next to planet-to-sun distances, and
-// revealed by zooming in (scroll / -/= keys, or clicking a planet to focus
-// on it). Drag rotates the camera (handled by Three.js's OrbitControls);
-// arrow keys pan. Fleets are drawn on top, independent of the orbital
-// layout, since they're player-movable rather than real orbiting bodies.
+// System: the merged Star+Body view. Planets sit at their real (log-
+// compressed) distance from the Sun; each planet's own moons nest inside
+// it at their own small local scale (see layoutSystemWithMoons in
+// orbitmap.js) -- invisible at the default zoom, the way real moons
+// really are lost next to planet-to-sun distances, and revealed by
+// zooming in (scroll / -/= keys, or clicking a planet to focus on it).
+//
+// Rendered as a real 3D scene (map/scene3d.js, Three.js) by default. Some
+// browsers/environments can't create a WebGL context at all (sandboxed
+// browsers, disabled GPU acceleration, some remote desktops) -- Three.js
+// throws synchronously when that happens, which renderSystem() below
+// catches exactly once and permanently falls back to a flat 2D canvas
+// version of the same view (same math, same interactions, just no real
+// 3D) rather than leaving the page broken.
 // ---------------------------------------------------------------------
 
 const LOCAL_MAX_PX = 22;
@@ -175,13 +186,6 @@ const KEY_PAN_PX = 60;
 // rotated or scrolled) two different factions' fleets need to be before a
 // Battle becomes possible.
 const BATTLE_PROXIMITY_PX = 40;
-
-let scene3d = null;
-function ensureScene3D() {
-  if (scene3d) return scene3d;
-  scene3d = createSystemScene({ canvas: canvas3d, labelContainer: mapwrap3d, sizePx: CANVAS_PX, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM });
-  return scene3d;
-}
 
 // A fleet's world position uses the exact same log-distance scale as every
 // real body in this view, so "close" means close in the system,
@@ -208,7 +212,17 @@ function closeEnoughForBattle(fleets) {
   return false;
 }
 
-function renderSystem(entry, data) {
+// --- 3D path (primary) ---------------------------------------------------
+
+let scene3d = null;
+let webglFailed = false;
+function ensureScene3D() {
+  if (scene3d) return scene3d;
+  scene3d = createSystemScene({ canvas: canvas3d, labelContainer: mapwrap3d, sizePx: CANVAS_PX, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM });
+  return scene3d;
+}
+
+function renderSystem3D(entry, data) {
   mapwrap.style.display = "none";
   mapwrap3d.style.display = "inline-block";
   const scene = ensureScene3D();
@@ -281,9 +295,251 @@ function renderSystem(entry, data) {
   renderBreadcrumb();
 }
 
-function zoomSystemByKey(factor) {
+function zoomSystemByKey3D(factor) {
   ensureScene3D().zoomBy(factor);
 }
+
+// --- 2D path (fallback for browsers without a usable WebGL context) ------
+
+const camera2d = { x: 0, y: 0, zoom: 1 };
+const clampZoom2d = z => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
+const WHEEL_SENSITIVITY = 0.0015;
+const DRAG_THRESHOLD_PX = 4;
+// A planet and a moon share one physical size curve (see
+// layoutSystemWithMoons), but their on-screen ceilings differ so a moon
+// dot can never grow to rival its planet's even at max zoom.
+const BODY_MAX_SCREEN_PX = 46;
+const MOON_MAX_SCREEN_PX = 20;
+const FLEET_SHIP_BASE_PX = 5;
+
+// A small ship-arrow triangle, proportionally scaled from its own size `s`
+// (unlike battle/hexmath.js's facingArrowPoints, whose fixed hs-4/hs-11
+// offsets go negative -- and the triangle inverts -- below hs~11, too big
+// for these small fleet icons).
+function shipTriangle(x, y, s, angleDeg) {
+  const a = angleDeg * Math.PI / 180;
+  return [
+    [x + Math.cos(a) * s, y + Math.sin(a) * s],
+    [x + Math.cos(a + 2.6) * s * 0.6, y + Math.sin(a + 2.6) * s * 0.6],
+    [x + Math.cos(a - 2.6) * s * 0.6, y + Math.sin(a - 2.6) * s * 0.6],
+  ];
+}
+
+// Click-and-drag panning, only reachable once the 2D fallback is active.
+// Tracked at module scope (not inside renderSystem2D) since a drag can
+// outlive any single render -- mousemove/mouseup listen on window so the
+// drag keeps tracking even if the cursor leaves the canvas. justDragged
+// suppresses the click that fires right after mouseup releases a drag, so
+// releasing a pan doesn't also select/move a fleet or focus a planet.
+let dragState = null;
+let justDragged = false;
+window.addEventListener("mousemove", ev => {
+  if (!dragState) return;
+  const dx = ev.clientX - dragState.startClientX;
+  const dy = ev.clientY - dragState.startClientY;
+  if (Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) dragState.moved = true;
+  camera2d.x = dragState.startCameraX - dx / camera2d.zoom;
+  camera2d.y = dragState.startCameraY - dy / camera2d.zoom;
+  render();
+});
+window.addEventListener("mouseup", () => {
+  if (!dragState) return;
+  justDragged = dragState.moved;
+  dragState = null;
+  canvas.style.cursor = "grab";
+});
+
+function renderSystem2D(entry, data) {
+  mapwrap3d.style.display = "none";
+  mapwrap.style.display = "inline-block";
+  canvas.width = CANVAS_PX;
+  canvas.height = CANVAS_PX;
+  const ctx = canvas.getContext("2d");
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+
+  const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
+  const fleets = placeFleets(layout);
+  const battleReady = closeEnoughForBattle(fleets);
+
+  const screenRadius = body => {
+    const cap = body.kind === "moon" ? MOON_MAX_SCREEN_PX : BODY_MAX_SCREEN_PX;
+    return Math.min(Math.max(body.rPx * camera2d.zoom, 1.2), cap);
+  };
+
+  ctx.fillStyle = BOARD_TINT.bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  const drawRing = (ringCx, ringCy, worldRadiusPx) => {
+    const r = worldRadiusPx * camera2d.zoom;
+    if (r < 1) return;
+    ctx.beginPath();
+    ctx.arc(ringCx, ringCy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = "#1d243855";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  };
+  const drawDot = (body, selected) => {
+    const [sx, sy] = worldToScreen(camera2d, body.x, body.y);
+    const rPx = screenRadius(body);
+    const colors = colorsFor(body);
+    ctx.beginPath();
+    ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
+    ctx.fillStyle = colors.fill;
+    ctx.fill();
+    ctx.lineWidth = selected ? 3 : 2;
+    ctx.strokeStyle = selected ? "#ffffff" : colors.stroke;
+    ctx.stroke();
+    if (rPx > 3) {
+      ctx.font = "bold 11px system-ui";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#d7deef";
+      ctx.fillText(body.label, sx, sy + rPx + 13);
+    }
+    return [sx, sy, rPx];
+  };
+  const drawFleet = (fleet, selected) => {
+    const [sx, sy] = worldToScreen(camera2d, fleet.x, fleet.y);
+    const s = Math.min(Math.max(FLEET_SHIP_BASE_PX * camera2d.zoom, 3), 14);
+    const colors = colorsFor(fleet);
+    const offsets = [[-s * 1.1, 0], [s * 0.55, -s * 1.05], [s * 0.55, s * 1.05]];
+    for (const [dx, dy] of offsets) {
+      const [tip, b1, b2] = shipTriangle(sx + dx, sy + dy, s, 180);
+      ctx.beginPath();
+      ctx.moveTo(...tip); ctx.lineTo(...b1); ctx.lineTo(...b2);
+      ctx.closePath();
+      ctx.fillStyle = colors.fill;
+      ctx.fill();
+      ctx.lineWidth = selected ? 2.5 : 1.5;
+      ctx.strokeStyle = selected ? "#ffffff" : colors.stroke;
+      ctx.stroke();
+    }
+    ctx.font = "bold 11px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#d7deef";
+    ctx.fillText(fleet.label, sx, sy + s * 1.05 + 15);
+    return Math.max(s * 1.8, 10);
+  };
+
+  if (layout.center) drawDot(layout.center, false);
+  for (const p of layout.planets) {
+    drawRing(...worldToScreen(camera2d, 0, 0), Math.hypot(p.x, p.y));
+    const [px, py] = drawDot(p, false);
+    for (const m of p.moons) {
+      drawRing(px, py, m.localRingPx);
+      drawDot(m, false);
+    }
+  }
+  for (const f of fleets) f.hitRPx = drawFleet(f, f.faction === selectedFleet);
+  ctx.restore();
+
+  canvas.onmousedown = ev => {
+    if (ev.button !== 0) return;
+    dragState = { startClientX: ev.clientX, startClientY: ev.clientY, startCameraX: camera2d.x, startCameraY: camera2d.y, moved: false };
+    canvas.style.cursor = "grabbing";
+  };
+  canvas.style.cursor = "grab";
+
+  canvas.onclick = ev => {
+    if (justDragged) { justDragged = false; return; }
+    const rect = canvas.getBoundingClientRect();
+    const x = (ev.clientX - rect.left) - cx, y = (ev.clientY - rect.top) - cy;
+
+    const screenPos = b => worldToScreen(camera2d, b.x, b.y);
+    const within = b => {
+      const [sx, sy] = screenPos(b);
+      const tap = b.kind === "fleet" ? b.hitRPx : Math.max(screenRadius(b), 10);
+      return Math.hypot(x - sx, y - sy) <= tap;
+    };
+
+    const hitFleet = fleets.find(within);
+    if (hitFleet) {
+      if (selectedFleet === hitFleet.faction) {
+        selectedFleet = null;
+        zoomIn(
+          { level: "formation", faction: hitFleet.faction, formationName: FLEET_FORMATIONS[hitFleet.faction] },
+          `${FACTIONS[hitFleet.faction].label} Formation`,
+        );
+        return;
+      }
+      selectedFleet = hitFleet.faction;
+      setHint(`${FACTIONS[hitFleet.faction].label} fleet selected — click a destination to move it, or click it again to set formation.`);
+      render();
+      return;
+    }
+
+    if (selectedFleet) {
+      const [wx, wy] = screenToWorld(camera2d, x, y);
+      const [xKm, yKm] = pixelToKm(layout, wx, wy);
+      moveFleet(selectedFleet, xKm, yKm);
+      setHint(`${FACTIONS[selectedFleet].label} fleet moved.`);
+      selectedFleet = null;
+      render();
+      return;
+    }
+
+    if (layout.center && within(layout.center)) {
+      camera2d.x = 0; camera2d.y = 0; camera2d.zoom = 1;
+      setHint("");
+      render();
+      return;
+    }
+    const hitMoon = layout.planets.flatMap(p => p.moons).find(within);
+    if (hitMoon) { setHint(`${hitMoon.label} — a moon of ${hitMoon.parentLabel}.`); return; }
+    const hitPlanet = layout.planets.find(within);
+    if (hitPlanet) {
+      camera2d.x = hitPlanet.x; camera2d.y = hitPlanet.y;
+      camera2d.zoom = clampZoom2d(Math.max(camera2d.zoom, FOCUS_ZOOM));
+      setHint(hitPlanet.kind === "belt" ? "Asteroid Belt — no bodies to explore." : "");
+      render();
+      return;
+    }
+    setHint("Empty space — nothing here.");
+  };
+
+  canvas.onwheel = ev => {
+    ev.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const x = (ev.clientX - rect.left) - cx, y = (ev.clientY - rect.top) - cy;
+    const [wx, wy] = screenToWorld(camera2d, x, y);
+    camera2d.zoom = clampZoom2d(camera2d.zoom * Math.exp(-ev.deltaY * WHEEL_SENSITIVITY));
+    // Keep the point under the cursor fixed on screen while zooming.
+    camera2d.x = wx - x / camera2d.zoom;
+    camera2d.y = wy - y / camera2d.zoom;
+    render();
+  };
+
+  battleControls.style.display = battleReady ? "flex" : "none";
+  battleBtn.onclick = () => { window.location.href = "battle.html"; };
+
+  renderFormationControls(entry);
+  renderBreadcrumb();
+}
+
+function zoomSystemByKey2D(factor) {
+  camera2d.zoom = clampZoom2d(camera2d.zoom * factor);
+  render();
+}
+
+// --- dispatcher ------------------------------------------------------
+
+function renderSystem(entry, data) {
+  if (!webglFailed) {
+    try {
+      renderSystem3D(entry, data);
+      return;
+    } catch (err) {
+      console.warn("3D System map unavailable (WebGL context creation failed) -- falling back to the 2D map:", err);
+      webglFailed = true;
+      scene3d = null;
+      canvas3d.onclick = null;
+      setHint("3D view isn't available in this browser (WebGL disabled) — showing the 2D map instead.");
+    }
+  }
+  renderSystem2D(entry, data);
+}
+
 // ---------------------------------------------------------------------
 // Formation Setup: unchanged, still a small fixed hex board (its ship
 // layouts are hex-native -- see battle/formations.js).
@@ -338,6 +594,10 @@ function renderHex(entry, data) {
     if (!cell) { setHint("Empty space — nothing here."); return; }
     setHint(cell.isFlag ? "Flagship" : `Ship ${cell.label}`);
   };
+  canvas.onwheel = null;
+  canvas.onmousedown = null;
+  canvas.style.cursor = "";
+
   battleControls.style.display = "none";
   renderFormationControls(entry);
   renderBreadcrumb();
@@ -408,16 +668,27 @@ zoomOutBtn.onclick = zoomOut;
 document.addEventListener("keydown", ev => {
   if (ev.key === "Escape") { zoomOut(); return; }
   if (path[path.length - 1].level !== "system") return;
-  if (ev.key === "=" || ev.key === "+") { zoomSystemByKey(KEY_ZOOM_FACTOR); }
-  else if (ev.key === "-" || ev.key === "_") { zoomSystemByKey(1 / KEY_ZOOM_FACTOR); }
-  else if (ev.key.startsWith("Arrow")) {
+  if (ev.key === "=" || ev.key === "+") {
+    if (webglFailed) zoomSystemByKey2D(KEY_ZOOM_FACTOR); else zoomSystemByKey3D(KEY_ZOOM_FACTOR);
+  } else if (ev.key === "-" || ev.key === "_") {
+    if (webglFailed) zoomSystemByKey2D(1 / KEY_ZOOM_FACTOR); else zoomSystemByKey3D(1 / KEY_ZOOM_FACTOR);
+  } else if (ev.key.startsWith("Arrow")) {
     ev.preventDefault();
-    const scene = ensureScene3D();
-    const step = KEY_PAN_PX / scene.camera.zoom;
-    if (ev.key === "ArrowLeft") scene.panCamera(-step, 0);
-    else if (ev.key === "ArrowRight") scene.panCamera(step, 0);
-    else if (ev.key === "ArrowUp") scene.panCamera(0, step);
-    else if (ev.key === "ArrowDown") scene.panCamera(0, -step);
+    if (webglFailed) {
+      const step = KEY_PAN_PX / camera2d.zoom;
+      if (ev.key === "ArrowLeft") camera2d.x -= step;
+      else if (ev.key === "ArrowRight") camera2d.x += step;
+      else if (ev.key === "ArrowUp") camera2d.y -= step;
+      else if (ev.key === "ArrowDown") camera2d.y += step;
+      render();
+    } else {
+      const scene = ensureScene3D();
+      const step = KEY_PAN_PX / scene.camera.zoom;
+      if (ev.key === "ArrowLeft") scene.panCamera(-step, 0);
+      else if (ev.key === "ArrowRight") scene.panCamera(step, 0);
+      else if (ev.key === "ArrowUp") scene.panCamera(0, step);
+      else if (ev.key === "ArrowDown") scene.panCamera(0, -step);
+    }
   }
 });
 
