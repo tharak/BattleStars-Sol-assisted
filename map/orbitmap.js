@@ -79,8 +79,9 @@ export function drawOrbitalBoard(ctx, layout, { colorsFor, isSelected, labelMinP
 // system's) and offset onto the planet's own world position -- so at
 // zoom 1 a moon cluster collapses to a few pixels around its planet
 // (correctly, since real moon-to-planet distances are tiny next to
-// planet-to-sun distances), and camera zoom (see worldToScreen below)
-// is what reveals it, the same way zooming a map reveals street detail.
+// planet-to-sun distances), and zooming the 3D camera in (see
+// map/scene3d.js) is what reveals it, the same way zooming a map reveals
+// street detail.
 export function layoutSystemWithMoons(data, { maxPixel = 420, localMaxPixel = 22, nowMs = Date.now() } = {}) {
   const centerRadiusKm = data.center?.radiusKm || 0;
   const maxDistanceKm = Math.max(1, ...data.bodies.map(b => b.distanceKm));
@@ -88,14 +89,15 @@ export function layoutSystemWithMoons(data, { maxPixel = 420, localMaxPixel = 22
   const allRadiiKm = data.bodies.flatMap(b => [b.radiusKm || 0, ...(b.moons || []).map(m => m.radiusKm || 0)]);
   const maxRadiusKm = Math.max(centerRadiusKm, 1, ...allRadiiKm);
   // One shared, Sun-anchored size scale for the Sun, every planet, AND
-  // every moon -- a moon's dot is always drawn to the same physical-size
-  // curve as its planet's, just further along it, so "planet clearly
-  // bigger than its own moons" holds regardless of which planet or moon
-  // (draw-time zoom clamping in main.js additionally caps how big a moon
-  // dot can grow, so it can never rival its planet even at max zoom).
-  // A low floor (vs. the old fixed 3px) keeps real moons -- all far
-  // smaller than any planet -- visibly different in size from each other
-  // rather than every one flattening to an identical floor dot.
+  // every moon -- a moon's sphere is always drawn to the same physical-
+  // size curve as its planet's, just further along it, so "planet clearly
+  // bigger than its own moons" holds regardless of which planet or moon.
+  // World-space sizes like these are zoom-invariant in the 3D scene (an
+  // orthographic camera's zoom scales everything uniformly), so unlike the
+  // old flat-canvas version, no extra draw-time clamping is needed to keep
+  // that true. A low floor (vs. a higher fixed one) keeps real moons --
+  // all far smaller than any planet -- visibly different in size from
+  // each other rather than every one flattening to an identical floor dot.
   const size = makeSizeScale(maxRadiusKm, { min: 0.6, max: 34 });
 
   const planets = data.bodies.map(b => {
@@ -126,16 +128,6 @@ export function layoutSystemWithMoons(data, { maxPixel = 420, localMaxPixel = 22
 
   const center = data.center ? { ...data.center, x: 0, y: 0, rPx: size(centerRadiusKm) } : null;
   return { center, planets, dist, size };
-}
-
-// The camera is a pan (x,y, in the same world-px units layoutOrbitalBoard/
-// layoutSystemWithMoons use) plus a zoom multiplier -- screen coordinates
-// are canvas-center-relative, same convention as everything else here.
-export function worldToScreen(camera, x, y) {
-  return [(x - camera.x) * camera.zoom, (y - camera.y) * camera.zoom];
-}
-export function screenToWorld(camera, sx, sy) {
-  return [camera.x + sx / camera.zoom, camera.y + sy / camera.zoom];
 }
 
 // Nearest body (real or extra, e.g. a fleet marker) within its own click
