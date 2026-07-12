@@ -29,7 +29,10 @@ const battleBtn = document.getElementById("battleBtn");
 // Star+Body view -- there's no separate "body" level anymore; zooming the
 // camera in on a planet (wheel / -/= keys, or clicking it) is what reveals
 // its moons, instead of navigating to a new screen.
-let path = [{ level: "universe", label: "Universe" }];
+let path = [
+  { level: "universe", label: "Universe" },
+  { level: "system", systemId: "sol", label: "Sol" },
+];
 
 // Fleets only render/move at the System level -- this is which one (if
 // any) is currently picked up, waiting for a destination click.
