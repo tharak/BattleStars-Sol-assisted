@@ -12,13 +12,20 @@ import {
 import { DIR_ANGLE } from "../battle/hexmath.js";
 import { formationLayout } from "../battle/formations.js";
 import { BOARD_TINT } from "../battle/colors.js";
+import { State as BattleState } from "../battle/state.js";
+import { newBattle } from "../battle/turnEngine.js";
+import { wire as wireBattle } from "../battle/input.js";
 
 const capitalize = s => s[0].toUpperCase() + s.slice(1);
 
-const canvas = document.getElementById("cv");
+// "starmapCv", not "cv" -- "cv" is claimed by the embedded battle board's
+// own canvas (battle/render.js grabs it by that exact id at import time;
+// see the battle-integration block near the top of this file).
+const canvas = document.getElementById("starmapCv");
 const mapwrap = document.getElementById("mapwrap");
 const canvas3d = document.getElementById("cv3d");
 const mapwrap3d = document.getElementById("mapwrap3d");
+const topbar = document.getElementById("topbar");
 const breadcrumb = document.getElementById("breadcrumb");
 const zoomOutBtn = document.getElementById("zoomOut");
 const hint = document.getElementById("hint");
@@ -32,6 +39,94 @@ const infoDetail = document.getElementById("infoDetail");
 const infoControls = document.getElementById("infoControls");
 const infoFormationButtons = document.getElementById("infoFormationButtons");
 const infoDeselectBtn = document.getElementById("infoDeselectBtn");
+const mapArea = document.getElementById("mapArea");
+const battleArea = document.getElementById("battleArea");
+const battleOverlay = document.getElementById("overlay");
+
+// The tactical battle, embedded straight into this page instead of a
+// window.location.href to battle.html -- see startMapBattle/exitMapBattle
+// below. battle/input.js's wire(state) binds every button/canvas/keydown
+// handler the engine needs by id (#cv, #btnL, #btnSetupFlag, ...), all of
+// which #battleArea's markup in map.html provides verbatim, so the whole
+// engine (battle/turnEngine.js, systems.js, render.js, panels.js,
+// deployment.js) runs completely unmodified here -- this file is the only
+// new code. wire() just assigns .onclick handlers, so calling it once at
+// load (rather than once per battle) is fine; State is the same mutable
+// singleton battle.html's own main.js would otherwise own.
+wireBattle(BattleState);
+// wire() points btnMenu/ovMenu at battle/input.js's own toMenu(), which
+// reaches for a #menu screen this page doesn't have (that's battle.html's
+// scenario picker, which this integration deliberately skips -- see
+// startMapBattle). Point them at the map instead.
+document.getElementById("btnMenu").onclick = exitMapBattle;
+document.getElementById("ovMenu").onclick = exitMapBattle;
+
+// Whichever two different-faction ships are nearest each other, if any
+// pair is within BATTLE_PROXIMITY_PX -- not just whether one exists,
+// since starting a battle now needs to know exactly which two factions
+// collided (a bare boolean was enough back when Battle just linked out to
+// battle.html's own scenario picker instead of using real fleet data).
+function nearbyBattlePair(ships) {
+  for (let i = 0; i < ships.length; i++) {
+    for (let j = i + 1; j < ships.length; j++) {
+      if (ships[i].faction === ships[j].faction) continue;
+      if (Math.hypot(ships[i].x - ships[j].x, ships[i].y - ships[j].y) <= BATTLE_PROXIMITY_PX) {
+        return [ships[i].faction, ships[j].faction];
+      }
+    }
+  }
+  return null;
+}
+
+// Builds a real scenario from the two actual colliding fleets -- their
+// real ship count (SHIPS_PER_FACTION, the same 12 every fleet on the map
+// always has) and whatever formation each side actually has set (the
+// info panel's own formation buttons) -- and jumps straight into combat
+// with it via deployMode 1 ("battle formation", see newBattle in
+// turnEngine.js), skipping manual deployment entirely: there's no
+// meaningful "place your own squadrons by hand" step here, since the
+// fleets' formations are already a real, already-visible thing on the
+// star map, not a fresh choice made at battle time.
+//
+// ctrlMode is fixed at 3 (spectate, AI vs AI) -- the star map has no
+// concept yet of "which faction is the player", so there's no side to
+// hand human control to. Both Blue/Red control-mode-1/2 keyboard+click
+// controls and Step/Auto stay fully available regardless -- this is a
+// scope choice (avoid inventing a player-identity concept that doesn't
+// exist anywhere else on the map yet), not a technical limitation.
+function startMapBattle(factionA, factionB) {
+  BattleState.scen = {
+    t: "Star Map Engagement",
+    n: `${FACTIONS[factionA].label} (${FLEET_FORMATIONS[factionA]}) vs ${FACTIONS[factionB].label} (${FLEET_FORMATIONS[factionB]})`,
+    a: FLEET_FORMATIONS[factionA], b: FLEET_FORMATIONS[factionB],
+  };
+  BattleState.ctrlMode = 3;
+  BattleState.SIZE = SHIPS_PER_FACTION;
+  BattleState.moveMode = 0;
+  BattleState.deployMode = 1;
+  document.getElementById("btnStep").style.display = "";
+  document.getElementById("btnAuto").style.display = "";
+  topbar.style.display = "none";
+  hint.style.display = "none";
+  battleControls.style.display = "none";
+  mapArea.style.display = "none";
+  battleArea.style.display = "block";
+  newBattle(BattleState);
+}
+// Leaves the battle and returns to wherever the star map already was
+// (render() redraws from the existing `path`/selectedFleet state, both
+// untouched by any of this -- a battle's outcome doesn't yet feed back
+// into the fleets' real positions/rosters; see the note in this
+// integration's commit message for that follow-up).
+function exitMapBattle() {
+  battleOverlay.style.display = "none";
+  if (BattleState.autoTimer) { clearInterval(BattleState.autoTimer); BattleState.autoTimer = null; }
+  BattleState.G = null; BattleState.act = null; BattleState.setup = null; BattleState.setupQueue = [];
+  battleArea.style.display = "none";
+  topbar.style.display = "flex";
+  mapArea.style.display = "inline-block";
+  render();
+}
 
 // Navigation stack: [{level:"universe"}, {level:"system",systemId}]. The
 // System map is the merged Star+Body view -- there's no separate "body"
@@ -430,16 +525,6 @@ function warpedGridLines(wells) {
   return segments; // flat pairs of [x,z]; consecutive pairs are one line segment
 }
 
-function closeEnoughForBattle(fleets) {
-  for (let i = 0; i < fleets.length; i++) {
-    for (let j = i + 1; j < fleets.length; j++) {
-      if (fleets[i].faction === fleets[j].faction) continue;
-      if (Math.hypot(fleets[i].x - fleets[j].x, fleets[i].y - fleets[j].y) <= BATTLE_PROXIMITY_PX) return true;
-    }
-  }
-  return false;
-}
-
 // --- 3D path (primary) ---------------------------------------------------
 
 let scene3d = null;
@@ -468,7 +553,7 @@ function renderSystem3D(entry, data) {
 
   const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
   const ships = placeShips(layout);
-  const battleReady = closeEnoughForBattle(ships);
+  const battlePair = nearbyBattlePair(ships);
 
   scene.rebuild(({ addBody, addRing, addShip, addAsteroidBelt, addSpacetimeGrid }) => {
     addSpacetimeGrid({ segments: warpedGridLines(gravityWells(layout)) });
@@ -545,8 +630,8 @@ function renderSystem3D(entry, data) {
     renderInfoPanel();
   };
 
-  battleControls.style.display = battleReady ? "flex" : "none";
-  battleBtn.onclick = () => { window.location.href = "battle.html"; };
+  battleControls.style.display = battlePair ? "flex" : "none";
+  battleBtn.onclick = battlePair ? () => startMapBattle(battlePair[0], battlePair[1]) : null;
 
   renderInfoPanel();
   renderBreadcrumb();
@@ -616,7 +701,7 @@ function renderSystem2D(entry, data) {
 
   const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
   const ships = placeShips(layout);
-  const battleReady = closeEnoughForBattle(ships);
+  const battlePair = nearbyBattlePair(ships);
 
   // Only a floor, no ceiling -- a real body's on-screen size grows freely
   // with zoom, same as the 3D scene's actual spheres do (there's nothing
@@ -818,8 +903,8 @@ function renderSystem2D(entry, data) {
     render();
   };
 
-  battleControls.style.display = battleReady ? "flex" : "none";
-  battleBtn.onclick = () => { window.location.href = "battle.html"; };
+  battleControls.style.display = battlePair ? "flex" : "none";
+  battleBtn.onclick = battlePair ? () => startMapBattle(battlePair[0], battlePair[1]) : null;
 
   renderInfoPanel();
   renderBreadcrumb();

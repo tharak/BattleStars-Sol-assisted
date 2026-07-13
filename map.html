@@ -54,8 +54,11 @@
   fleet near their home planet; click a fleet to select it, then click a destination to move it, or
   click the same fleet again to deselect -- the panel also shows its formation while selected, with
   buttons to change it on the spot. Move two different factions' fleets close enough together and a
-  Battle button appears, handing off to the existing
-  <a href="battle.html">battle rules prototype</a>.</p>
+  Battle button appears, dropping straight into a real tactical battle between those two fleets, right
+  here (their actual formations, no navigating away) -- spectated, since the map doesn't have a single
+  "you" yet. The same rules engine also runs standalone as a
+  <a href="battle.html">battle rules test bench</a>, for trying scenarios/fleet sizes/control modes
+  this view doesn't expose.</p>
 
   <div id="topbar">
     <button id="zoomOut">◀ Zoom Out</button>
@@ -68,7 +71,7 @@
   </div>
 
   <div id="mapArea">
-    <div id="mapwrap"><canvas id="cv"></canvas></div>
+    <div id="mapwrap"><canvas id="starmapCv"></canvas></div>
     <div id="mapwrap3d" style="display:none"><canvas id="cv3d"></canvas></div>
     <div id="infoPanel">
       <div id="infoEmpty" class="empty">Click a body or fleet for details.</div>
@@ -83,7 +86,78 @@
       </div>
     </div>
   </div>
+
+  <!-- The tactical battle, reusing battle/*.js unchanged (same element ids
+       it already expects) -- shown in place of #mapArea once two fleets are
+       close enough and Battle is clicked, no navigation to battle.html.
+       There's no scenario-picker menu here: map/main.js constructs
+       State.scen straight from the two real colliding fleets' formations
+       and jumps directly into "battle formation" deployment. -->
+  <div id="battleArea" style="display:none">
+    <div class="cols">
+      <div id="boardbox"><canvas id="cv" width="920" height="620"></canvas></div>
+      <div id="side">
+        <div class="panel" id="status"></div>
+        <div class="panel">
+          <div id="actinfo" style="min-height:40px"></div>
+          <div id="controls">
+            <button id="btnL">&#10226; Left</button>
+            <button id="btnF">&#8593; Forward</button>
+            <button id="btnR">&#10227; Right</button>
+            <button id="btnB" title="1 hex astern, keeps facing — costs all 3 MP">&#8595; Back (3 MP)</button>
+            <button id="btnFire" class="danger">Fire</button>
+            <button id="btnEnd" class="primary">End activation</button>
+          </div>
+          <div id="setupControls" style="display:none;flex-wrap:wrap;gap:6px">
+            <button id="btnSetupL">&#10226; Turn</button>
+            <button id="btnSetupR">&#10227; Turn</button>
+            <button id="btnSetupFlag">&#9733; Set flagship</button>
+            <button id="btnSetupRemove" class="danger">Remove</button>
+            <button id="btnSetupConfirm" class="primary">Confirm deployment</button>
+          </div>
+          <div class="kbd" id="kbdHint"><kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>W</kbd> forward ·
+            <kbd>S</kbd> back · <kbd>F</kbd> fire mode · <kbd>Space</kbd> end · click a
+            unit to select / a highlighted enemy to shoot</div>
+        </div>
+        <div class="panel"><div id="log"></div></div>
+        <div class="panel" style="display:flex;gap:6px;flex-wrap:wrap">
+          <button id="btnMenu">◀ Back to map</button>
+          <button id="btnRestart">Restart</button>
+          <button id="btnStep" style="display:none">Step</button>
+          <button id="btnAuto" style="display:none">Auto ▶</button>
+        </div>
+        <details class="panel"><summary>Rules crib sheet</summary>
+          <table><tr><th>Fire into target's…</th><th>Hit on</th><th>Critical supply</th></tr>
+            <tr><td>Front arc</td><td>5+</td><td>6</td></tr>
+            <tr><td>Flank arc</td><td>4+</td><td>5+</td></tr>
+            <tr><td>Rear arc</td><td>3+</td><td>4+</td></tr></table>
+          <div style="font-size:12.5px;color:var(--dim)">
+          Dice = Strength (Shaken: half, round up) · range 3 · fire only into your own
+          front arc · LOS blocked by any squadron.<br>
+          Move: 3 MP; 1/hex forward, 1/60° turn, or all 3 to back up one hex (facing
+          kept). In command (≤4 of flagship): move <b>and</b> fire; outside: move
+          <b>or</b> fire.<br>
+          Morale (d6 ≥ 4) on: taking losses · friend routs/dies within 2 · flagship lost.
+          Mods: +1 steady friend adjacent, +1 in command, −1 hit from flank/rear, −1 low
+          <em>or</em> critical supply, −1 flagship lost. Fail: Steady→Shaken→Routed.<br>
+          Supply (v0.2): <b>low</b> = −1 morale only · <b>critical</b> = −1 morale and the
+          worse to-hit column.<br>
+          Fleet breaks at more than half destroyed/fled (3 of 5 · 5 of 9 · 7 of 12).
+          Draw at turn 15.</div>
+        </details>
+      </div>
+    </div>
+  </div>
 </div>
+
+<div id="overlay"><div class="card">
+  <h1 id="ovTitle"></h1><p id="ovBody"></p>
+  <p id="ovResult" style="font-family:ui-monospace,monospace;font-size:12.5px;color:var(--dim)"></p>
+  <button id="ovCopy">Copy result line</button>
+  <button id="ovAgain" class="primary">Play again</button>
+  <button id="ovMenu">◀ Back to map</button>
+</div></div>
+
 <script type="module" src="map/main.js"></script>
 </body>
 </html>
