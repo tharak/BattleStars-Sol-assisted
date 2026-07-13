@@ -200,14 +200,13 @@ const BATTLE_PROXIMITY_PX = 40;
 const BELT_PARTICLE_COUNT = 1200;
 const BELT_HEIGHT_PX = 5;
 
-// The "rubber sheet" spacetime grid drawn across the System view (see
-// addSpacetimeGrid in scene3d.js) -- world-unit cell size and how far past
-// the outermost body (Neptune, at ORBIT_MAX_PX) it extends, shared by the
-// 3D and 2D paths so both cover the same area at the same density. 20px
-// cells (rather than the wider 30px first tried) so a gravity well's dip,
-// whose falloff radius can be as tight as ~25 world units for a small
-// planet, still gets a few grid points across it instead of being too
-// coarse to read as a curve.
+// The "rubber sheet" spacetime grid drawn across the System view -- world-
+// unit cell size and how far past the outermost body (Neptune, at
+// ORBIT_MAX_PX) it extends, shared by the 3D and 2D paths so both cover
+// the same area at the same density. 20px cells (rather than the wider
+// 30px first tried) so a gravity well's pull, whose falloff radius can be
+// as tight as ~20 world units for a small planet, still gets a few grid
+// points across it instead of being too coarse to read as a curve.
 const GRID_CELL_PX = 20;
 const GRID_EXTENT_PX = ORBIT_MAX_PX + 80;
 const GRID_LINE_COLOR = "#39ff14"; // neon green -- matches scene3d.js's GRID_COLOR
@@ -247,11 +246,10 @@ function beltScreenPoints(layout, belt) {
   });
 }
 
-// The bodies that dent the 3D spacetime grid (see addSpacetimeGrid in
-// scene3d.js) -- the Sun and planets, whose already-computed rendered
-// radius (rPx) stands in for "how heavy this looks". Moons are too small
-// to register at this scale and the belt isn't a single point mass, so
-// neither gets a well.
+// The bodies that warp the spacetime grid below -- the Sun and planets,
+// whose already-computed rendered radius (rPx) stands in for "how heavy
+// this looks". Moons are too small to register at this scale and the
+// belt isn't a single point mass, so neither gets a well.
 function gravityWells(layout) {
   const wells = [];
   if (layout.center) wells.push({ x: 0, z: 0, rPx: layout.center.rPx });
@@ -259,6 +257,59 @@ function gravityWells(layout) {
     if (p.kind !== "belt") wells.push({ x: p.x, z: p.y, rPx: p.rPx });
   }
   return wells;
+}
+
+// The "rubber sheet" spacetime grid, flattened: each vertex gets pulled
+// toward every nearby well (in the flat XZ/XY plane, not displaced in
+// height) so cells visibly compress and converge near a mass -- the
+// "space itself curves near mass" picture, as opposed to the "ball
+// sitting in a fabric dimple" one a height-displaced grid gives. Being
+// genuinely flat (no third axis), this same math draws correctly from
+// directly overhead and is shared verbatim by the 3D scene and the 2D
+// fallback -- earlier, the 2D path could only ever show an undeformed
+// grid since it had no depth axis to dip into; now there's nothing 3D-
+// only left about this effect.
+//
+// Per well: falloff is how far the pull reaches (tightly, ~2x the body's
+// own radius, so it reads as a well around that one body rather than a
+// citywide tilt) and strength is how hard it pulls at the center --
+// exaggerated well past real proportion for legibility, the same call
+// already made for planet/moon sizes elsewhere in this view. Each pull is
+// capped at 85% of the vertex's own distance to that well so a vertex can
+// never overshoot past the mass and fold the grid through itself.
+function warpedGridLines(wells) {
+  const half = GRID_EXTENT_PX;
+  const step = GRID_CELL_PX;
+  const divisions = Math.round((half * 2) / step);
+  const warp = (x, z) => {
+    let wx = 0, wz = 0;
+    for (const w of wells) {
+      const dx = w.x - x, dz = w.z - z;
+      const d = Math.hypot(dx, dz);
+      if (d < 1e-6) continue;
+      const falloff = Math.max(w.rPx * 2, 20);
+      const strength = w.rPx * 9;
+      const pull = Math.min(strength / (1 + (d * d) / (falloff * falloff)), d * 0.85);
+      wx += (dx / d) * pull;
+      wz += (dz / d) * pull;
+    }
+    return [x + wx, z + wz];
+  };
+  const rows = [];
+  for (let i = 0; i <= divisions; i++) {
+    const z = -half + i * step;
+    const row = [];
+    for (let j = 0; j <= divisions; j++) row.push(warp(-half + j * step, z));
+    rows.push(row);
+  }
+  const segments = [];
+  for (let i = 0; i <= divisions; i++) {
+    for (let j = 0; j <= divisions; j++) {
+      if (j < divisions) segments.push(rows[i][j], rows[i][j + 1]);
+      if (i < divisions) segments.push(rows[i][j], rows[i + 1][j]);
+    }
+  }
+  return segments; // flat pairs of [x,z]; consecutive pairs are one line segment
 }
 
 function closeEnoughForBattle(fleets) {
@@ -306,11 +357,7 @@ function renderSystem3D(entry, data) {
     : null;
 
   scene.rebuild(({ addBody, addRing, addFleet, addAsteroidBelt, addSpacetimeGrid, addHexOverlay }) => {
-    addSpacetimeGrid({
-      size: GRID_EXTENT_PX * 2,
-      divisions: Math.round((GRID_EXTENT_PX * 2) / GRID_CELL_PX),
-      wells: gravityWells(layout),
-    });
+    addSpacetimeGrid({ segments: warpedGridLines(gravityWells(layout)) });
     if (layout.center) {
       addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, label: layout.center.label, data: layout.center, emissive: true });
     }
@@ -472,21 +519,16 @@ function renderSystem2D(entry, data) {
   ctx.save();
   ctx.translate(cx, cy);
 
-  // A flat reference grid -- the 2D fallback has no depth axis to show the
-  // 3D scene's gravity-well dips (see addSpacetimeGrid in scene3d.js), so
-  // this is just the same-spaced lines, undipped, echoing the battle
-  // board's own hex grid.
+  // The spacetime grid -- see warpedGridLines above. Being a flat XZ/XY
+  // warp rather than a height dip, the exact same math the 3D scene uses
+  // draws correctly here too now.
+  const gridSegments = warpedGridLines(gravityWells(layout));
   ctx.strokeStyle = GRID_LINE_COLOR;
   ctx.lineWidth = 1.5;
   ctx.globalAlpha = 0.6;
-  for (let x = -GRID_EXTENT_PX; x <= GRID_EXTENT_PX; x += GRID_CELL_PX) {
-    const [x1, y1] = worldToScreen(camera2d, x, -GRID_EXTENT_PX);
-    const [x2, y2] = worldToScreen(camera2d, x, GRID_EXTENT_PX);
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-  }
-  for (let y = -GRID_EXTENT_PX; y <= GRID_EXTENT_PX; y += GRID_CELL_PX) {
-    const [x1, y1] = worldToScreen(camera2d, -GRID_EXTENT_PX, y);
-    const [x2, y2] = worldToScreen(camera2d, GRID_EXTENT_PX, y);
+  for (let i = 0; i < gridSegments.length; i += 2) {
+    const [x1, y1] = worldToScreen(camera2d, gridSegments[i][0], gridSegments[i][1]);
+    const [x2, y2] = worldToScreen(camera2d, gridSegments[i + 1][0], gridSegments[i + 1][1]);
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
   }
   ctx.globalAlpha = 1;

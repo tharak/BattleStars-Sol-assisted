@@ -320,51 +320,21 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
     pickables.push(hit);
   }
 
-  // The "rubber sheet" spacetime-curvature grid: a flat reference grid
-  // across the ecliptic plane that dips toward -Y near each massive body
-  // (`wells`, [{x,z,rPx}]), Sun deepest -- the standard classroom gravity-
-  // well picture. Not a real general-relativity computation (there isn't
-  // one that maps cleanly onto a handful of orbit-plane bodies at this
-  // scale); `rPx`, the body's already-computed rendered radius, just
-  // stands in for "how much this body should dent the sheet" so bigger
-  // reads as heavier, same as the eye already expects from its size.
-  // Doubles as texture that keeps the scene from reading as a flat black
-  // void, same job battle's hex grid does for its own board.
-  function addSpacetimeGrid({ size, divisions, wells }) {
-    const half = size / 2;
-    const step = size / divisions;
-    // falloff (how far the dip reaches) scales with the body's own radius
-    // but tightly, and strength (how deep) is deliberately way past any
-    // real proportion -- this is a legibility exaggeration, not a
-    // to-scale one, the same call already made for planet/moon sizes
-    // elsewhere in this view. Un-exaggerated, the dip was too shallow and
-    // too wide to read as curvature at all.
-    const depthAt = (x, z) => {
-      let y = 0;
-      for (const w of wells) {
-        const dx = x - w.x, dz = z - w.z;
-        const falloff = Math.max(w.rPx * 2, 20);
-        const strength = w.rPx * 9;
-        y -= strength / (1 + (dx * dx + dz * dz) / (falloff * falloff));
-      }
-      return y;
-    };
-    const rows = [];
-    for (let i = 0; i <= divisions; i++) {
-      const z = -half + i * step;
-      const row = [];
-      for (let j = 0; j <= divisions; j++) {
-        const x = -half + j * step;
-        row.push(new THREE.Vector3(x, depthAt(x, z), z));
-      }
-      rows.push(row);
-    }
+  // The "rubber sheet" spacetime grid: a flat reference grid across the
+  // ecliptic plane whose cells compress and converge near each massive
+  // body -- the "space itself curves near mass" picture -- rather than
+  // dipping in height. The warp math itself lives in map/main.js's
+  // warpedGridLines (shared verbatim with the 2D fallback, since it's a
+  // flat XZ deformation with nothing 3D-specific about it); this function
+  // only turns the already-warped `segments` (flat pairs of [x,z], one
+  // line segment per consecutive pair) into geometry. Doubles as texture
+  // that keeps the scene from reading as a flat black void, same job
+  // battle's hex grid does for its own board.
+  function addSpacetimeGrid({ segments }) {
     const flat = [];
-    for (let i = 0; i <= divisions; i++) {
-      for (let j = 0; j <= divisions; j++) {
-        if (j < divisions) { flat.push(...rows[i][j], ...rows[i][j + 1]); }
-        if (i < divisions) { flat.push(...rows[i][j], ...rows[i + 1][j]); }
-      }
+    for (let i = 0; i < segments.length; i += 2) {
+      const [x1, z1] = segments[i], [x2, z2] = segments[i + 1];
+      flat.push(x1, 0, z1, x2, 0, z2);
     }
     const geo = new LineSegmentsGeometry();
     geo.setPositions(flat);
