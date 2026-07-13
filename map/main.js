@@ -200,14 +200,11 @@ const BATTLE_PROXIMITY_PX = 40;
 const BELT_PARTICLE_COUNT = 1200;
 const BELT_HEIGHT_PX = 5;
 
-// The "rubber sheet" spacetime grid drawn across the System view -- world-
-// unit cell size and how far past the outermost body (Neptune, at
-// ORBIT_MAX_PX) it extends, shared by the 3D and 2D paths so both cover
-// the same area at the same density. 20px cells (rather than the wider
-// 30px first tried) so a gravity well's pull, whose falloff radius can be
-// as tight as ~20 world units for a small planet, still gets a few grid
-// points across it instead of being too coarse to read as a curve.
-const GRID_CELL_PX = 20;
+// The "rubber sheet" spacetime grid drawn across the System view -- hex
+// size and how far past the outermost body (Neptune, at ORBIT_MAX_PX) it
+// extends, shared by the 3D and 2D paths so both cover the same area at
+// the same density.
+const GRID_HEX_SIZE_PX = 20;
 const GRID_EXTENT_PX = ORBIT_MAX_PX + 80;
 const GRID_LINE_COLOR = "#39ff14"; // neon green -- matches scene3d.js's GRID_COLOR
 
@@ -277,10 +274,15 @@ function gravityWells(layout) {
 // already made for planet/moon sizes elsewhere in this view. Each pull is
 // capped at 85% of the vertex's own distance to that well so a vertex can
 // never overshoot past the mass and fold the grid through itself.
+//
+// Tiled with pointy-top hexagons (GRID_HEX_SIZE_PX = center-to-corner
+// radius) rather than a square lattice -- each hex's 6 corners get
+// individually warped, same as a square grid's vertices did, just laid
+// out on a honeycomb instead of rows/columns. An interior edge is shared
+// by two hexes and so gets emitted (and drawn) twice; harmless for a
+// decorative line overlay like this, and simpler than deduping a shared-
+// vertex mesh.
 function warpedGridLines(wells) {
-  const half = GRID_EXTENT_PX;
-  const step = GRID_CELL_PX;
-  const divisions = Math.round((half * 2) / step);
   const warp = (x, z) => {
     let wx = 0, wz = 0;
     for (const w of wells) {
@@ -302,18 +304,24 @@ function warpedGridLines(wells) {
     }
     return [x + wx, z + wz];
   };
-  const rows = [];
-  for (let i = 0; i <= divisions; i++) {
-    const z = -half + i * step;
-    const row = [];
-    for (let j = 0; j <= divisions; j++) row.push(warp(-half + j * step, z));
-    rows.push(row);
-  }
+
+  const size = GRID_HEX_SIZE_PX;
+  const half = GRID_EXTENT_PX;
+  const rMax = Math.ceil(half / (size * 1.5)) + 1;
+  const qSpan = half / (size * Math.sqrt(3));
   const segments = [];
-  for (let i = 0; i <= divisions; i++) {
-    for (let j = 0; j <= divisions; j++) {
-      if (j < divisions) segments.push(rows[i][j], rows[i][j + 1]);
-      if (i < divisions) segments.push(rows[i][j], rows[i + 1][j]);
+  for (let r = -rMax; r <= rMax; r++) {
+    const cz = size * 1.5 * r;
+    const qMin = Math.floor(-qSpan - r / 2) - 1;
+    const qMax = Math.ceil(qSpan - r / 2) + 1;
+    for (let q = qMin; q <= qMax; q++) {
+      const cx = size * Math.sqrt(3) * (q + r / 2);
+      const corners = [];
+      for (let k = 0; k < 6; k++) {
+        const a = (60 * k - 90) * Math.PI / 180;
+        corners.push(warp(cx + size * Math.cos(a), cz + size * Math.sin(a)));
+      }
+      for (let k = 0; k < 6; k++) segments.push(corners[k], corners[(k + 1) % 6]);
     }
   }
   return segments; // flat pairs of [x,z]; consecutive pairs are one line segment
