@@ -1,4 +1,3 @@
-import { makeHexGrid } from "./hexgrid.js";
 import {
   layoutOrbitalBoard, drawOrbitalBoard, hitTest, pixelToKm,
   layoutSystemWithMoons, worldToScreen, screenToWorld,
@@ -6,13 +5,13 @@ import {
 import { createSystemScene } from "./scene3d.js";
 import { AU_KM, beltParticles } from "./orbits.js";
 import {
-  universeLevel, systemLevel, formationBoard,
+  universeLevel, systemLevel,
   FLEET_FORMATIONS, FORMATION_NAMES, FACTIONS, SHIPS_PER_FACTION,
   FLEET_POSITIONS, initFleetPositions, moveFleet,
 } from "./levels.js";
-import { hexDist, DIR_ANGLE, facingArrowPoints } from "../battle/hexmath.js";
+import { DIR_ANGLE } from "../battle/hexmath.js";
 import { formationLayout } from "../battle/formations.js";
-import { ACCENT, BOARD_TINT } from "../battle/colors.js";
+import { BOARD_TINT } from "../battle/colors.js";
 
 const capitalize = s => s[0].toUpperCase() + s.slice(1);
 
@@ -23,9 +22,6 @@ const mapwrap3d = document.getElementById("mapwrap3d");
 const breadcrumb = document.getElementById("breadcrumb");
 const zoomOutBtn = document.getElementById("zoomOut");
 const hint = document.getElementById("hint");
-const formationControls = document.getElementById("formationControls");
-const formationButtons = document.getElementById("formationButtons");
-const saveFormationBtn = document.getElementById("saveFormation");
 const battleControls = document.getElementById("battleControls");
 const battleBtn = document.getElementById("battleBtn");
 const infoPanel = document.getElementById("infoPanel");
@@ -34,14 +30,17 @@ const infoBody = document.getElementById("infoBody");
 const infoName = document.getElementById("infoName");
 const infoDetail = document.getElementById("infoDetail");
 const infoControls = document.getElementById("infoControls");
-const infoFormationBtn = document.getElementById("infoFormationBtn");
+const infoFormationButtons = document.getElementById("infoFormationButtons");
 const infoDeselectBtn = document.getElementById("infoDeselectBtn");
 
-// Navigation stack: [{level:"universe"}, {level:"system",systemId},
-// {level:"formation",faction,formationName}]. The System map is the merged
-// Star+Body view -- there's no separate "body" level anymore; zooming the
-// camera in on a planet (wheel / -/= keys, or clicking it) is what reveals
-// its moons, instead of navigating to a new screen.
+// Navigation stack: [{level:"universe"}, {level:"system",systemId}]. The
+// System map is the merged Star+Body view -- there's no separate "body"
+// level anymore; zooming the camera in on a planet (wheel / -/= keys, or
+// clicking it) is what reveals its moons, instead of navigating to a new
+// screen. Formation Setup used to be a third level here (a separate hex-
+// board screen) but isn't anymore -- picking a fleet's formation now
+// happens inline in the System level's info panel (see
+// renderFormationButtons), with no navigation at all.
 let path = [
   { level: "universe", label: "Universe" },
   { level: "system", systemId: "sol", label: "Sol" },
@@ -72,13 +71,33 @@ function infoFor(hit) {
   if (hit.kind === "planet") return { name: hit.label, detail: "Planet." };
   return null;
 }
+// Formation choice buttons are built fresh each call (not once at init)
+// since which one should show as "active" (the current FLEET_FORMATIONS
+// entry) changes with selectedFleet -- same reason renderFormationButtons'
+// predecessor (the old separate Formation Setup screen) rebuilt its own
+// button row on every render rather than once.
+function renderFormationButtons(faction) {
+  infoFormationButtons.innerHTML = "";
+  for (const name of FORMATION_NAMES) {
+    const btn = document.createElement("button");
+    btn.textContent = capitalize(name);
+    if (name === FLEET_FORMATIONS[faction]) btn.className = "primary";
+    btn.onclick = () => {
+      FLEET_FORMATIONS[faction] = name;
+      renderInfoPanel();
+      render();
+    };
+    infoFormationButtons.appendChild(btn);
+  }
+}
 function renderInfoPanel() {
   if (selectedFleet) {
     infoEmpty.style.display = "none";
     infoBody.style.display = "block";
     infoName.textContent = `${FACTIONS[selectedFleet].label} Fleet`;
-    infoDetail.textContent = `${SHIPS_PER_FACTION} ships — ${FLEET_FORMATIONS[selectedFleet]} formation. Click a destination to move it.`;
+    infoDetail.textContent = `${SHIPS_PER_FACTION} ships. Click a destination to move it.`;
     infoControls.style.display = "flex";
+    renderFormationButtons(selectedFleet);
     return;
   }
   if (lastClickedInfo) {
@@ -92,12 +111,6 @@ function renderInfoPanel() {
   infoEmpty.style.display = "block";
   infoBody.style.display = "none";
 }
-infoFormationBtn.onclick = () => {
-  const faction = selectedFleet;
-  if (!faction) return;
-  selectedFleet = null;
-  zoomIn({ level: "formation", faction, formationName: FLEET_FORMATIONS[faction] }, `${FACTIONS[faction].label} Formation`);
-};
 infoDeselectBtn.onclick = () => {
   selectedFleet = null;
   setHint("");
@@ -106,9 +119,7 @@ infoDeselectBtn.onclick = () => {
 };
 
 function levelData(entry) {
-  if (entry.level === "universe") return universeLevel();
-  if (entry.level === "system") return systemLevel(entry.systemId);
-  return formationBoard(entry.faction, entry.formationName);
+  return entry.level === "system" ? systemLevel(entry.systemId) : universeLevel();
 }
 
 const FILL = {
@@ -222,7 +233,6 @@ function renderUniverse(entry, data) {
   canvas.style.cursor = "";
 
   battleControls.style.display = "none";
-  renderFormationControls(entry);
   renderBreadcrumb();
 }
 
@@ -496,14 +506,13 @@ function renderSystem3D(entry, data) {
     if (hit?.kind === "ship") {
       if (selectedFleet === hit.faction) {
         selectedFleet = null;
-        zoomIn(
-          { level: "formation", faction: hit.faction, formationName: FLEET_FORMATIONS[hit.faction] },
-          `${FACTIONS[hit.faction].label} Formation`,
-        );
+        setHint("");
+        renderInfoPanel();
+        render();
         return;
       }
       selectedFleet = hit.faction;
-      setHint(`${FACTIONS[hit.faction].label} fleet selected — click a destination to move it, or click it again to set formation.`);
+      setHint(`${FACTIONS[hit.faction].label} fleet selected — click a destination to move it, or click it again to deselect.`);
       renderInfoPanel();
       render();
       return;
@@ -540,7 +549,6 @@ function renderSystem3D(entry, data) {
   battleBtn.onclick = () => { window.location.href = "battle.html"; };
 
   renderInfoPanel();
-  renderFormationControls(entry);
   renderBreadcrumb();
 }
 
@@ -745,14 +753,13 @@ function renderSystem2D(entry, data) {
     if (hitShip) {
       if (selectedFleet === hitShip.faction) {
         selectedFleet = null;
-        zoomIn(
-          { level: "formation", faction: hitShip.faction, formationName: FLEET_FORMATIONS[hitShip.faction] },
-          `${FACTIONS[hitShip.faction].label} Formation`,
-        );
+        setHint("");
+        renderInfoPanel();
+        render();
         return;
       }
       selectedFleet = hitShip.faction;
-      setHint(`${FACTIONS[hitShip.faction].label} fleet selected — click a destination to move it, or click it again to set formation.`);
+      setHint(`${FACTIONS[hitShip.faction].label} fleet selected — click a destination to move it, or click it again to deselect.`);
       renderInfoPanel();
       render();
       return;
@@ -815,7 +822,6 @@ function renderSystem2D(entry, data) {
   battleBtn.onclick = () => { window.location.href = "battle.html"; };
 
   renderInfoPanel();
-  renderFormationControls(entry);
   renderBreadcrumb();
 }
 
@@ -842,103 +848,17 @@ function renderSystem(entry, data) {
   renderSystem2D(entry, data);
 }
 
-// ---------------------------------------------------------------------
-// Formation Setup: unchanged, still a small fixed hex board (its ship
-// layouts are hex-native -- see battle/formations.js).
-// ---------------------------------------------------------------------
-
-function renderHex(entry, data) {
-  mapwrap3d.style.display = "none";
-  mapwrap.style.display = "inline-block";
-  const inBounds = data.center && data.radius != null
-    ? (c, r) => hexDist(data.center, [c, r]) <= data.radius - 1
-    : undefined;
-  const grid = makeHexGrid(canvas, { cols: data.cols, rows: data.rows, hs: data.hs, ...(inBounds && { inBounds }) });
-  const cellsAt = (c, r) => data.cells.filter(cell => hexDist(cell.pos, [c, r]) <= (cell.size || 0));
-  const cellAt = (c, r) => cellsAt(c, r)[0];
-
-  grid.ctx.fillStyle = BOARD_TINT.bg;
-  grid.ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  for (let r = 0; r < data.rows; r++) for (let c = 0; c < data.cols; c++) {
-    if (!grid.inBounds(c, r)) continue;
-    const [x, y] = grid.hexCenter(c, r);
-    const cell = cellAt(c, r);
-    const colors = cell && colorsFor(cell);
-    grid.hexPath(x, y, grid.hs - 1.5);
-    grid.ctx.fillStyle = colors ? colors.fill : "#131826";
-    grid.ctx.fill();
-    grid.ctx.strokeStyle = colors ? colors.stroke : "#2a3350";
-    grid.ctx.lineWidth = colors ? 2 : 1;
-    grid.ctx.stroke();
-    if (cell?.kind === "ownship") {
-      const [tip, base1, base2] = facingArrowPoints(x, y, grid.hs, DIR_ANGLE[cell.facing]);
-      grid.ctx.beginPath();
-      grid.ctx.moveTo(...tip); grid.ctx.lineTo(...base1); grid.ctx.lineTo(...base2);
-      grid.ctx.closePath();
-      grid.ctx.fillStyle = cell.isFlag ? ACCENT.flagshipArrow : "#d7deef";
-      grid.ctx.fill();
-    }
-  }
-  for (const cell of data.cells) {
-    const [x, y] = grid.hexCenter(cell.pos[0], cell.pos[1]);
-    grid.ctx.font = "bold 11px system-ui";
-    grid.ctx.textAlign = "center";
-    grid.ctx.fillStyle = cell.kind === "ownship" ? ACCENT.labelText : "#d7deef";
-    grid.ctx.fillText(cell.label, x, y + 4);
-  }
-
-  canvas.onclick = ev => {
-    const rect = canvas.getBoundingClientRect();
-    const h = grid.pixelToHex(ev.clientX - rect.left, ev.clientY - rect.top);
-    if (!h) return;
-    const cell = cellAt(h[0], h[1]);
-    if (!cell) { setHint("Empty space — nothing here."); return; }
-    setHint(cell.isFlag ? "Flagship" : `Ship ${cell.label}`);
-  };
-  canvas.onwheel = null;
-  canvas.onmousedown = null;
-  canvas.oncontextmenu = null;
-  canvas.style.cursor = "";
-
-  battleControls.style.display = "none";
-  renderFormationControls(entry);
-  renderBreadcrumb();
-}
-
 function render() {
   const entry = path[path.length - 1];
   const data = levelData(entry);
   // The info panel only has anything to show at the System level (bodies
-  // and ships) -- Universe/Formation Setup reuse the same #mapwrap canvas
-  // underneath it, so it has to be hidden explicitly rather than just
-  // left empty, or it'd sit there showing stale System-level info over an
-  // unrelated screen.
+  // and ships) -- Universe reuses the same #mapwrap canvas underneath it,
+  // so it has to be hidden explicitly rather than just left empty, or
+  // it'd sit there showing stale System-level info over an unrelated
+  // screen.
   infoPanel.style.display = entry.level === "system" ? "block" : "none";
-  if (entry.level === "formation") renderHex(entry, data);
-  else if (entry.level === "system") renderSystem(entry, data);
+  if (entry.level === "system") renderSystem(entry, data);
   else renderUniverse(entry, data);
-}
-
-// The Formation Setup screen's controls (pick a formation, save it) live
-// outside the canvas -- shown only while the top of the nav stack is a
-// "formation" level, hidden otherwise.
-function renderFormationControls(entry) {
-  const active = entry.level === "formation";
-  formationControls.style.display = active ? "flex" : "none";
-  if (!active) return;
-  formationButtons.innerHTML = "";
-  for (const name of FORMATION_NAMES) {
-    const btn = document.createElement("button");
-    btn.textContent = capitalize(name);
-    if (name === entry.formationName) btn.className = "primary";
-    btn.onclick = () => { entry.formationName = name; render(); };
-    formationButtons.appendChild(btn);
-  }
-  saveFormationBtn.onclick = () => {
-    FLEET_FORMATIONS[entry.faction] = entry.formationName;
-    zoomOut();
-  };
 }
 
 function zoomIn(enter, label) {

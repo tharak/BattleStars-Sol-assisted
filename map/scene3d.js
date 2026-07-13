@@ -1,8 +1,8 @@
 // The System map's 3D isometric-style view: a real WebGL scene (Three.js,
 // loaded via the importmap in map.html -- no local install, matching this
 // repo's zero-build-step setup) instead of the flat 2D canvas the rest of
-// the app uses. Universe/Formation/Battle stay on the 2D canvas (hexgrid.js
-// / orbitmap.js) -- this module is only ever used for the System level.
+// the app uses. Universe stays on the 2D canvas (orbitmap.js) -- this
+// module is only ever used for the System level.
 //
 // Positions/sizes come in as plain (x,z,radius) world units from the
 // caller (map/main.js reuses layoutSystemWithMoons's real-distance/real-
@@ -205,10 +205,9 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   // ships in a formation is its own individual token, hex-positioned (see
   // shipHexOffset in map/main.js), so this places exactly one. facingDeg
   // is the ship's real formation-assigned facing (battle/formations.js),
-  // the same convention Formation Setup's own preview uses -- applied via
-  // a quaternion rather than an Euler angle so there's no manual sign-
-  // guessing about which way "positive rotation" goes in this scene's
-  // particular axis convention.
+  // applied via a quaternion rather than an Euler angle so there's no
+  // manual sign-guessing about which way "positive rotation" goes in this
+  // scene's particular axis convention.
   function addShip({ x, z, colorHex, data, selected, facingDeg }) {
     const group = new THREE.Group();
     group.position.set(x, SHIP_HEIGHT_ABOVE_PLANE, z);

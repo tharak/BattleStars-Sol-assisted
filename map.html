@@ -20,9 +20,6 @@
   #breadcrumb{font-size:14px}
   #breadcrumb a{color:var(--blue)} #breadcrumb span{color:var(--gold)}
   #hint{color:var(--dim);min-height:1.2em;margin:6px 0}
-  #formationControls{align-items:center;gap:10px;background:var(--panel);
-    border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:0 0 10px}
-  #formationButtons{display:flex;gap:6px;flex-wrap:wrap}
   #battleControls{align-items:center;gap:10px;background:var(--panel);
     border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:0 0 10px}
   #mapwrap{overflow:auto;max-width:100%}
@@ -37,7 +34,10 @@
   #infoName{font-weight:bold;font-size:14px;margin-bottom:2px}
   #infoDetail{color:var(--dim)}
   #infoControls{display:none;flex-direction:column;gap:6px;margin-top:10px}
-  #infoControls button{width:100%}
+  #infoControls>button{width:100%}
+  #infoFormationLabel{font-size:12px;color:var(--dim);margin-top:2px}
+  #infoFormationButtons{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 2px}
+  #infoFormationButtons button{flex:1 0 auto;padding:4px 6px;font-size:12px}
 </style>
 </head>
 <body>
@@ -49,12 +49,12 @@
   drag to rotate, right-drag or arrow keys to pan, scroll (zooms toward the cursor) or
   <kbd>-</kbd>/<kbd>=</kbd> to zoom, click a planet to zoom in on its moons (invisible at a glance,
   same as in real life) or the Sun to reset the view. Click a breadcrumb (or Zoom Out / Esc) to leave a
-  screen. Nothing on the map carries a floating label -- click a body or a ship and its name (plus,
-  for a selected fleet, its formation and controls) shows in the panel at the top right instead. Three
-  factions (Blue, Green, Red) each start with a 12-ship fleet near their home planet; click a fleet to
-  select it, then click a destination to move it, or click the same fleet again to open Formation
-  Setup. Move two different factions' fleets close enough together and a Battle button
-  appears, handing off to the existing
+  screen. Nothing on the map carries a floating label -- click a body or a ship and its name shows in
+  the panel at the top right instead. Three factions (Blue, Green, Red) each start with a 12-ship
+  fleet near their home planet; click a fleet to select it, then click a destination to move it, or
+  click the same fleet again to deselect -- the panel also shows its formation while selected, with
+  buttons to change it on the spot. Move two different factions' fleets close enough together and a
+  Battle button appears, handing off to the existing
   <a href="battle.html">battle rules prototype</a>.</p>
 
   <div id="topbar">
@@ -62,11 +62,6 @@
     <div id="breadcrumb"></div>
   </div>
   <div id="hint"></div>
-  <div id="formationControls" style="display:none">
-    <b>Formation:</b>
-    <div id="formationButtons"></div>
-    <button id="saveFormation" class="primary">Save</button>
-  </div>
   <div id="battleControls" style="display:none">
     <b>Fleets are close enough to engage.</b>
     <button id="battleBtn" class="primary">⚔ Battle</button>
@@ -81,7 +76,8 @@
         <div id="infoName"></div>
         <div id="infoDetail"></div>
         <div id="infoControls">
-          <button id="infoFormationBtn">Set Formation</button>
+          <div id="infoFormationLabel">Formation</div>
+          <div id="infoFormationButtons"></div>
           <button id="infoDeselectBtn">Deselect</button>
         </div>
       </div>

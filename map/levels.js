@@ -4,29 +4,18 @@
 // Universe/System/Body are a real (to-scale, log-compressed for legibility)
 // orbital view: distance from parent, size, and angular position are
 // genuine -- not a stylized layout -- computed live at render time (see
-// map/orbits.js for the math, map/orbitmap.js for how it's drawn). Formation
-// Setup, just below, is unrelated and still a small fixed hex board (its
-// ship layouts are hex-native, not orbital -- see battle/formations.js).
+// map/orbits.js for the math, map/orbitmap.js for how it's drawn).
 //
 // This is still a test fixture in the sense that Sol is the only system in
 // the universe so far, and only "well-known" moons (the ones with a common
 // name) are modeled, not every rock ever catalogued.
 
-import { neighbor } from "../battle/hexmath.js";
-import { formationLayout } from "../battle/formations.js";
 export { FORMATION_NAMES } from "../battle/config.js";
 import {
   AU_KM, BODY_RADIUS_KM, MAJOR_MOON_RADIUS_KM, PARENT_GM_KM3S2,
   keplerPeriodDays, angleAtDeg, J2000_MS, hashAngleDeg,
   BELT_INNER_AU, BELT_OUTER_AU,
 } from "./orbits.js";
-
-// "Radius" as specified counts hex rings *including* the center ring, so
-// radius 1 = just the center hex, radius 2 = center + one ring = 7 hexes.
-// Only Formation Setup (still a hex board) needs this now.
-const rings = n => n - 1;
-const toRings = hexRadius => hexRadius + 1;
-const hsForRadius = ringRadius => Math.max(16, Math.round(216 / rings(ringRadius)));
 
 // ---------------------------------------------------------------------
 // Real solar-system data
@@ -313,33 +302,7 @@ export function moveFleet(faction, xKm, yKm) {
 }
 
 // Each faction's chosen formation, in memory only (resets on reload) --
-// set from the Formation Setup screen (main.js), read again once a battle
-// actually triggers so deployment isn't just random. "line" until chosen.
+// set directly from the System map's info panel (main.js), read again
+// once a battle actually triggers so deployment isn't just random. "line"
+// until chosen.
 export const FLEET_FORMATIONS = { blue: "line", green: "line", red: "line" };
-
-// Formation Setup is a hex board -- not the orbital view above, since
-// battle/formations.js's layouts (fwd/lat offsets from a 12-ship
-// formation, same math the actual Battle board uses) are already designed
-// not to self-overlap on a hex grid. Radius 9 comfortably fits every
-// formation's fwd (-4..4) / lat (-6..5) range.
-const FORMATION_BOARD_RINGS = toRings(9);
-// Same facing convention deployFormation (battle/formations.js) uses for
-// side 0: df===0 faces straight ahead, df>0/df<0 angle toward the flank.
-// There's no real "attacker" here (just one fleet previewed on its own),
-// so this is an arbitrary but fixed orientation, not tied to any faction.
-const FACING = { straight: 0, toPos: 5, toNeg: 1 };
-export function formationBoard(faction, formationName) {
-  const { u, flag } = formationLayout(formationName, SHIPS_PER_FACTION);
-  const hexRadius = rings(FORMATION_BOARD_RINGS);
-  const center = [hexRadius, hexRadius];
-  const cells = u.map(([fwd, lat, df], i) => ({
-    id: `ship${i}`, label: i === flag ? "★" : String(i + 1),
-    kind: "ownship", faction, isFlag: i === flag,
-    facing: df === 0 ? FACING.straight : (df > 0 ? FACING.toPos : FACING.toNeg),
-    pos: [center[0] + fwd, center[1] + lat],
-  }));
-  return {
-    cols: hexRadius * 2 + 1, rows: hexRadius * 2 + 1, center, radius: FORMATION_BOARD_RINGS,
-    hs: hsForRadius(FORMATION_BOARD_RINGS), cells,
-  };
-}

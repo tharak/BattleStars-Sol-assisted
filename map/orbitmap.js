@@ -1,9 +1,8 @@
-// The continuous-space counterpart to hexgrid.js's makeHexGrid -- lays out
-// a center body plus a list of real (distanceKm, radiusKm, orbit) bodies
-// into pixel space (log-compressed distance and size, see orbits.js, so
-// everything fits on screen at once with no panning), draws them, and
-// hit-tests clicks against them. Used for the Universe/System/Body maps;
-// Formation Setup and Battle stay hex-based and keep using hexgrid.js.
+// Lays out a center body plus a list of real (distanceKm, radiusKm,
+// orbit) bodies into pixel space (log-compressed distance and size, see
+// orbits.js, so everything fits on screen at once with no panning), draws
+// them, and hit-tests clicks against them. Used for the Universe/System/
+// Body maps; Battle stays hex-based (battle/hexmath.js), unrelated.
 
 import { angleAtDeg, makeDistanceScale, makeSizeScale, hashAngleDeg } from "./orbits.js";
 
