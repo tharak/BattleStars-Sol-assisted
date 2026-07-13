@@ -26,7 +26,6 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 // Plain THREE.Line/LineBasicMaterial can't actually get thicker than 1px in
 // WebGL -- gl.lineWidth is capped at 1 on effectively every modern browser/
 // GPU combination regardless of what's requested, a longstanding WebGL
@@ -47,7 +46,7 @@ const RING_COLOR = 0x2a3350;
 const GRID_COLOR = 0x39ff14; // neon green -- deliberately loud against BG_COLOR, unlike RING_COLOR
 const SHIP_HEIGHT_ABOVE_PLANE = 1.2;
 
-export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, maxZoom }) {
+export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BG_COLOR);
 
@@ -62,11 +61,6 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(sizePx, sizePx, false);
-
-  const labelRenderer = new CSS2DRenderer();
-  labelRenderer.setSize(sizePx, sizePx);
-  Object.assign(labelRenderer.domElement.style, { position: "absolute", top: "0", left: "0", pointerEvents: "none" });
-  labelContainer.appendChild(labelRenderer.domElement);
 
   scene.add(new THREE.AmbientLight(0x404050, 1.5));
   scene.add(new THREE.PointLight(0xfff2cc, 8, 0, 0)); // at the origin -- the Sun lights everything else
@@ -92,28 +86,12 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
   controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: null, RIGHT: THREE.MOUSE.PAN };
   canvas.addEventListener("contextmenu", ev => ev.preventDefault());
 
-  const renderFrame = () => {
-    // CSS2DRenderer sets element.style.display itself from each object's
-    // own .visible flag every render call (and would silently clobber a
-    // directly-set style.display right back to visible), so toggle .visible
-    // instead of touching the DOM style directly.
-    for (const { lbl, r } of bodyLabels) lbl.visible = r * camera.zoom > MIN_LABEL_PX;
-    renderer.render(scene, camera);
-    labelRenderer.render(scene, camera);
-  };
+  const renderFrame = () => renderer.render(scene, camera);
   controls.addEventListener("change", renderFrame);
 
   const objectGroup = new THREE.Group();
   scene.add(objectGroup);
   let pickables = [];
-  // Body (not fleet) labels: only shown once the body's on-screen size
-  // clears MIN_LABEL_PX, same idea as the old 2D canvas's labelMinPx --
-  // otherwise, with ~160 moons' worth of labels always on, the default
-  // zoomed-out view is unreadable clutter. Re-checked every frame (not
-  // just on rebuild) since camera.zoom changes continuously via wheel/-/=
-  // without a full scene rebuild.
-  const MIN_LABEL_PX = 3;
-  let bodyLabels = [];
 
   function clearObjects() {
     for (const child of [...objectGroup.children]) {
@@ -121,7 +99,6 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
       child.traverse?.(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
     }
     pickables = [];
-    bodyLabels = [];
   }
 
   // A procedurally-generated solar surface -- granulation-ish mottling
@@ -175,16 +152,6 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
     return sunTexture;
   }
 
-  function makeLabel(text) {
-    const div = document.createElement("div");
-    div.textContent = text;
-    Object.assign(div.style, {
-      font: "bold 11px system-ui", color: "#d7deef", textShadow: "0 1px 3px #000",
-      transform: "translate(-50%, 2px)", whiteSpace: "nowrap", pointerEvents: "none",
-    });
-    return new CSS2DObject(div);
-  }
-
   // A real body: the Sun, a planet, or a moon. `emissive` (the Sun) skips
   // *lit* shading -- it's the light source, not something lit by it, and
   // there's a PointLight sitting at this exact position (see above), so a
@@ -198,7 +165,7 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
   // of a single flat color. `y` (default 0, the shared orbital plane) is
   // only ever nonzero for a major moon with real inclination -- see
   // layoutSystemWithMoons in orbitmap.js.
-  function addBody({ x, y = 0, z, radius, color, label, data, emissive }) {
+  function addBody({ x, y = 0, z, radius, color, data, emissive }) {
     const r = Math.max(radius, 0.5);
     const geo = new THREE.SphereGeometry(r, 22, 16);
     const mat = emissive
@@ -211,12 +178,6 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
     mesh.position.set(x, y, z);
     mesh.userData = data;
     objectGroup.add(mesh);
-    if (label) {
-      const lbl = makeLabel(label);
-      lbl.position.set(0, r + 3, 0);
-      mesh.add(lbl);
-      bodyLabels.push({ lbl, r });
-    }
     pickables.push(mesh);
     return mesh;
   }
@@ -248,7 +209,7 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
   // a quaternion rather than an Euler angle so there's no manual sign-
   // guessing about which way "positive rotation" goes in this scene's
   // particular axis convention.
-  function addShip({ x, z, colorHex, label, data, selected, facingDeg }) {
+  function addShip({ x, z, colorHex, data, selected, facingDeg }) {
     const group = new THREE.Group();
     group.position.set(x, SHIP_HEIGHT_ABOVE_PLANE, z);
 
@@ -287,12 +248,6 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
 
     group.userData = data;
     objectGroup.add(group);
-    const lbl = makeLabel(label);
-    lbl.position.set(0, s * 1.3, 0);
-    group.add(lbl);
-    // Zoom-gated like every body label (MIN_LABEL_PX) -- 36 always-on
-    // ship number labels would be clutter at the default zoomed-out view.
-    bodyLabels.push({ lbl, r: s });
     pickables.push(group);
     return group;
   }
@@ -373,9 +328,9 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
   }
-  // Walks up from whatever geometry the ray actually hit (e.g. one ship's
-  // cone inside a fleet's group) to the nearest ancestor carrying real
-  // userData -- every pickable root sets `.kind`, ship/label children don't.
+  // Walks up from whatever geometry the ray actually hit (e.g. a ship's
+  // cone inside its own group) to the nearest ancestor carrying real
+  // userData -- every pickable root sets `.kind`, individual child meshes don't.
   function resolveHit(object) {
     let o = object;
     while (o && !o.userData?.kind) o = o.parent;

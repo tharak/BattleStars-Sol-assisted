@@ -29,6 +29,15 @@
   #mapwrap3d{background:var(--panel);border:1px solid var(--line);border-radius:8px;
     padding:8px;display:inline-block;position:relative;max-width:100%}
   #mapwrap3d canvas{border-radius:4px}
+  #mapArea{position:relative;display:inline-block;max-width:100%}
+  #infoPanel{position:absolute;top:16px;right:16px;width:200px;max-width:calc(100% - 32px);
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:10px 12px;font-size:13px;z-index:5}
+  #infoPanel .empty{color:var(--dim)}
+  #infoName{font-weight:bold;font-size:14px;margin-bottom:2px}
+  #infoDetail{color:var(--dim)}
+  #infoControls{display:none;flex-direction:column;gap:6px;margin-top:10px}
+  #infoControls button{width:100%}
 </style>
 </head>
 <body>
@@ -40,9 +49,11 @@
   drag to rotate, right-drag or arrow keys to pan, scroll (zooms toward the cursor) or
   <kbd>-</kbd>/<kbd>=</kbd> to zoom, click a planet to zoom in on its moons (invisible at a glance,
   same as in real life) or the Sun to reset the view. Click a breadcrumb (or Zoom Out / Esc) to leave a
-  screen. Three factions (Blue, Green, Red) each start with a 12-ship fleet near their home planet;
-  click a fleet to select it, then click a destination to move it, or click the same fleet again to
-  open Formation Setup. Move two different factions' fleets close enough together and a Battle button
+  screen. Nothing on the map carries a floating label -- click a body or a ship and its name (plus,
+  for a selected fleet, its formation and controls) shows in the panel at the top right instead. Three
+  factions (Blue, Green, Red) each start with a 12-ship fleet near their home planet; click a fleet to
+  select it, then click a destination to move it, or click the same fleet again to open Formation
+  Setup. Move two different factions' fleets close enough together and a Battle button
   appears, handing off to the existing
   <a href="battle.html">battle rules prototype</a>.</p>
 
@@ -61,8 +72,21 @@
     <button id="battleBtn" class="primary">⚔ Battle</button>
   </div>
 
-  <div id="mapwrap"><canvas id="cv"></canvas></div>
-  <div id="mapwrap3d" style="display:none"><canvas id="cv3d"></canvas></div>
+  <div id="mapArea">
+    <div id="mapwrap"><canvas id="cv"></canvas></div>
+    <div id="mapwrap3d" style="display:none"><canvas id="cv3d"></canvas></div>
+    <div id="infoPanel">
+      <div id="infoEmpty" class="empty">Click a body or fleet for details.</div>
+      <div id="infoBody" style="display:none">
+        <div id="infoName"></div>
+        <div id="infoDetail"></div>
+        <div id="infoControls">
+          <button id="infoFormationBtn">Set Formation</button>
+          <button id="infoDeselectBtn">Deselect</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 <script type="module" src="map/main.js"></script>
 </body>

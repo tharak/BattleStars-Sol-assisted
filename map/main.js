@@ -28,6 +28,14 @@ const formationButtons = document.getElementById("formationButtons");
 const saveFormationBtn = document.getElementById("saveFormation");
 const battleControls = document.getElementById("battleControls");
 const battleBtn = document.getElementById("battleBtn");
+const infoPanel = document.getElementById("infoPanel");
+const infoEmpty = document.getElementById("infoEmpty");
+const infoBody = document.getElementById("infoBody");
+const infoName = document.getElementById("infoName");
+const infoDetail = document.getElementById("infoDetail");
+const infoControls = document.getElementById("infoControls");
+const infoFormationBtn = document.getElementById("infoFormationBtn");
+const infoDeselectBtn = document.getElementById("infoDeselectBtn");
 
 // Navigation stack: [{level:"universe"}, {level:"system",systemId},
 // {level:"formation",faction,formationName}]. The System map is the merged
@@ -42,8 +50,60 @@ let path = [
 // Fleets only render/move at the System level -- this is which one (if
 // any) is currently picked up, waiting for a destination click.
 let selectedFleet = null;
+// The last body (star/planet/moon/belt) clicked at the System level, for
+// the info panel -- see infoFor/renderInfoPanel. Superseded by
+// selectedFleet whenever a fleet is picked up (checked first in
+// renderInfoPanel), so this only ever matters while nothing's selected.
+let lastClickedInfo = null;
 
 initFleetPositions();
+
+// Nothing on the map carries a floating label anymore (see addBody/
+// addShip in scene3d.js and drawDot/drawShip below) -- this panel is
+// where a click's result actually shows up instead. Read every time
+// through renderInfoPanel() rather than pushed reactively, so any click
+// handler can just update selectedFleet/lastClickedInfo and call it,
+// the same way setHint(...) already works.
+function infoFor(hit) {
+  if (!hit) return null;
+  if (hit.kind === "star") return { name: hit.label, detail: "The star this system orbits." };
+  if (hit.kind === "moon") return { name: hit.label, detail: `Moon of ${hit.parentLabel}.` };
+  if (hit.kind === "belt") return { name: hit.label, detail: "Asteroid belt — no individual bodies to explore." };
+  if (hit.kind === "planet") return { name: hit.label, detail: "Planet." };
+  return null;
+}
+function renderInfoPanel() {
+  if (selectedFleet) {
+    infoEmpty.style.display = "none";
+    infoBody.style.display = "block";
+    infoName.textContent = `${FACTIONS[selectedFleet].label} Fleet`;
+    infoDetail.textContent = `${SHIPS_PER_FACTION} ships — ${FLEET_FORMATIONS[selectedFleet]} formation. Click a destination to move it.`;
+    infoControls.style.display = "flex";
+    return;
+  }
+  if (lastClickedInfo) {
+    infoEmpty.style.display = "none";
+    infoBody.style.display = "block";
+    infoName.textContent = lastClickedInfo.name;
+    infoDetail.textContent = lastClickedInfo.detail;
+    infoControls.style.display = "none";
+    return;
+  }
+  infoEmpty.style.display = "block";
+  infoBody.style.display = "none";
+}
+infoFormationBtn.onclick = () => {
+  const faction = selectedFleet;
+  if (!faction) return;
+  selectedFleet = null;
+  zoomIn({ level: "formation", faction, formationName: FLEET_FORMATIONS[faction] }, `${FACTIONS[faction].label} Formation`);
+};
+infoDeselectBtn.onclick = () => {
+  selectedFleet = null;
+  setHint("");
+  renderInfoPanel();
+  render();
+};
 
 function levelData(entry) {
   if (entry.level === "universe") return universeLevel();
@@ -384,7 +444,7 @@ let sceneDragging = false;
 let sceneJustDragged = false;
 function ensureScene3D() {
   if (scene3d) return scene3d;
-  scene3d = createSystemScene({ canvas: canvas3d, labelContainer: mapwrap3d, sizePx: CANVAS_PX, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM });
+  scene3d = createSystemScene({ canvas: canvas3d, sizePx: CANVAS_PX, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM });
   scene3d.controls.addEventListener("start", () => { sceneDragging = true; sceneJustDragged = false; });
   scene3d.controls.addEventListener("change", () => { if (sceneDragging) sceneJustDragged = true; });
   scene3d.controls.addEventListener("end", () => { sceneDragging = false; });
@@ -403,7 +463,7 @@ function renderSystem3D(entry, data) {
   scene.rebuild(({ addBody, addRing, addShip, addAsteroidBelt, addSpacetimeGrid }) => {
     addSpacetimeGrid({ segments: warpedGridLines(gravityWells(layout)) });
     if (layout.center) {
-      addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, label: layout.center.label, data: layout.center, emissive: true });
+      addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true });
     }
     for (const p of layout.planets) {
       if (p.kind === "belt") {
@@ -415,15 +475,15 @@ function renderSystem3D(entry, data) {
         continue;
       }
       addRing(0, 0, Math.hypot(p.x, p.y));
-      addBody({ x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, label: p.label, data: p });
+      addBody({ x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, data: p });
       for (const m of p.moons) {
         addRing(p.x, p.y, m.localRingPx, m.inclinationDeg);
-        addBody({ x: m.x, y: m.tiltHeight, z: m.tiltZ, radius: m.rPx, color: colorsFor(m).fill, label: m.label, data: m });
+        addBody({ x: m.x, y: m.tiltHeight, z: m.tiltZ, radius: m.rPx, color: colorsFor(m).fill, data: m });
       }
     }
     for (const s of ships) {
       addShip({
-        x: s.x, z: s.y, colorHex: colorsFor(s).fill, label: s.label, data: s,
+        x: s.x, z: s.y, colorHex: colorsFor(s).fill, data: s,
         selected: s.faction === selectedFleet, facingDeg: s.facingDeg,
       });
     }
@@ -444,6 +504,7 @@ function renderSystem3D(entry, data) {
       }
       selectedFleet = hit.faction;
       setHint(`${FACTIONS[hit.faction].label} fleet selected — click a destination to move it, or click it again to set formation.`);
+      renderInfoPanel();
       render();
       return;
     }
@@ -455,24 +516,30 @@ function renderSystem3D(entry, data) {
         moveFleet(selectedFleet, xKm, yKm);
         setHint(`${FACTIONS[selectedFleet].label} fleet moved.`);
         selectedFleet = null;
+        renderInfoPanel();
         render();
       }
       return;
     }
 
-    if (hit?.kind === "star") { scene.resetCamera(); setHint(""); return; }
-    if (hit?.kind === "moon") { setHint(`${hit.label} — a moon of ${hit.parentLabel}.`); return; }
+    if (hit?.kind === "star") { scene.resetCamera(); setHint(""); lastClickedInfo = infoFor(hit); renderInfoPanel(); return; }
+    if (hit?.kind === "moon") { setHint(`${hit.label} — a moon of ${hit.parentLabel}.`); lastClickedInfo = infoFor(hit); renderInfoPanel(); return; }
     if (hit?.kind === "planet" || hit?.kind === "belt") {
       scene.focusOn(hit.x, hit.y, FOCUS_ZOOM);
       setHint(hit.kind === "belt" ? "Asteroid Belt — no bodies to explore." : "");
+      lastClickedInfo = infoFor(hit);
+      renderInfoPanel();
       return;
     }
     setHint("Empty space — nothing here.");
+    lastClickedInfo = null;
+    renderInfoPanel();
   };
 
   battleControls.style.display = battleReady ? "flex" : "none";
   battleBtn.onclick = () => { window.location.href = "battle.html"; };
 
+  renderInfoPanel();
   renderFormationControls(entry);
   renderBreadcrumb();
 }
@@ -595,20 +662,12 @@ function renderSystem2D(entry, data) {
     ctx.lineWidth = selected ? 3 : 2;
     ctx.strokeStyle = selected ? "#ffffff" : colors.stroke;
     ctx.stroke();
-    if (rPx > 3) {
-      ctx.font = "bold 11px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#d7deef";
-      ctx.fillText(body.label, sx, sy + rPx + 13);
-    }
     return [sx, sy, rPx];
   };
   // One ship, one small triangle pointing its real formation-assigned
   // facing (see placeShips) -- the old drawFleet drew one stylized 3-cone
   // wedge standing in for a whole "12" fleet; now each of those 12 ships
   // is its own icon on its own hex cell, so this draws exactly one.
-  // Labels only past a legibility threshold, same idea as body labels'
-  // own zoom gate -- 12 numbers per faction at default zoom is clutter.
   const drawShip = (ship, selected) => {
     const [sx, sy] = worldToScreen(camera2d, ship.x, ship.y);
     const s = Math.min(Math.max(SHIP_ICON_BASE_PX * camera2d.zoom, 1.5), 10);
@@ -623,12 +682,6 @@ function renderSystem2D(entry, data) {
     ctx.lineWidth = selected ? 2.5 : 1.5;
     ctx.strokeStyle = selected ? "#ffffff" : colors.stroke;
     ctx.stroke();
-    if (s > 4) {
-      ctx.font = "bold 9px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#d7deef";
-      ctx.fillText(ship.label, sx, sy + s * 1.4 + 8);
-    }
     return tapRadius;
   };
   // Scattered dots across the belt's real distance range (see
@@ -700,6 +753,7 @@ function renderSystem2D(entry, data) {
       }
       selectedFleet = hitShip.faction;
       setHint(`${FACTIONS[hitShip.faction].label} fleet selected — click a destination to move it, or click it again to set formation.`);
+      renderInfoPanel();
       render();
       return;
     }
@@ -710,6 +764,7 @@ function renderSystem2D(entry, data) {
       moveFleet(selectedFleet, xKm, yKm);
       setHint(`${FACTIONS[selectedFleet].label} fleet moved.`);
       selectedFleet = null;
+      renderInfoPanel();
       render();
       return;
     }
@@ -717,20 +772,31 @@ function renderSystem2D(entry, data) {
     if (layout.center && within(layout.center)) {
       camera2d.x = 0; camera2d.y = 0; camera2d.zoom = 1;
       setHint("");
+      lastClickedInfo = infoFor(layout.center);
+      renderInfoPanel();
       render();
       return;
     }
     const hitMoon = layout.planets.flatMap(p => p.moons).find(within);
-    if (hitMoon) { setHint(`${hitMoon.label} — a moon of ${hitMoon.parentLabel}.`); return; }
+    if (hitMoon) {
+      setHint(`${hitMoon.label} — a moon of ${hitMoon.parentLabel}.`);
+      lastClickedInfo = infoFor(hitMoon);
+      renderInfoPanel();
+      return;
+    }
     const hitPlanet = layout.planets.find(within);
     if (hitPlanet) {
       camera2d.x = hitPlanet.x; camera2d.y = hitPlanet.y;
       camera2d.zoom = clampZoom2d(Math.max(camera2d.zoom, FOCUS_ZOOM));
       setHint(hitPlanet.kind === "belt" ? "Asteroid Belt — no bodies to explore." : "");
+      lastClickedInfo = infoFor(hitPlanet);
+      renderInfoPanel();
       render();
       return;
     }
     setHint("Empty space — nothing here.");
+    lastClickedInfo = null;
+    renderInfoPanel();
   };
 
   canvas.onwheel = ev => {
@@ -748,6 +814,7 @@ function renderSystem2D(entry, data) {
   battleControls.style.display = battleReady ? "flex" : "none";
   battleBtn.onclick = () => { window.location.href = "battle.html"; };
 
+  renderInfoPanel();
   renderFormationControls(entry);
   renderBreadcrumb();
 }
@@ -842,6 +909,12 @@ function renderHex(entry, data) {
 function render() {
   const entry = path[path.length - 1];
   const data = levelData(entry);
+  // The info panel only has anything to show at the System level (bodies
+  // and ships) -- Universe/Formation Setup reuse the same #mapwrap canvas
+  // underneath it, so it has to be hidden explicitly rather than just
+  // left empty, or it'd sit there showing stale System-level info over an
+  // unrelated screen.
+  infoPanel.style.display = entry.level === "system" ? "block" : "none";
   if (entry.level === "formation") renderHex(entry, data);
   else if (entry.level === "system") renderSystem(entry, data);
   else renderUniverse(entry, data);
