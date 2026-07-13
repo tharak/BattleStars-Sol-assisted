@@ -238,43 +238,48 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
     objectGroup.add(new THREE.Line(geo, mat));
   }
 
-  // A fleet isn't a real orbiting body -- 3 small ship-cone meshes (a
-  // 3-sided cone reads as a simple triangular hull) in a "<" wedge, all
-  // pointing left, matching the 2D view's ship-arrow icon.
-  function addFleet({ x, z, colorHex, label, data, selected }) {
+  // One ship, one small cone (a 3-sided cone reads as a simple triangular
+  // hull) -- replaces the old addFleet's 3-cone "<" wedge, which stood in
+  // for an entire "12" fleet as one stylized token. Now each of the 12
+  // ships in a formation is its own individual token, hex-positioned (see
+  // shipHexOffset in map/main.js), so this places exactly one. facingDeg
+  // is the ship's real formation-assigned facing (battle/formations.js),
+  // the same convention Formation Setup's own preview uses -- applied via
+  // a quaternion rather than an Euler angle so there's no manual sign-
+  // guessing about which way "positive rotation" goes in this scene's
+  // particular axis convention.
+  function addShip({ x, z, colorHex, label, data, selected, facingDeg }) {
     const group = new THREE.Group();
     group.position.set(x, SHIP_HEIGHT_ABOVE_PLANE, z);
-    const s = 6;
-    const offsets = [[-s * 1.1, 0], [s * 0.55, -s * 1.05], [s * 0.55, s * 1.05]];
-    for (const [dx, dz] of offsets) {
-      const geo = new THREE.ConeGeometry(s * 0.55, s * 1.6, 3);
-      const mat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.6 });
-      const ship = new THREE.Mesh(geo, mat);
-      // A cone points along +Y by default; lay it flat in the XZ plane
-      // and aim its tip along -X (the "<" direction).
-      ship.rotation.z = Math.PI / 2;
-      ship.position.set(dx, 0, dz);
-      group.add(ship);
-      if (selected) {
-        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff }));
-        edges.rotation.copy(ship.rotation);
-        edges.position.copy(ship.position);
-        group.add(edges);
-      }
+
+    const s = 3;
+    const geo = new THREE.ConeGeometry(s * 0.55, s * 1.6, 3);
+    const mat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.6 });
+    const ship = new THREE.Mesh(geo, mat);
+    const rad = facingDeg * Math.PI / 180;
+    ship.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(Math.cos(rad), 0, Math.sin(rad)),
+    );
+    group.add(ship);
+    if (selected) {
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff }));
+      edges.quaternion.copy(ship.quaternion);
+      group.add(edges);
     }
-    // The 3 ship cones alone are a tiny, fiddly click target -- a visible
-    // ring around the whole wedge both shows where to click and (via the
-    // matching invisible disc just inside it) IS the actual click target,
-    // the same generous tap radius the 2D fallback's drawFleet uses.
-    const tapRadius = Math.max(s * 1.8, 10);
+    // The cone alone is a tiny, fiddly click target -- a visible ring
+    // around it both shows where to click and (via the matching invisible
+    // disc just inside it) IS the actual click target, the same idea the
+    // 2D fallback's drawShip uses.
+    const tapRadius = Math.max(s * 1.8, 3);
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(tapRadius * 0.92, tapRadius, 32),
+      new THREE.RingGeometry(tapRadius * 0.92, tapRadius, 16),
       new THREE.MeshBasicMaterial({ color: selected ? 0xffffff : colorHex, transparent: true, opacity: selected ? 0.9 : 0.55, side: THREE.DoubleSide }),
     );
     ring.rotation.x = -Math.PI / 2;
     group.add(ring);
     const hitDisc = new THREE.Mesh(
-      new THREE.CircleGeometry(tapRadius, 24),
+      new THREE.CircleGeometry(tapRadius, 12),
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }),
     );
     hitDisc.rotation.x = -Math.PI / 2;
@@ -285,6 +290,9 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
     const lbl = makeLabel(label);
     lbl.position.set(0, s * 1.3, 0);
     group.add(lbl);
+    // Zoom-gated like every body label (MIN_LABEL_PX) -- 36 always-on
+    // ship number labels would be clutter at the default zoomed-out view.
+    bodyLabels.push({ lbl, r: s });
     pickables.push(group);
     return group;
   }
@@ -352,7 +360,7 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
 
   function rebuild(fn) {
     clearObjects();
-    fn({ addBody, addRing, addFleet, addAsteroidBelt, addSpacetimeGrid });
+    fn({ addBody, addRing, addShip, addAsteroidBelt, addSpacetimeGrid });
     renderFrame();
   }
 
@@ -377,7 +385,6 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
   return {
     rebuild,
     renderFrame,
-    // Whatever real body/fleet is under the cursor, or null.
     // Whatever real body/fleet is under the cursor, or null.
     pick(clientX, clientY) {
       raycaster.setFromCamera(ndcFromEvent(clientX, clientY), camera);

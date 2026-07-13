@@ -11,6 +11,7 @@ import {
   FLEET_POSITIONS, initFleetPositions, moveFleet,
 } from "./levels.js";
 import { hexDist, DIR_ANGLE, facingArrowPoints } from "../battle/hexmath.js";
+import { formationLayout } from "../battle/formations.js";
 import { ACCENT, BOARD_TINT } from "../battle/colors.js";
 
 const capitalize = s => s[0].toUpperCase() + s.slice(1);
@@ -106,12 +107,16 @@ const ID_COLORS = { ...PLANET_COLORS, ...MOON_COLORS };
 
 // Faction fleet/ship colors (see FACTIONS in levels.js) -- checked via
 // cell.faction rather than cell.id, since fleet/ship ids are per-instance
-// (blue-fleet, blue-ship-3, ...), not a shared small id space like
-// planets/moons.
+// (blue-ship-3, ...), not a shared small id space like planets/moons.
+// Neon rather than the muted tones everything else uses: each ship is
+// now a single small icon on its own hex cell (see placeShips), and a
+// small icon needs to read as a bright dot from across the whole system
+// at a glance, not blend into the rest of the palette the way a bigger
+// shape safely could.
 const FACTION_COLORS = {
-  blue:  { fill: "#1a3a6e", stroke: "#4a9eff" },
-  green: { fill: "#1a5c2a", stroke: "#4ade80" },
-  red:   { fill: "#5c1a1a", stroke: "#ff4a4a" },
+  blue:  { fill: "#00e5ff", stroke: "#00e5ff" },
+  green: { fill: "#00ffb3", stroke: "#00ffb3" },
+  red:   { fill: "#ff1053", stroke: "#ff1053" },
 };
 
 function colorsFor(cell) {
@@ -218,18 +223,43 @@ const GRID_EXTENT_PX = ORBIT_MAX_PX + 80;
 const GRID_LINE_COLOR = "#39ff14"; // neon green -- matches scene3d.js's GRID_COLOR
 const GRID_LINE_OPACITY = 0.1; // down from 0.6, then 0.35 -- still reading as too bright
 
-// A fleet's world position uses the exact same log-distance scale as every
-// real body in this view, so "close" means close in the system,
-// consistently regardless of which two planets are involved.
-function placeFleets(layout) {
-  return Object.entries(FLEET_POSITIONS).map(([faction, pos]) => {
+// Same pointy-top hex pixel math as the spacetime grid's own tiling (see
+// warpedGridLines below) -- an offset-coordinate [c,r] pair, exactly what
+// battle/formations.js's formationLayout already returns as each ship's
+// [fwd,lat] position, converts to a pixel offset the same way, so a
+// ship's hex cell lines up with the actual hex cells drawn on screen:
+// "each ship occupies 1 hex" is then true by construction, not just a
+// label.
+function shipHexOffset(c, r) {
+  return [(c + 0.5 * (r & 1)) * GRID_HEX_SIZE_PX * Math.sqrt(3), r * GRID_HEX_SIZE_PX * 1.5];
+}
+
+// Individual ship tokens, not one "12" blob per faction -- each ship sits
+// on its own hex cell (shipHexOffset), arranged in whatever formation
+// shape the faction has chosen in Formation Setup (the exact same
+// battle/formations.js layout the actual Battle board deploys), anchored
+// on the faction's single logical FLEET_POSITIONS point (the exact same
+// log-distance scale as every real body in this view, so "close" means
+// close in the system, consistently regardless of which two planets are
+// involved). Moving/selecting a fleet still operates on that one anchor
+// point -- clicking any of a faction's ships selects the whole group,
+// same as the old single-icon fleet marker did.
+function placeShips(layout) {
+  return Object.entries(FLEET_POSITIONS).flatMap(([faction, pos]) => {
     const distanceKm = Math.hypot(pos.xKm, pos.yKm);
     const angle = Math.atan2(pos.yKm, pos.xKm);
     const r = layout.dist.toPixel(distanceKm);
-    return {
-      id: `${faction}-fleet`, label: String(SHIPS_PER_FACTION), kind: "fleet",
-      faction, x: r * Math.cos(angle), y: r * Math.sin(angle),
-    };
+    const anchorX = r * Math.cos(angle), anchorY = r * Math.sin(angle);
+    const { u, flag } = formationLayout(FLEET_FORMATIONS[faction], SHIPS_PER_FACTION);
+    return u.map(([fwd, lat, df], i) => {
+      const [dx, dy] = shipHexOffset(fwd, lat);
+      return {
+        id: `${faction}-ship-${i}`, kind: "ship", faction, isFlag: i === flag,
+        label: i === flag ? "★" : String(i + 1),
+        facingDeg: DIR_ANGLE[df === 0 ? 0 : (df > 0 ? 5 : 1)],
+        x: anchorX + dx, y: anchorY + dy,
+      };
+    });
   });
 }
 
@@ -367,10 +397,10 @@ function renderSystem3D(entry, data) {
   const scene = ensureScene3D();
 
   const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
-  const fleets = placeFleets(layout);
-  const battleReady = closeEnoughForBattle(fleets);
+  const ships = placeShips(layout);
+  const battleReady = closeEnoughForBattle(ships);
 
-  scene.rebuild(({ addBody, addRing, addFleet, addAsteroidBelt, addSpacetimeGrid }) => {
+  scene.rebuild(({ addBody, addRing, addShip, addAsteroidBelt, addSpacetimeGrid }) => {
     addSpacetimeGrid({ segments: warpedGridLines(gravityWells(layout)) });
     if (layout.center) {
       addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, label: layout.center.label, data: layout.center, emissive: true });
@@ -391,8 +421,11 @@ function renderSystem3D(entry, data) {
         addBody({ x: m.x, y: m.tiltHeight, z: m.tiltZ, radius: m.rPx, color: colorsFor(m).fill, label: m.label, data: m });
       }
     }
-    for (const f of fleets) {
-      addFleet({ x: f.x, z: f.y, colorHex: colorsFor(f).fill, label: f.label, data: f, selected: f.faction === selectedFleet });
+    for (const s of ships) {
+      addShip({
+        x: s.x, z: s.y, colorHex: colorsFor(s).fill, label: s.label, data: s,
+        selected: s.faction === selectedFleet, facingDeg: s.facingDeg,
+      });
     }
   });
 
@@ -400,7 +433,7 @@ function renderSystem3D(entry, data) {
     if (sceneJustDragged) { sceneJustDragged = false; return; }
     const hit = scene.pick(ev.clientX, ev.clientY);
 
-    if (hit?.kind === "fleet") {
+    if (hit?.kind === "ship") {
       if (selectedFleet === hit.faction) {
         selectedFleet = null;
         zoomIn(
@@ -454,7 +487,10 @@ const camera2d = { x: 0, y: 0, zoom: 1 };
 const clampZoom2d = z => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
 const WHEEL_SENSITIVITY = 0.0015;
 const DRAG_THRESHOLD_PX = 4;
-const FLEET_SHIP_BASE_PX = 5;
+// A ship's own icon is well inside its hex cell (see shipHexOffset) --
+// GRID_HEX_SIZE_PX's flat-to-flat width is its own hard ceiling on how
+// big this can get before neighboring ships' icons start touching.
+const SHIP_ICON_BASE_PX = 2.2;
 
 // A small ship-arrow triangle, proportionally scaled from its own size `s`
 // (unlike battle/hexmath.js's facingArrowPoints, whose fixed hs-4/hs-11
@@ -504,8 +540,8 @@ function renderSystem2D(entry, data) {
   const cx = canvas.width / 2, cy = canvas.height / 2;
 
   const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
-  const fleets = placeFleets(layout);
-  const battleReady = closeEnoughForBattle(fleets);
+  const ships = placeShips(layout);
+  const battleReady = closeEnoughForBattle(ships);
 
   // Only a floor, no ceiling -- a real body's on-screen size grows freely
   // with zoom, same as the 3D scene's actual spheres do (there's nothing
@@ -567,37 +603,32 @@ function renderSystem2D(entry, data) {
     }
     return [sx, sy, rPx];
   };
-  const drawFleet = (fleet, selected) => {
-    const [sx, sy] = worldToScreen(camera2d, fleet.x, fleet.y);
-    const s = Math.min(Math.max(FLEET_SHIP_BASE_PX * camera2d.zoom, 3), 14);
-    const colors = colorsFor(fleet);
-    const tapRadius = Math.max(s * 1.8, 10);
-    // The 3 ship triangles alone are a fiddly click target -- a ring at the
-    // actual tap radius (see the `within()` check below) both marks where
-    // to click and makes that area visually obvious.
+  // One ship, one small triangle pointing its real formation-assigned
+  // facing (see placeShips) -- the old drawFleet drew one stylized 3-cone
+  // wedge standing in for a whole "12" fleet; now each of those 12 ships
+  // is its own icon on its own hex cell, so this draws exactly one.
+  // Labels only past a legibility threshold, same idea as body labels'
+  // own zoom gate -- 12 numbers per faction at default zoom is clutter.
+  const drawShip = (ship, selected) => {
+    const [sx, sy] = worldToScreen(camera2d, ship.x, ship.y);
+    const s = Math.min(Math.max(SHIP_ICON_BASE_PX * camera2d.zoom, 1.5), 10);
+    const colors = colorsFor(ship);
+    const tapRadius = Math.max(s * 1.8, 6);
+    const [tip, b1, b2] = shipTriangle(sx, sy, s, ship.facingDeg);
     ctx.beginPath();
-    ctx.arc(sx, sy, tapRadius, 0, Math.PI * 2);
+    ctx.moveTo(...tip); ctx.lineTo(...b1); ctx.lineTo(...b2);
+    ctx.closePath();
+    ctx.fillStyle = colors.fill;
+    ctx.fill();
+    ctx.lineWidth = selected ? 2.5 : 1.5;
     ctx.strokeStyle = selected ? "#ffffff" : colors.stroke;
-    ctx.globalAlpha = selected ? 0.9 : 0.55;
-    ctx.lineWidth = 1.5;
     ctx.stroke();
-    ctx.globalAlpha = 1;
-    const offsets = [[-s * 1.1, 0], [s * 0.55, -s * 1.05], [s * 0.55, s * 1.05]];
-    for (const [dx, dy] of offsets) {
-      const [tip, b1, b2] = shipTriangle(sx + dx, sy + dy, s, 180);
-      ctx.beginPath();
-      ctx.moveTo(...tip); ctx.lineTo(...b1); ctx.lineTo(...b2);
-      ctx.closePath();
-      ctx.fillStyle = colors.fill;
-      ctx.fill();
-      ctx.lineWidth = selected ? 2.5 : 1.5;
-      ctx.strokeStyle = selected ? "#ffffff" : colors.stroke;
-      ctx.stroke();
+    if (s > 4) {
+      ctx.font = "bold 9px system-ui";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#d7deef";
+      ctx.fillText(ship.label, sx, sy + s * 1.4 + 8);
     }
-    ctx.font = "bold 11px system-ui";
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#d7deef";
-    ctx.fillText(fleet.label, sx, sy + s * 1.05 + 15);
     return tapRadius;
   };
   // Scattered dots across the belt's real distance range (see
@@ -624,7 +655,7 @@ function renderSystem2D(entry, data) {
       drawDot(m, false);
     }
   }
-  for (const f of fleets) f.hitRPx = drawFleet(f, f.faction === selectedFleet);
+  for (const s of ships) s.hitRPx = drawShip(s, s.faction === selectedFleet);
   ctx.restore();
 
   canvas.onmousedown = ev => {
@@ -653,22 +684,22 @@ function renderSystem2D(entry, data) {
         return distFromSun >= innerR - 6 && distFromSun <= outerR + 6;
       }
       const [sx, sy] = screenPos(b);
-      const tap = b.kind === "fleet" ? b.hitRPx : Math.max(screenRadius(b), 10);
+      const tap = b.kind === "ship" ? b.hitRPx : Math.max(screenRadius(b), 10);
       return Math.hypot(x - sx, y - sy) <= tap;
     };
 
-    const hitFleet = fleets.find(within);
-    if (hitFleet) {
-      if (selectedFleet === hitFleet.faction) {
+    const hitShip = ships.find(within);
+    if (hitShip) {
+      if (selectedFleet === hitShip.faction) {
         selectedFleet = null;
         zoomIn(
-          { level: "formation", faction: hitFleet.faction, formationName: FLEET_FORMATIONS[hitFleet.faction] },
-          `${FACTIONS[hitFleet.faction].label} Formation`,
+          { level: "formation", faction: hitShip.faction, formationName: FLEET_FORMATIONS[hitShip.faction] },
+          `${FACTIONS[hitShip.faction].label} Formation`,
         );
         return;
       }
-      selectedFleet = hitFleet.faction;
-      setHint(`${FACTIONS[hitFleet.faction].label} fleet selected — click a destination to move it, or click it again to set formation.`);
+      selectedFleet = hitShip.faction;
+      setHint(`${FACTIONS[hitShip.faction].label} fleet selected — click a destination to move it, or click it again to set formation.`);
       render();
       return;
     }
