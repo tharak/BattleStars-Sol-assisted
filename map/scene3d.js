@@ -345,7 +345,7 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
     // line primitive.
     const mat = new LineMaterial({
       color: GRID_COLOR, linewidth: 2, resolution: new THREE.Vector2(sizePx, sizePx),
-      transparent: true, opacity: 0.6,
+      transparent: true, opacity: 0.35, // softer than the original 0.6 -- was reading as too bright
     });
     objectGroup.add(new LineSegments2(geo, mat));
   }

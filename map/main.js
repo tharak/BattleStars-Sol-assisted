@@ -214,12 +214,11 @@ const BELT_HEIGHT_PX = 5;
 // error could be up to ~half a hex-width, easily bigger than a small
 // planet's own rendered sphere -- exactly why a planet's dot and its
 // well's apparent center could look offset from each other. A smaller
-// hex size shrinks that worst-case error proportionally; 10px keeps it
-// small enough to read as centered without pushing the segment count too
-// far past what the old 20px version already rendered comfortably.
-const GRID_HEX_SIZE_PX = 10;
+// hex size shrinks that worst-case error proportionally.
+const GRID_HEX_SIZE_PX = 5;
 const GRID_EXTENT_PX = ORBIT_MAX_PX + 80;
 const GRID_LINE_COLOR = "#39ff14"; // neon green -- matches scene3d.js's GRID_COLOR
+const GRID_LINE_OPACITY = 0.35; // softer than the original 0.6 -- was reading as too bright
 
 // A fleet's world position uses the exact same log-distance scale as every
 // real body in this view, so "close" means close in the system,
@@ -556,7 +555,7 @@ function renderSystem2D(entry, data) {
   const gridSegments = warpedGridLines(gravityWells(layout));
   ctx.strokeStyle = GRID_LINE_COLOR;
   ctx.lineWidth = 1.5;
-  ctx.globalAlpha = 0.6;
+  ctx.globalAlpha = GRID_LINE_OPACITY;
   for (let i = 0; i < gridSegments.length; i += 2) {
     const [x1, y1] = worldToScreen(camera2d, gridSegments[i][0], gridSegments[i][1]);
     const [x2, y2] = worldToScreen(camera2d, gridSegments[i + 1][0], gridSegments[i + 1][1]);
