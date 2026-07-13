@@ -317,14 +317,57 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
     objectGroup.add(new LineSegments2(geo, mat));
   }
 
+  // The fleet movement-range hex picker (see map/movegrid.js): fixed-
+  // pixel-size hexes on the ecliptic plane around a selected fleet, each
+  // one its own pickable carrying the real km destination straight in
+  // userData (`hexes` already has dx/dy render offsets and xKm/yKm
+  // computed by movegrid.js -- this function only draws them). Fainter
+  // with more turns so distance-in-turns reads at a glance without
+  // needing a label on every tile.
+  function addHexOverlay({ centerX, centerZ, hexes, sizePx, colorHex }) {
+    const y = 0.3;
+    for (const h of hexes) {
+      const cx = centerX + h.dx, cz = centerZ + h.dy;
+      const corners = [];
+      for (let k = 0; k < 6; k++) {
+        const a = (60 * k - 90) * Math.PI / 180;
+        corners.push([cx + Math.cos(a) * sizePx, cz + Math.sin(a) * sizePx]);
+      }
+      const verts = [];
+      for (let k = 0; k < 6; k++) {
+        const [x1, z1] = corners[k], [x2, z2] = corners[(k + 1) % 6];
+        verts.push(cx, y, cz, x1, y, z1, x2, y, z2);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(verts), 3));
+      const mesh = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({
+          color: colorHex, transparent: true, opacity: 0.5 / h.turns,
+          side: THREE.DoubleSide, depthWrite: false,
+        }),
+      );
+      mesh.userData = { kind: "movehex", xKm: h.xKm, yKm: h.yKm, turns: h.turns, hours: h.hours };
+      objectGroup.add(mesh);
+      pickables.push(mesh);
+
+      const borderPts = corners.map(([x, z]) => new THREE.Vector3(x, y + 0.02, z));
+      borderPts.push(borderPts[0]);
+      const border = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(borderPts),
+        new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity: Math.min(1, 1.1 / h.turns) }),
+      );
+      objectGroup.add(border);
+    }
+  }
+
   function rebuild(fn) {
     clearObjects();
-    fn({ addBody, addRing, addFleet, addAsteroidBelt, addSpacetimeGrid });
+    fn({ addBody, addRing, addFleet, addAsteroidBelt, addSpacetimeGrid, addHexOverlay });
     renderFrame();
   }
 
   const raycaster = new THREE.Raycaster();
-  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   function ndcFromEvent(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     return new THREE.Vector2(
@@ -345,17 +388,20 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
     rebuild,
     renderFrame,
     // Whatever real body/fleet is under the cursor, or null.
+    // Movement-range hex tiles (map/movegrid.js) sit on the same flat
+    // ecliptic plane as other large, mostly-invisible click targets like
+    // the asteroid belt's hit-torus -- from some camera angles a ray
+    // toward a hex can graze the belt's torus at a nearly identical
+    // depth and win the raw closest-hit comparison, stealing the click.
+    // Hexes only ever exist while they're the thing the player is
+    // actively meant to click (a fleet is selected), so give them
+    // priority over whatever else the ray happens to also cross.
     pick(clientX, clientY) {
       raycaster.setFromCamera(ndcFromEvent(clientX, clientY), camera);
       const hits = raycaster.intersectObjects(pickables, true);
-      return hits.length ? resolveHit(hits[0].object) : null;
-    },
-    // Where the cursor's ray crosses the orbital (Y=0) plane, in the same
-    // world x/z units everything else uses -- e.g. for fleet movement.
-    groundPoint(clientX, clientY) {
-      raycaster.setFromCamera(ndcFromEvent(clientX, clientY), camera);
-      const out = new THREE.Vector3();
-      return raycaster.ray.intersectPlane(groundPlane, out) ? [out.x, out.z] : null;
+      if (!hits.length) return null;
+      const resolved = hits.map(h => resolveHit(h.object)).filter(Boolean);
+      return resolved.find(r => r.kind === "movehex") || resolved[0];
     },
     zoomBy(factor) {
       camera.zoom = Math.max(minZoom, Math.min(maxZoom, camera.zoom * factor));

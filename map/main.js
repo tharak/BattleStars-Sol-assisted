@@ -1,6 +1,6 @@
 import { makeHexGrid } from "./hexgrid.js";
 import {
-  layoutOrbitalBoard, drawOrbitalBoard, hitTest, pixelToKm,
+  layoutOrbitalBoard, drawOrbitalBoard, hitTest,
   layoutSystemWithMoons, worldToScreen, screenToWorld,
 } from "./orbitmap.js";
 import { createSystemScene } from "./scene3d.js";
@@ -10,6 +10,8 @@ import {
   FLEET_FORMATIONS, FORMATION_NAMES, FACTIONS, SHIPS_PER_FACTION,
   FLEET_POSITIONS, initFleetPositions, moveFleet,
 } from "./levels.js";
+import { TURN_HOURS } from "./config.js";
+import { movementRangeHexes, HEX_SIZE_PX } from "./movegrid.js";
 import { hexDist, DIR_ANGLE, facingArrowPoints } from "../battle/hexmath.js";
 import { ACCENT, BOARD_TINT } from "../battle/colors.js";
 
@@ -225,6 +227,13 @@ function placeFleets(layout) {
   });
 }
 
+// Shared between the 3D and 2D click handlers for the hint shown once a
+// movement-range hex is actually clicked -- see map/movegrid.js and
+// map/config.js for where turns/hours come from.
+function moveHint(faction, hex) {
+  return `${FACTIONS[faction].label} fleet underway — ${hex.turns} turn${hex.turns === 1 ? "" : "s"} (${hex.hours}h).`;
+}
+
 // Shared between the 3D and 2D belt renderers so they can't drift apart --
 // real distance range (see beltParticles in orbits.js), positioned on the
 // exact same log-compressed scale as every other body via layout.dist.
@@ -291,8 +300,12 @@ function renderSystem3D(entry, data) {
   const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
   const fleets = placeFleets(layout);
   const battleReady = closeEnoughForBattle(fleets);
+  const selectedFleetPx = selectedFleet ? fleets.find(f => f.faction === selectedFleet) : null;
+  const moveHexes = selectedFleetPx
+    ? movementRangeHexes(FLEET_POSITIONS[selectedFleet].xKm, FLEET_POSITIONS[selectedFleet].yKm)
+    : null;
 
-  scene.rebuild(({ addBody, addRing, addFleet, addAsteroidBelt, addSpacetimeGrid }) => {
+  scene.rebuild(({ addBody, addRing, addFleet, addAsteroidBelt, addSpacetimeGrid, addHexOverlay }) => {
     addSpacetimeGrid({
       size: GRID_EXTENT_PX * 2,
       divisions: Math.round((GRID_EXTENT_PX * 2) / GRID_CELL_PX),
@@ -320,6 +333,12 @@ function renderSystem3D(entry, data) {
     for (const f of fleets) {
       addFleet({ x: f.x, z: f.y, colorHex: colorsFor(f).fill, label: f.label, data: f, selected: f.faction === selectedFleet });
     }
+    if (moveHexes) {
+      addHexOverlay({
+        centerX: selectedFleetPx.x, centerZ: selectedFleetPx.y, hexes: moveHexes,
+        sizePx: HEX_SIZE_PX, colorHex: colorsFor(selectedFleetPx).fill,
+      });
+    }
   });
 
   canvas3d.onclick = ev => {
@@ -336,20 +355,21 @@ function renderSystem3D(entry, data) {
         return;
       }
       selectedFleet = hit.faction;
-      setHint(`${FACTIONS[hit.faction].label} fleet selected — click a destination to move it, or click it again to set formation.`);
+      setHint(`${FACTIONS[hit.faction].label} fleet selected — click a hex in its movement range to move it, or click it again to set formation.`);
+      render();
+      return;
+    }
+
+    if (hit?.kind === "movehex") {
+      moveFleet(selectedFleet, hit.xKm, hit.yKm);
+      setHint(moveHint(selectedFleet, hit));
+      selectedFleet = null;
       render();
       return;
     }
 
     if (selectedFleet) {
-      const ground = scene.groundPoint(ev.clientX, ev.clientY);
-      if (ground) {
-        const [xKm, yKm] = pixelToKm(layout, ground[0], ground[1]);
-        moveFleet(selectedFleet, xKm, yKm);
-        setHint(`${FACTIONS[selectedFleet].label} fleet moved.`);
-        selectedFleet = null;
-        render();
-      }
+      setHint("Click a hex in the fleet's movement range to move it.");
       return;
     }
 
@@ -437,6 +457,10 @@ function renderSystem2D(entry, data) {
   const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
   const fleets = placeFleets(layout);
   const battleReady = closeEnoughForBattle(fleets);
+  const selectedFleetPx = selectedFleet ? fleets.find(f => f.faction === selectedFleet) : null;
+  const moveHexes = selectedFleetPx
+    ? movementRangeHexes(FLEET_POSITIONS[selectedFleet].xKm, FLEET_POSITIONS[selectedFleet].yKm)
+    : null;
 
   const screenRadius = body => {
     const cap = body.kind === "moon" ? MOON_MAX_SCREEN_PX : BODY_MAX_SCREEN_PX;
@@ -542,6 +566,33 @@ function renderSystem2D(entry, data) {
       ctx.fill();
     }
   };
+  // The fleet movement-range hex picker (see map/movegrid.js) -- fixed-
+  // pixel-size hexes around the selected fleet's screen position, each
+  // one its own destination + turn count. Drawn last (on top) so it's
+  // never hidden under a body/ring.
+  const drawMoveHexes = () => {
+    const [cx0, cy0] = worldToScreen(camera2d, selectedFleetPx.x, selectedFleetPx.y);
+    const colors = colorsFor(selectedFleetPx);
+    for (const h of moveHexes) {
+      const hcx = cx0 + h.dx * camera2d.zoom, hcy = cy0 + h.dy * camera2d.zoom;
+      const size = HEX_SIZE_PX * camera2d.zoom;
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const a = (60 * k - 90) * Math.PI / 180;
+        const px = hcx + size * Math.cos(a), py = hcy + size * Math.sin(a);
+        k ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = colors.fill;
+      ctx.globalAlpha = 0.5 / h.turns;
+      ctx.fill();
+      ctx.globalAlpha = Math.min(1, 1.1 / h.turns);
+      ctx.strokeStyle = colors.fill;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  };
 
   if (layout.center) drawDot(layout.center, false);
   for (const p of layout.planets) {
@@ -554,6 +605,7 @@ function renderSystem2D(entry, data) {
     }
   }
   for (const f of fleets) f.hitRPx = drawFleet(f, f.faction === selectedFleet);
+  if (moveHexes) drawMoveHexes();
   ctx.restore();
 
   canvas.onmousedown = ev => {
@@ -597,18 +649,25 @@ function renderSystem2D(entry, data) {
         return;
       }
       selectedFleet = hitFleet.faction;
-      setHint(`${FACTIONS[hitFleet.faction].label} fleet selected — click a destination to move it, or click it again to set formation.`);
+      setHint(`${FACTIONS[hitFleet.faction].label} fleet selected — click a hex in its movement range to move it, or click it again to set formation.`);
       render();
       return;
     }
 
     if (selectedFleet) {
-      const [wx, wy] = screenToWorld(camera2d, x, y);
-      const [xKm, yKm] = pixelToKm(layout, wx, wy);
-      moveFleet(selectedFleet, xKm, yKm);
-      setHint(`${FACTIONS[selectedFleet].label} fleet moved.`);
-      selectedFleet = null;
-      render();
+      const [cx0, cy0] = worldToScreen(camera2d, selectedFleetPx.x, selectedFleetPx.y);
+      const hitHex = moveHexes.find(h => {
+        const hx = cx0 + h.dx * camera2d.zoom, hy = cy0 + h.dy * camera2d.zoom;
+        return Math.hypot(x - hx, y - hy) <= HEX_SIZE_PX * camera2d.zoom;
+      });
+      if (hitHex) {
+        moveFleet(selectedFleet, hitHex.xKm, hitHex.yKm);
+        setHint(moveHint(selectedFleet, hitHex));
+        selectedFleet = null;
+        render();
+      } else {
+        setHint("Click a hex in the fleet's movement range to move it.");
+      }
       return;
     }
 
