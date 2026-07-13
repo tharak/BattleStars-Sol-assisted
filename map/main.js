@@ -71,14 +71,20 @@ let travelArmed = false;
 // cleared immediately after, so a tracer shows for exactly one render,
 // not battle's own state.effects (this is the map's own, unrelated array).
 const effects = [];
-// The asteroid field's current occupied hexes (a Set of "c,r" keys, see
-// battle/hexmath.js's key()) -- recomputed every render (updateBeltField)
-// alongside the belt's own asteroid list, and passed into shipCombat.js's
-// movement/fire functions as extraObstacles so the field actually blocks
-// both movement and line of sight, not just decoration. Read by the
-// command functions below (doForward, doFireAt, ...), which live outside
-// any single render, hence module-level rather than a render-local const.
+// The asteroid field's current hexes (a Set of "c,r" keys, see
+// battle/hexmath.js's key()) -- recomputed every render (updateBeltObstacles)
+// alongside the belt's own asteroid list. Passed into shipCombat.js's
+// legalTargets/canFire as extraObstacles (asteroids still block line of
+// sight); movement cost is this file's own concern (see hexMoveCost), not
+// shipCombat.js's. Read by the command functions below (doForward,
+// doFireAt, ...), which live outside any single render, hence
+// module-level rather than a render-local const.
 let beltObstacles = new Set();
+// Every hex under a body's gravity (a Map of "c,r" -> {cost,colorHex,x,y},
+// see gravityHexes) -- same lifecycle as beltObstacles: recomputed every
+// render (updateGravityHexes), read by hexMoveCost from outside any
+// single render.
+let gravityHexCosts = new Map();
 // The last body (star/planet/moon/belt) clicked at the System level, for
 // the info panel -- see infoFor/renderInfoPanel. Superseded by
 // selectedShip whenever a ship is selected (checked first in
@@ -180,19 +186,25 @@ function doTurn(dir) {
 function moveResultHint(res) {
   if (res.reason === "shaken") setHint("Shaken — refuses to close the distance.");
 }
-// A hex in the asteroid field doesn't block movement outright (see
-// shipCombat.js's stepInto -- only ship occupancy does), it just costs
-// the ship's whole MP budget to push through, same as moving backward
-// always does -- so entering one requires a full bank of MP up front,
-// checked here before the move is even attempted (shipCombat.js has no
-// concept of MP at all, that bookkeeping is entirely this file's own).
+// Neither the asteroid field nor a gravity well blocks movement outright
+// (see shipCombat.js's stepInto -- only ship occupancy did, and that's
+// gone too); they just cost more of a ship's MP budget to push through
+// -- asteroids always the full budget, a gravity well 1/2/3 depending on
+// how deep into it the hex sits (see gravityHexCost) -- so entering one
+// requires that much MP banked up front, checked here before the move is
+// even attempted (shipCombat.js has no concept of MP at all, that
+// bookkeeping is entirely this file's own). Where both apply to the same
+// hex, whichever demands more wins (Math.max), not their sum.
 function hexMoveCost(hex) {
-  return beltObstacles.has(hexKey(hex[0], hex[1])) ? MP_MAX : 1;
+  const k = hexKey(hex[0], hex[1]);
+  const asteroidCost = beltObstacles.has(k) ? MP_MAX : 1;
+  const gravityCost = gravityHexCosts.get(k)?.cost ?? 1;
+  return Math.max(asteroidCost, gravityCost);
 }
 function doForward() {
   if (!SC.canMove(activation)) return;
   const cost = hexMoveCost(SC.forwardHex(world, activation.u));
-  if (activation.mp < cost) { setHint("Not enough MP to push through the asteroid field."); renderInfoPanel(); return; }
+  if (activation.mp < cost) { setHint(`Not enough MP -- that hex costs ${cost}.`); renderInfoPanel(); return; }
   const res = SC.moveForward(world, activation.u);
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp -= cost; activation.moved = true; activation.fireMode = false;
@@ -629,14 +641,83 @@ function updateBeltObstacles(asteroids) {
 // The bodies that warp the spacetime grid below -- the Sun and planets,
 // whose already-computed rendered radius (rPx) stands in for "how heavy
 // this looks". Moons are too small to register at this scale and the
-// belt isn't a single point mass, so neither gets a well.
+// belt isn't a single point mass, so neither gets a well. colorHex rides
+// along for gravityHexes below (the grid-warp math itself only reads
+// x/z/rPx, so this is a harmless addition for that caller).
 function gravityWells(layout) {
   const wells = [];
-  if (layout.center) wells.push({ x: 0, z: 0, rPx: layout.center.rPx });
+  if (layout.center) wells.push({ x: 0, z: 0, rPx: layout.center.rPx, colorHex: colorsFor(layout.center).fill });
   for (const p of layout.planets) {
-    if (p.kind !== "belt") wells.push({ x: p.x, z: p.y, rPx: p.rPx });
+    if (p.kind !== "belt") wells.push({ x: p.x, z: p.y, rPx: p.rPx, colorHex: colorsFor(p).fill });
   }
   return wells;
+}
+
+// Gravity influence radius scales with a body's own rendered size --
+// bigger bodies (the Sun, gas giants) reach further and pull harder than
+// small ones (Mercury), matching how the spacetime grid's own visual
+// warp already scales with rPx (see warpedGridLines's falloff). A well
+// too small to reach even one hex (radius < GRID_HEX_SIZE_PX) is skipped
+// entirely -- gravityWells already excludes moons, but a very small/
+// close-in planet could still round to nothing.
+const GRAVITY_INFLUENCE_RADIUS_FACTOR = 4;
+// Flat cost tiers by how far into a well's reach a hex sits, not a
+// smooth gradient -- inner third: 3 MP, middle third: 2, outer third: 1
+// (the same as open space, so that outer band exists purely to extend
+// the painted color, not to add real cost) -- the same "closer/heavier =
+// harder to cross" idea the asteroid field's own MP cost already uses.
+function gravityHexCost(distFrac) {
+  return distFrac < 1 / 3 ? 3 : distFrac < 2 / 3 ? 2 : 1;
+}
+// Every hex within reach of the Sun or a planet's gravity, painted that
+// body's own color. Where two wells' reach overlaps, a hex takes
+// whichever well demands the *most* MP (worst case); a tie keeps
+// whichever well was found first (arbitrary but stable within one
+// render). Bounded per-well -- only hexes within that one well's own
+// radius are ever considered, the same "local scan, not the whole grid"
+// approach beltAsteroidHexes uses -- so this stays cheap even though the
+// Sun's own field alone can cover a thousand-plus hexes.
+function gravityHexes(layout) {
+  const cells = new Map(); // "c,r" -> {cost, colorHex, x, y}
+  for (const well of gravityWells(layout)) {
+    const radius = well.rPx * GRAVITY_INFLUENCE_RADIUS_FACTOR;
+    if (radius < GRID_HEX_SIZE_PX) continue;
+    const rMax = Math.ceil(radius / (GRID_HEX_SIZE_PX * 1.5)) + 1;
+    const [centerC, centerR] = pixelToHexIndex(well.x, well.z);
+    for (let r = centerR - rMax; r <= centerR + rMax; r++) {
+      for (let c = centerC - rMax; c <= centerC + rMax; c++) {
+        const [x, y] = shipHexOffset(c, r);
+        const dist = Math.hypot(x - well.x, y - well.z);
+        if (dist > radius) continue;
+        const cost = gravityHexCost(dist / radius);
+        const k = hexKey(c, r);
+        const existing = cells.get(k);
+        if (!existing || cost > existing.cost) cells.set(k, { cost, colorHex: well.colorHex, x, y });
+      }
+    }
+  }
+  return cells;
+}
+// Refreshes the module-level gravityHexCosts (see its declaration above)
+// from the current gravity-hex map -- called once per render, right
+// after computing it, mirroring updateBeltObstacles above.
+function updateGravityHexes(cells) {
+  gravityHexCosts = cells;
+}
+// Groups gravity hexes by color into one flat triangle-fan array per
+// color (3 consecutive [x,y] pairs per triangle -- center, corner k,
+// corner k+1) -- feeds scene3d.js's addGravityField, which draws one
+// merged mesh per color instead of one per hex (a big body's field can
+// cover a thousand-plus cells).
+function gravityFieldGroups(cells) {
+  const groups = new Map(); // colorHex -> triangles[]
+  for (const { colorHex, x, y } of cells.values()) {
+    const corners = hexCorners(x, y, GRID_HEX_SIZE_PX);
+    const triangles = groups.get(colorHex) || [];
+    for (let k = 0; k < 6; k++) triangles.push([x, y], corners[k], corners[(k + 1) % 6]);
+    groups.set(colorHex, triangles);
+  }
+  return groups;
 }
 
 // The "rubber sheet" spacetime grid, flattened: each vertex gets pulled
@@ -740,8 +821,13 @@ function renderSystem3D(entry, data) {
   ensureShipsSpawned(layout);
   const ships = shipsSnapshot();
 
-  scene.rebuild(({ addBody, addRing, addShip, addAsteroid, addSpacetimeGrid, addTracer }) => {
+  scene.rebuild(({ addBody, addRing, addShip, addAsteroid, addSpacetimeGrid, addGravityField, addTracer }) => {
     addSpacetimeGrid({ segments: warpedGridLines(gravityWells(layout)) });
+    const gravityCells = gravityHexes(layout);
+    updateGravityHexes(gravityCells);
+    for (const [colorHex, triangles] of gravityFieldGroups(gravityCells)) {
+      addGravityField({ triangles, colorHex });
+    }
     if (layout.center) {
       addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center) });
     }
@@ -893,6 +979,21 @@ function renderSystem2D(entry, data) {
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
   }
   ctx.globalAlpha = 1;
+
+  // Every hex under a body's gravity, tinted that body's own color -- see
+  // gravityHexes above. Drawn right after the grid and before any real
+  // body/ship, so everything else still reads clearly on top of it.
+  const gravityCells = gravityHexes(layout);
+  updateGravityHexes(gravityCells);
+  for (const { colorHex, x, y } of gravityCells.values()) {
+    const [sx, sy] = worldToScreen(camera2d, x, y);
+    const corners = hexCorners(sx, sy, GRID_HEX_SIZE_PX * camera2d.zoom);
+    ctx.beginPath();
+    corners.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+    ctx.closePath();
+    ctx.fillStyle = hexToRgba(colorHex, 0.3);
+    ctx.fill();
+  }
 
   const drawRing = (ringCx, ringCy, worldRadiusPx) => {
     const r = worldRadiusPx * camera2d.zoom;

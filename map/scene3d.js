@@ -53,8 +53,10 @@ const GRID_COLOR = 0x39ff14; // neon green -- deliberately loud against BG_COLOR
 // visibly z-fight/flicker against the grid (or against each other) as the
 // camera moves, rather than reading as "above" it. Ordered bottom to top:
 // the spacetime grid (GRID_Y, unchanged at the literal ground reference)
-// < orbit rings < a ship's own flat hex token < the ship's raised 3D cone.
+// < a gravity-field hex tint < orbit rings < a ship's own flat hex token
+// < the ship's raised 3D cone.
 const GRID_Y = 0;
+const GRAVITY_HEX_Y = 0.15;
 const ORBIT_RING_Y = 0.4;
 const SHIP_BASE_Y = 0.8;
 const SHIP_BASE_EDGE_Y = 0.85;
@@ -357,9 +359,29 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     objectGroup.add(new LineSegments2(geo, mat));
   }
 
+  // One merged flat mesh covering every hex a single body's gravity
+  // reaches, tinted that body's own color -- a big body's field can cover
+  // a thousand-plus hexes (see gravityHexes in map/main.js), so this
+  // batches all of them into one BufferGeometry/one draw call (the same
+  // "don't pay per-cell" idea addSpacetimeGrid already uses for the grid
+  // lines) rather than one mesh per hex. `triangles` is a flat array of
+  // [x,z] pairs, 3 consecutive pairs per triangle -- map/main.js builds
+  // it (via battle/hexmath.js's hexCorners, the same hex shape ship
+  // tokens use) since this module doesn't know the hex grid's own size.
+  function addGravityField({ triangles, colorHex }) {
+    const positions = [];
+    for (let i = 0; i < triangles.length; i++) positions.push(triangles[i][0], GRAVITY_HEX_Y, triangles[i][1]);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false,
+    });
+    objectGroup.add(new THREE.Mesh(geo, mat));
+  }
+
   function rebuild(fn) {
     clearObjects();
-    fn({ addBody, addRing, addShip, addAsteroid, addSpacetimeGrid, addTracer });
+    fn({ addBody, addRing, addShip, addAsteroid, addSpacetimeGrid, addGravityField, addTracer });
     renderFrame();
   }
 
