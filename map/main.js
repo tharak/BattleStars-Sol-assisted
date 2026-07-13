@@ -204,7 +204,20 @@ const BELT_HEIGHT_PX = 5;
 // size and how far past the outermost body (Neptune, at ORBIT_MAX_PX) it
 // extends, shared by the 3D and 2D paths so both cover the same area at
 // the same density.
-const GRID_HEX_SIZE_PX = 20;
+//
+// The hex lattice is one fixed grid, anchored at the origin -- only the
+// Sun (which sits exactly at that origin) is guaranteed to land on a
+// lattice vertex; every planet's real position is essentially arbitrary
+// relative to it, so the *visually* deepest point of that planet's well
+// is really whichever lattice vertex happens to fall nearest it, not the
+// planet's true position. At the old 20px hex size that quantization
+// error could be up to ~half a hex-width, easily bigger than a small
+// planet's own rendered sphere -- exactly why a planet's dot and its
+// well's apparent center could look offset from each other. A smaller
+// hex size shrinks that worst-case error proportionally; 10px keeps it
+// small enough to read as centered without pushing the segment count too
+// far past what the old 20px version already rendered comfortably.
+const GRID_HEX_SIZE_PX = 10;
 const GRID_EXTENT_PX = ORBIT_MAX_PX + 80;
 const GRID_LINE_COLOR = "#39ff14"; // neon green -- matches scene3d.js's GRID_COLOR
 
@@ -289,7 +302,7 @@ function warpedGridLines(wells) {
       const dx = w.x - x, dz = w.z - z;
       const d = Math.hypot(dx, dz);
       if (d < 1e-6) continue;
-      const falloff = Math.max(w.rPx * 2, 20);
+      const falloff = Math.max(w.rPx * 2, GRID_HEX_SIZE_PX);
       const strength = w.rPx * 9;
       // Gaussian, not the 1/(1+x^2) curve tried first -- that one has a
       // long tail that never really reaches zero, so a heavy well (the
