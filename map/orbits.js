@@ -18,6 +18,12 @@
 
 export const AU_KM = 149597870.7;
 
+// Real bounds of the asteroid main belt, AU -- used to scatter a decorative
+// particle cloud (see beltParticles below) instead of drawing it as one
+// synthetic point body.
+export const BELT_INNER_AU = 2.1;
+export const BELT_OUTER_AU = 3.3;
+
 // Mean physical radius, km.
 export const BODY_RADIUS_KM = {
   sun: 696000,
@@ -95,4 +101,27 @@ export function makeDistanceScale(maxDistanceKm, maxPixel, d0 = 1) {
 export function makeSizeScale(maxRadiusKm, { min = 3, max = 34 } = {}) {
   const scale = Math.sqrt(maxRadiusKm);
   return r => Math.max(min, Math.min(max, (Math.sqrt(Math.max(0, r)) / scale) * max));
+}
+
+// A deterministic (stable across re-renders, not re-randomized every
+// frame) scatter of `count` synthetic asteroid positions across a real
+// distance range -- real individual asteroid positions for a belt this
+// size aren't practically sourceable (same honesty stance as the ~150
+// minor moons' synthetic phase), but the real *range* they're scattered
+// across is. `heightJitter` is a small +-1 value, meant to be scaled by
+// the caller for the 3D view's "puffy disc" thickness -- irrelevant to a
+// flat 2D consumer, which can just ignore it.
+export function beltParticles(count, innerAU = BELT_INNER_AU, outerAU = BELT_OUTER_AU) {
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const key = "belt-" + i;
+    const distanceFrac = hashAngleDeg(key + "-d") / 360;
+    const angleDeg = hashAngleDeg(key + "-a");
+    const heightJitter = (hashAngleDeg(key + "-h") / 360) * 2 - 1;
+    out.push({
+      distanceKm: (innerAU + distanceFrac * (outerAU - innerAU)) * AU_KM,
+      angleDeg, heightJitter,
+    });
+  }
+  return out;
 }

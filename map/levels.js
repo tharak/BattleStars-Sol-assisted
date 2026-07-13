@@ -18,6 +18,7 @@ export { FORMATION_NAMES } from "../battle/config.js";
 import {
   AU_KM, BODY_RADIUS_KM, MAJOR_MOON_RADIUS_KM, PARENT_GM_KM3S2,
   keplerPeriodDays, angleAtDeg, J2000_MS, hashAngleDeg,
+  BELT_INNER_AU, BELT_OUTER_AU,
 } from "./orbits.js";
 
 // "Radius" as specified counts hex rings *including* the center ring, so
@@ -102,6 +103,12 @@ export function systemLevel(systemId) {
         id: p.id, label: p.label, kind: "belt", radiusKm: 0,
         distanceKm: BELT_AXIS_AU * AU_KM,
         orbit: { refAngleDeg: hashAngleDeg(p.id), refEpochMs: J2000_MS, periodDays: 365.25636 * BELT_AXIS_AU ** 1.5 },
+        // Real bounds of the actual main belt -- see beltParticles in
+        // orbits.js, which the renderer uses to scatter a decorative
+        // particle cloud across this range instead of drawing the belt
+        // as the single point above (that point still anchors the click
+        // target/camera-focus behavior, unchanged).
+        beltInnerAU: BELT_INNER_AU, beltOuterAU: BELT_OUTER_AU,
         moons: [],
       };
     }

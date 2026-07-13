@@ -211,9 +211,40 @@ export function createSystemScene({ canvas, labelContainer, sizePx, minZoom, max
     return group;
   }
 
+  // A decorative, non-individually-clickable scatter of small particles
+  // (the asteroid belt -- see beltParticles in orbits.js) drawn as one
+  // THREE.Points cloud, a single draw call regardless of how many points
+  // there are. Clicking the belt hits a separate invisible torus spanning
+  // its real inner/outer radius (added to pickables, resolving to `data`
+  // the same way everything else does) rather than raycasting against
+  // individual points, which would be both slower and a much fiddlier
+  // click target than "anywhere in the visible band".
+  function addAsteroidBelt({ points, colorHex, innerPx, outerPx, data }) {
+    const positions = new Float32Array(points.length * 3);
+    points.forEach((p, i) => {
+      positions[i * 3] = p.x;
+      positions[i * 3 + 1] = p.y;
+      positions[i * 3 + 2] = p.z;
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({ color: colorHex, size: 1.6, sizeAttenuation: false });
+    objectGroup.add(new THREE.Points(geo, mat));
+
+    const midRadius = (innerPx + outerPx) / 2;
+    const hit = new THREE.Mesh(
+      new THREE.TorusGeometry(midRadius, (outerPx - innerPx) / 2 + 3, 8, 48),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }),
+    );
+    hit.rotation.x = -Math.PI / 2;
+    hit.userData = data;
+    objectGroup.add(hit);
+    pickables.push(hit);
+  }
+
   function rebuild(fn) {
     clearObjects();
-    fn({ addBody, addRing, addFleet });
+    fn({ addBody, addRing, addFleet, addAsteroidBelt });
     renderFrame();
   }
 

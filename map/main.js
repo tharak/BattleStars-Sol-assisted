@@ -4,6 +4,7 @@ import {
   layoutSystemWithMoons, worldToScreen, screenToWorld,
 } from "./orbitmap.js";
 import { createSystemScene } from "./scene3d.js";
+import { AU_KM, beltParticles } from "./orbits.js";
 import {
   universeLevel, systemLevel, formationBoard,
   FLEET_FORMATIONS, FORMATION_NAMES, FACTIONS, SHIPS_PER_FACTION,
@@ -187,6 +188,15 @@ const KEY_PAN_PX = 60;
 // rotated or scrolled) two different factions' fleets need to be before a
 // Battle becomes possible.
 const BATTLE_PROXIMITY_PX = 40;
+// The asteroid belt is drawn as a scattered particle cloud (real distance
+// range, synthetic individual positions -- see beltParticles in orbits.js)
+// rather than the single dot every other body gets. BELT_HEIGHT_PX is how
+// far the 3D scene's particles jitter off the flat plane (real asteroids
+// do have some inclination spread, giving the belt a bit of real
+// thickness rather than being a perfectly flat ring); the 2D fallback has
+// no such axis and ignores it.
+const BELT_PARTICLE_COUNT = 1200;
+const BELT_HEIGHT_PX = 5;
 
 // A fleet's world position uses the exact same log-distance scale as every
 // real body in this view, so "close" means close in the system,
@@ -200,6 +210,19 @@ function placeFleets(layout) {
       id: `${faction}-fleet`, label: String(SHIPS_PER_FACTION), kind: "fleet",
       faction, x: r * Math.cos(angle), y: r * Math.sin(angle),
     };
+  });
+}
+
+// Shared between the 3D and 2D belt renderers so they can't drift apart --
+// real distance range (see beltParticles in orbits.js), positioned on the
+// exact same log-compressed scale as every other body via layout.dist.
+// `heightFrac` (-1..1) is only meaningful to the 3D path; the 2D fallback
+// has no third axis and just ignores it.
+function beltScreenPoints(layout, belt) {
+  return beltParticles(BELT_PARTICLE_COUNT, belt.beltInnerAU, belt.beltOuterAU).map(p => {
+    const r = layout.dist.toPixel(p.distanceKm);
+    const rad = p.angleDeg * Math.PI / 180;
+    return { x: r * Math.cos(rad), y: r * Math.sin(rad), heightFrac: p.heightJitter };
   });
 }
 
@@ -243,11 +266,19 @@ function renderSystem3D(entry, data) {
   const fleets = placeFleets(layout);
   const battleReady = closeEnoughForBattle(fleets);
 
-  scene.rebuild(({ addBody, addRing, addFleet }) => {
+  scene.rebuild(({ addBody, addRing, addFleet, addAsteroidBelt }) => {
     if (layout.center) {
       addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, label: layout.center.label, data: layout.center, emissive: true });
     }
     for (const p of layout.planets) {
+      if (p.kind === "belt") {
+        const points = beltScreenPoints(layout, p).map(pt => ({ x: pt.x, y: pt.heightFrac * BELT_HEIGHT_PX, z: pt.y }));
+        addAsteroidBelt({
+          points, colorHex: colorsFor(p).fill, data: p,
+          innerPx: layout.dist.toPixel(p.beltInnerAU * AU_KM), outerPx: layout.dist.toPixel(p.beltOuterAU * AU_KM),
+        });
+        continue;
+      }
       addRing(0, 0, Math.hypot(p.x, p.y));
       addBody({ x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, label: p.label, data: p });
       for (const m of p.moons) {
@@ -447,9 +478,24 @@ function renderSystem2D(entry, data) {
     ctx.fillText(fleet.label, sx, sy + s * 1.05 + 15);
     return tapRadius;
   };
+  // Scattered dots across the belt's real distance range (see
+  // beltScreenPoints/beltParticles), not one dot like every other body --
+  // same shared particle math the 3D scene uses, just flat (no height axis).
+  const drawBelt = belt => {
+    const colors = colorsFor(belt);
+    const r = Math.min(Math.max(0.8 * camera2d.zoom, 0.5), 2.5);
+    for (const pt of beltScreenPoints(layout, belt)) {
+      const [sx, sy] = worldToScreen(camera2d, pt.x, pt.y);
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fillStyle = colors.stroke;
+      ctx.fill();
+    }
+  };
 
   if (layout.center) drawDot(layout.center, false);
   for (const p of layout.planets) {
+    if (p.kind === "belt") { drawBelt(p); continue; }
     drawRing(...worldToScreen(camera2d, 0, 0), Math.hypot(p.x, p.y));
     const [px, py] = drawDot(p, false);
     for (const m of p.moons) {
@@ -475,6 +521,16 @@ function renderSystem2D(entry, data) {
 
     const screenPos = b => worldToScreen(camera2d, b.x, b.y);
     const within = b => {
+      if (b.kind === "belt") {
+        // The belt is a scattered band, not one point -- clicking anywhere
+        // across its real inner/outer radius should hit it, not just the
+        // single representative point everything else uses for its target.
+        const [sunSx, sunSy] = worldToScreen(camera2d, 0, 0);
+        const distFromSun = Math.hypot(x - sunSx, y - sunSy);
+        const innerR = layout.dist.toPixel(b.beltInnerAU * AU_KM) * camera2d.zoom;
+        const outerR = layout.dist.toPixel(b.beltOuterAU * AU_KM) * camera2d.zoom;
+        return distFromSun >= innerR - 6 && distFromSun <= outerR + 6;
+      }
       const [sx, sy] = screenPos(b);
       const tap = b.kind === "fleet" ? b.hitRPx : Math.max(screenRadius(b), 10);
       return Math.hypot(x - sx, y - sy) <= tap;
