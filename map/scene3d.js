@@ -285,35 +285,32 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     return group;
   }
 
-  // A decorative, non-individually-clickable scatter of small particles
-  // (the asteroid belt -- see beltParticles in orbits.js) drawn as one
-  // THREE.Points cloud, a single draw call regardless of how many points
-  // there are. Clicking the belt hits a separate invisible torus spanning
-  // its real inner/outer radius (added to pickables, resolving to `data`
-  // the same way everything else does) rather than raycasting against
-  // individual points, which would be both slower and a much fiddlier
-  // click target than "anywhere in the visible band".
-  function addAsteroidBelt({ points, colorHex, innerPx, outerPx, data }) {
-    const positions = new Float32Array(points.length * 3);
-    points.forEach((p, i) => {
-      positions[i * 3] = p.x;
-      positions[i * 3 + 1] = p.y;
-      positions[i * 3 + 2] = p.z;
-    });
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    const mat = new THREE.PointsMaterial({ color: colorHex, size: 1.6, sizeAttenuation: false });
-    objectGroup.add(new THREE.Points(geo, mat));
-
-    const midRadius = (innerPx + outerPx) / 2;
-    const hit = new THREE.Mesh(
-      new THREE.TorusGeometry(midRadius, (outerPx - innerPx) / 2 + 3, 8, 48),
-      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }),
-    );
-    hit.rotation.x = -Math.PI / 2;
-    hit.userData = data;
-    objectGroup.add(hit);
-    pickables.push(hit);
+  // A single "1-hex asteroid" -- a real, individually-clickable obstacle
+  // occupying exactly one hex cell (matches "each ship occupies 1 hex" --
+  // see shipHexOffset in map/main.js), not a decorative particle. An
+  // irregular low-poly rock (an icosahedron with each vertex nudged by a
+  // small amount, deterministically seeded from its own world position so
+  // the same asteroid looks the same on every rebuild()) rather than a
+  // perfect gem, colored to match the belt's existing dark palette
+  // (FILL.belt/STROKE.belt in map/main.js).
+  function addAsteroid({ x, z, radius, data }) {
+    const geo = new THREE.IcosahedronGeometry(radius, 0);
+    let seed = Math.abs(Math.round(x * 131 + z * 977)) || 1;
+    const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const jitter = 1 + (rand() - 0.5) * 0.4;
+      pos.setXYZ(i, pos.getX(i) * jitter, pos.getY(i) * jitter, pos.getZ(i) * jitter);
+    }
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 1, flatShading: true });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, SHIP_BASE_Y + radius * 0.6, z);
+    mesh.rotation.set(rand() * Math.PI * 2, rand() * Math.PI * 2, rand() * Math.PI * 2);
+    mesh.userData = data;
+    objectGroup.add(mesh);
+    pickables.push(mesh);
+    return mesh;
   }
 
   // A shot's tracer: one straight line between firer and target, added
@@ -362,7 +359,7 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
 
   function rebuild(fn) {
     clearObjects();
-    fn({ addBody, addRing, addShip, addAsteroidBelt, addSpacetimeGrid, addTracer });
+    fn({ addBody, addRing, addShip, addAsteroid, addSpacetimeGrid, addTracer });
     renderFrame();
   }
 

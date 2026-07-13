@@ -3,13 +3,13 @@ import {
   layoutSystemWithMoons, worldToScreen, screenToWorld,
 } from "./orbitmap.js";
 import { createSystemScene } from "./scene3d.js";
-import { AU_KM, beltParticles } from "./orbits.js";
+import { AU_KM, hashAngleDeg } from "./orbits.js";
 import {
   universeLevel, systemLevel,
   FLEET_FORMATIONS, FACTIONS, SHIPS_PER_FACTION,
   FLEET_POSITIONS, initFleetPositions,
 } from "./levels.js";
-import { DIR_ANGLE, hexEdgeWidths, hexCorners } from "../battle/hexmath.js";
+import { DIR_ANGLE, hexEdgeWidths, hexCorners, key as hexKey } from "../battle/hexmath.js";
 import { formationLayout } from "../battle/formations.js";
 import { BOARD_TINT } from "../battle/colors.js";
 import { MP_MAX, STATE_NAME } from "../battle/config.js";
@@ -71,6 +71,14 @@ let travelArmed = false;
 // cleared immediately after, so a tracer shows for exactly one render,
 // not battle's own state.effects (this is the map's own, unrelated array).
 const effects = [];
+// The asteroid field's current occupied hexes (a Set of "c,r" keys, see
+// battle/hexmath.js's key()) -- recomputed every render (updateBeltField)
+// alongside the belt's own asteroid list, and passed into shipCombat.js's
+// movement/fire functions as extraObstacles so the field actually blocks
+// both movement and line of sight, not just decoration. Read by the
+// command functions below (doForward, doFireAt, ...), which live outside
+// any single render, hence module-level rather than a render-local const.
+let beltObstacles = new Set();
 // The last body (star/planet/moon/belt) clicked at the System level, for
 // the info panel -- see infoFor/renderInfoPanel. Superseded by
 // selectedShip whenever a ship is selected (checked first in
@@ -99,8 +107,8 @@ function infoFor(hit) {
   if (!hit) return null;
   if (hit.kind === "star") return { name: hit.label, detail: "The star this system orbits." };
   if (hit.kind === "moon") return { name: hit.label, detail: `Moon of ${hit.parentLabel}.` };
-  if (hit.kind === "belt") return { name: hit.label, detail: "Asteroid belt — no individual bodies to explore." };
   if (hit.kind === "planet") return { name: hit.label, detail: "Planet." };
+  if (hit.kind === "asteroid") return { name: "Asteroid", detail: "Blocks movement and line of sight." };
   if (hit.kind === "ship") {
     return {
       name: `${SC.labelOf(world, hit.id)}${hit.isFlag ? " ★" : ""}`,
@@ -175,7 +183,7 @@ function moveResultHint(res) {
 }
 function doForward() {
   if (!SC.canMove(activation)) return;
-  const res = SC.moveForward(world, activation.u);
+  const res = SC.moveForward(world, activation.u, beltObstacles);
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp--; activation.moved = true; activation.fireMode = false;
   setHint("");
@@ -184,7 +192,7 @@ function doForward() {
 }
 function doBackward() {
   if (!SC.canBack(activation)) return;
-  const res = SC.moveBackward(world, activation.u);
+  const res = SC.moveBackward(world, activation.u, beltObstacles);
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp = 0; activation.moved = true; activation.fireMode = false;
   setHint("");
@@ -196,13 +204,13 @@ function doBackward() {
 // handleShipOrDestinationClick), so this only exists to show
 // "pick a highlighted target" in the panel.
 function armFireMode() {
-  if (!SC.canFire(world, activation)) return;
+  if (!SC.canFire(world, activation, beltObstacles)) return;
   activation.fireMode = true;
   renderInfoPanel();
 }
 function doFireAt(tgt) {
-  if (!SC.canFire(world, activation)) return;
-  if (!SC.legalTargets(world, activation.u).includes(tgt)) return;
+  if (!SC.canFire(world, activation, beltObstacles)) return;
+  if (!SC.legalTargets(world, activation.u, beltObstacles).includes(tgt)) return;
   const firer = activation.u;
   const result = SC.fire(world, firer, tgt, random);
   effects.push({ from: result.from, to: result.to, hit: result.hits > 0 });
@@ -241,7 +249,7 @@ function setCourse(x, y) {
 function handleShipOrDestinationClick(hit, worldPoint) {
   if (activation && travelArmed && worldPoint) { setCourse(worldPoint[0], worldPoint[1]); return true; }
   if (hit?.kind === "ship") {
-    if (activation && SC.legalTargets(world, activation.u).includes(hit.id)) { doFireAt(hit.id); return true; }
+    if (activation && SC.legalTargets(world, activation.u, beltObstacles).includes(hit.id)) { doFireAt(hit.id); return true; }
     if (!activation || activation.u !== hit.id) selectShip(hit.id);
     return true;
   }
@@ -263,7 +271,7 @@ function renderInfoPanel() {
       (travelArmed ? `<br><span style="color:var(--red)">Click a destination.</span>` : "");
     infoTurnL.disabled = infoTurnR.disabled = infoForward.disabled = !SC.canMove(activation);
     infoBack.disabled = !SC.canBack(activation);
-    infoFire.disabled = !SC.canFire(world, activation);
+    infoFire.disabled = !SC.canFire(world, activation, beltObstacles);
     return;
   }
   const shown = hoverInfo || lastClickedInfo;
@@ -447,15 +455,18 @@ const LOCAL_MAX_PX = 22;
 const MIN_ZOOM = 1, MAX_ZOOM = 60;
 const KEY_ZOOM_FACTOR = 1.3;
 const KEY_PAN_PX = 60;
-// The asteroid belt is drawn as a scattered particle cloud (real distance
-// range, synthetic individual positions -- see beltParticles in orbits.js)
-// rather than the single dot every other body gets. BELT_HEIGHT_PX is how
-// far the 3D scene's particles jitter off the flat plane (real asteroids
-// do have some inclination spread, giving the belt a bit of real
-// thickness rather than being a perfectly flat ring); the 2D fallback has
-// no such axis and ignores it.
-const BELT_PARTICLE_COUNT = 1200;
-const BELT_HEIGHT_PX = 5;
+// The asteroid belt is real terrain, not decoration: every hex cell inside
+// its actual 2.1-3.3 AU ring (see beltAsteroidHexes below) either holds a
+// single "1-hex asteroid" that blocks movement and line of sight, or is
+// empty. Two fixed angular wedges are kept permanently clear -- corridors
+// through the field, LOTGH's Iserlohn/Fezzan corridors being the
+// reference: the belt is otherwise dense enough to matter, but these two
+// lanes are the only reliable way through, so controlling them is the
+// actual tactical prize.
+const BELT_ASTEROID_FILL = 0.5;
+const BELT_CORRIDOR_CENTERS_DEG = [90, 270];
+const BELT_CORRIDOR_HALF_WIDTH_DEG = 12;
+const BELT_ASTEROID_RADIUS_PX = 2.4;
 
 // The "rubber sheet" spacetime grid drawn across the System view -- hex
 // size and how far past the outermost body (Neptune, at ORBIT_MAX_PX) it
@@ -560,17 +571,47 @@ function shipsSnapshot() {
   });
 }
 
-// Shared between the 3D and 2D belt renderers so they can't drift apart --
-// real distance range (see beltParticles in orbits.js), positioned on the
-// exact same log-compressed scale as every other body via layout.dist.
-// `heightFrac` (-1..1) is only meaningful to the 3D path; the 2D fallback
-// has no third axis and just ignores it.
-function beltScreenPoints(layout, belt) {
-  return beltParticles(BELT_PARTICLE_COUNT, belt.beltInnerAU, belt.beltOuterAU).map(p => {
-    const r = layout.dist.toPixel(p.distanceKm);
-    const rad = p.angleDeg * Math.PI / 180;
-    return { x: r * Math.cos(rad), y: r * Math.sin(rad), heightFrac: p.heightJitter };
+function inBeltCorridor(angleDeg) {
+  const a = ((angleDeg % 360) + 360) % 360;
+  return BELT_CORRIDOR_CENTERS_DEG.some(centerDeg => {
+    const diff = Math.abs(((a - centerDeg + 540) % 360) - 180);
+    return diff <= BELT_CORRIDOR_HALF_WIDTH_DEG;
   });
+}
+// Every hex cell whose center (via shipHexOffset, the same conversion the
+// grid itself and every ship on it use) falls inside the belt's real
+// inner/outer radius, minus the two clear corridors, minus roughly half
+// the rest -- deterministic per (c,r) via hashAngleDeg (the same "stable,
+// not fabricated" approach the minor moons' synthetic phase already uses
+// in orbits.js), so the field itself never visibly reshuffles between
+// renders even though it's recomputed fresh every time (cheap: a
+// bounding-box scan over a few thousand candidate hexes, almost all
+// rejected by the radius check before the hash is even touched). Shared
+// between the 3D and 2D renderers, and by updateBeltObstacles below, so
+// none of the three can drift apart from each other.
+function beltAsteroidHexes(layout, belt) {
+  const innerPx = layout.dist.toPixel(belt.beltInnerAU * AU_KM);
+  const outerPx = layout.dist.toPixel(belt.beltOuterAU * AU_KM);
+  const rMax = Math.ceil(outerPx / (GRID_HEX_SIZE_PX * 1.5)) + 1;
+  const asteroids = [];
+  for (let r = -rMax; r <= rMax; r++) {
+    for (let c = -rMax; c <= rMax; c++) {
+      const [x, y] = shipHexOffset(c, r);
+      const dist = Math.hypot(x, y);
+      if (dist < innerPx || dist > outerPx) continue;
+      if (inBeltCorridor(Math.atan2(y, x) * 180 / Math.PI)) continue;
+      if (hashAngleDeg(`belt-asteroid-${c},${r}`) / 360 >= BELT_ASTEROID_FILL) continue;
+      asteroids.push({ c, r, x, y, kind: "asteroid", id: `asteroid-${c},${r}` });
+    }
+  }
+  return asteroids;
+}
+// Refreshes the module-level beltObstacles (see its declaration above)
+// from the current asteroid list -- called once per render, right after
+// computing it, so doForward/doFireAt/etc. (which run outside any single
+// render) always check against the field as it actually looks right now.
+function updateBeltObstacles(asteroids) {
+  beltObstacles = new Set(asteroids.map(a => hexKey(a.c, a.r)));
 }
 
 // The bodies that warp the spacetime grid below -- the Sun and planets,
@@ -687,18 +728,18 @@ function renderSystem3D(entry, data) {
   ensureShipsSpawned(layout);
   const ships = shipsSnapshot();
 
-  scene.rebuild(({ addBody, addRing, addShip, addAsteroidBelt, addSpacetimeGrid, addTracer }) => {
+  scene.rebuild(({ addBody, addRing, addShip, addAsteroid, addSpacetimeGrid, addTracer }) => {
     addSpacetimeGrid({ segments: warpedGridLines(gravityWells(layout)) });
     if (layout.center) {
       addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center) });
     }
     for (const p of layout.planets) {
       if (p.kind === "belt") {
-        const points = beltScreenPoints(layout, p).map(pt => ({ x: pt.x, y: pt.heightFrac * BELT_HEIGHT_PX, z: pt.y }));
-        addAsteroidBelt({
-          points, colorHex: colorsFor(p).fill, data: p,
-          innerPx: layout.dist.toPixel(p.beltInnerAU * AU_KM), outerPx: layout.dist.toPixel(p.beltOuterAU * AU_KM),
-        });
+        const asteroids = beltAsteroidHexes(layout, p);
+        updateBeltObstacles(asteroids);
+        for (const a of asteroids) {
+          addAsteroid({ x: a.x, z: a.y, radius: BELT_ASTEROID_RADIUS_PX, data: a });
+        }
         continue;
       }
       addRing(0, 0, Math.hypot(p.x, p.y));
@@ -728,11 +769,8 @@ function renderSystem3D(entry, data) {
 
     if (hit?.kind === "star") { setHint(""); showBodyInfo(hit); return; }
     if (hit?.kind === "moon") { setHint(`${hit.label} — a moon of ${hit.parentLabel}.`); showBodyInfo(hit); return; }
-    if (hit?.kind === "planet" || hit?.kind === "belt") {
-      setHint(hit.kind === "belt" ? "Asteroid Belt — no bodies to explore." : "");
-      showBodyInfo(hit);
-      return;
-    }
+    if (hit?.kind === "asteroid") { setHint("Asteroid — blocks movement and line of sight."); showBodyInfo(hit); return; }
+    if (hit?.kind === "planet") { setHint(""); showBodyInfo(hit); return; }
     setHint("Empty space — nothing here.");
     showBodyInfo(null);
   };
@@ -898,23 +936,31 @@ function renderSystem2D(entry, data) {
     }
     return tapRadius;
   };
-  // Scattered dots across the belt's real distance range (see
-  // beltScreenPoints/beltParticles), not one dot like every other body --
-  // same shared particle math the 3D scene uses, just flat (no height axis).
-  const drawBelt = belt => {
-    const colors = colorsFor(belt);
-    const r = Math.min(Math.max(0.8 * camera2d.zoom, 0.5), 2.5);
-    for (const pt of beltScreenPoints(layout, belt)) {
-      const [sx, sy] = worldToScreen(camera2d, pt.x, pt.y);
-      ctx.beginPath();
-      ctx.arc(sx, sy, r, 0, Math.PI * 2);
-      ctx.fillStyle = colors.stroke;
-      ctx.fill();
-    }
+  // One small hex per asteroid, matching the "1-hex" token language ships
+  // already use, but a static muted rock (belt's existing FILL/STROKE
+  // colors) with no facing/selection state -- these are terrain, not
+  // actors.
+  const drawAsteroid = a => {
+    const [sx, sy] = worldToScreen(camera2d, a.x, a.y);
+    const s = Math.min(Math.max(BELT_ASTEROID_RADIUS_PX * camera2d.zoom, 1.2), 8);
+    const corners = hexCorners(sx, sy, s);
+    ctx.beginPath();
+    corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    ctx.closePath();
+    ctx.fillStyle = FILL.belt;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = STROKE.belt;
+    ctx.stroke();
+    return Math.max(s * 1.4, 6);
   };
   if (layout.center) drawDot(layout.center, false);
+  const beltBody = layout.planets.find(p => p.kind === "belt");
+  const asteroids = beltBody ? beltAsteroidHexes(layout, beltBody) : [];
+  updateBeltObstacles(asteroids);
+  for (const a of asteroids) a.hitRPx = drawAsteroid(a);
   for (const p of layout.planets) {
-    if (p.kind === "belt") { drawBelt(p); continue; }
+    if (p.kind === "belt") continue;
     drawRing(...worldToScreen(camera2d, 0, 0), Math.hypot(p.x, p.y));
     const [px, py] = drawDot(p, false);
     for (const m of p.moons) {
@@ -944,30 +990,24 @@ function renderSystem2D(entry, data) {
   canvas.oncontextmenu = ev => ev.preventDefault();
   canvas.style.cursor = "grab";
 
-  // Whatever body/ship sits under a given screen point, in the same
-  // priority a click resolves it in (ship > star > moon > planet/belt) --
-  // shared by onclick and onmousemove (hover) so they can't drift apart.
+  // Whatever body/ship/asteroid sits under a given screen point, in the
+  // same priority a click resolves it in (ship > asteroid > star > moon >
+  // planet) -- shared by onclick and onmousemove (hover) so they can't
+  // drift apart. The belt's own single synthetic point (kind "belt") is
+  // deliberately excluded here -- it's just an orbit/math anchor now (see
+  // beltAsteroidHexes), not a click target; the individual asteroid hexes
+  // are what's actually clickable across that whole ring.
   function hitAt(x, y) {
     const within = b => {
-      if (b.kind === "belt") {
-        // The belt is a scattered band, not one point -- clicking/hovering
-        // anywhere across its real inner/outer radius should hit it, not
-        // just the single representative point everything else uses for
-        // its target.
-        const [sunSx, sunSy] = worldToScreen(camera2d, 0, 0);
-        const distFromSun = Math.hypot(x - sunSx, y - sunSy);
-        const innerR = layout.dist.toPixel(b.beltInnerAU * AU_KM) * camera2d.zoom;
-        const outerR = layout.dist.toPixel(b.beltOuterAU * AU_KM) * camera2d.zoom;
-        return distFromSun >= innerR - 6 && distFromSun <= outerR + 6;
-      }
       const [sx, sy] = worldToScreen(camera2d, b.x, b.y);
-      const tap = b.kind === "ship" ? b.hitRPx : Math.max(screenRadius(b), 10);
+      const tap = (b.kind === "ship" || b.kind === "asteroid") ? b.hitRPx : Math.max(screenRadius(b), 10);
       return Math.hypot(x - sx, y - sy) <= tap;
     };
     return ships.find(within)
+      || asteroids.find(within)
       || (layout.center && within(layout.center) ? layout.center : null)
       || layout.planets.flatMap(p => p.moons).find(within)
-      || layout.planets.find(within)
+      || layout.planets.filter(p => p.kind !== "belt").find(within)
       || null;
   }
 
@@ -988,8 +1028,13 @@ function renderSystem2D(entry, data) {
       showBodyInfo(hit);
       return;
     }
-    if (hit?.kind === "planet" || hit?.kind === "belt") {
-      setHint(hit.kind === "belt" ? "Asteroid Belt — no bodies to explore." : "");
+    if (hit?.kind === "asteroid") {
+      setHint("Asteroid — blocks movement and line of sight.");
+      showBodyInfo(hit);
+      return;
+    }
+    if (hit?.kind === "planet") {
+      setHint("");
       showBodyInfo(hit);
       return;
     }

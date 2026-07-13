@@ -78,8 +78,14 @@ export function inCommand(world, e) {
   const fl = flagshipOf(world, factionOf(world, e));
   return fl !== null && hexDist(posOf(world, e), posOf(world, fl)) <= CMD_R;
 }
-export function occupiedSet(world) {
-  const s = new Set();
+// `extraObstacles` (a Set of "c,r" keys, or undefined) folds in terrain
+// this engine itself has no concept of -- currently just the star map's
+// asteroid field (see beltAsteroidHexes in map/main.js). Kept optional
+// and additive rather than teaching this module what an asteroid is, so
+// it stays the same faction/terrain-agnostic hex engine described in the
+// file header; the caller decides what else blocks a hex.
+export function occupiedSet(world, extraObstacles) {
+  const s = new Set(extraObstacles || []);
   for (const e of aliveShips(world)) { const [c, r] = posOf(world, e); s.add(key(c, r)); }
   return s;
 }
@@ -87,8 +93,8 @@ export function nearestEnemy(world, e) {
   const en = enemiesOf(world, factionOf(world, e));
   return en.length ? argmin(en, x => hexDist(posOf(world, e), posOf(world, x))) : null;
 }
-export function legalTargets(world, e) {
-  const occ = occupiedSet(world);
+export function legalTargets(world, e, extraObstacles) {
+  const occ = occupiedSet(world, extraObstacles);
   const pos = posOf(world, e), facing = facingOf(world, e);
   return enemiesOf(world, factionOf(world, e)).filter(x => {
     const xp = posOf(world, x);
@@ -108,8 +114,8 @@ export function canMove(act) {
 export function canBack(act) {
   return canMove(act) && act.mp >= MP_MAX;
 }
-export function canFire(world, act) {
-  return !!(act && act.u != null && !act.fired && (act.cmd || !act.moved) && legalTargets(world, act.u).length > 0);
+export function canFire(world, act, extraObstacles) {
+  return !!(act && act.u != null && !act.fired && (act.cmd || !act.moved) && legalTargets(world, act.u, extraObstacles).length > 0);
 }
 
 // --- movement ------------------------------------------------------------
@@ -121,10 +127,10 @@ export function turn(world, e, dir) {
 // caller (map/main.js) turns `reason` into hint text; neither mutates MP,
 // that's the caller's own activation bookkeeping (mirroring how
 // turnEngine.js's doForward/doBackward, not systems.js, own `act.mp`).
-function stepInto(world, e, dir) {
+function stepInto(world, e, dir, extraObstacles) {
   const pos = posOf(world, e);
   const nx = neighbor(pos, dir);
-  if (occupiedSet(world).has(key(nx[0], nx[1]))) return { ok: false, reason: "blocked" };
+  if (occupiedSet(world, extraObstacles).has(key(nx[0], nx[1]))) return { ok: false, reason: "blocked" };
   if (moraleOf(world, e) === MoraleState.SHAKEN) {
     const ne = nearestEnemy(world, e);
     if (ne && hexDist(nx, posOf(world, ne)) < hexDist(pos, posOf(world, ne))) return { ok: false, reason: "shaken" };
@@ -132,8 +138,8 @@ function stepInto(world, e, dir) {
   setPos(world, e, nx);
   return { ok: true };
 }
-export const moveForward = (world, e) => stepInto(world, e, facingOf(world, e));
-export const moveBackward = (world, e) => stepInto(world, e, (facingOf(world, e) + 3) % 6);
+export const moveForward = (world, e, extraObstacles) => stepInto(world, e, facingOf(world, e), extraObstacles);
+export const moveBackward = (world, e, extraObstacles) => stepInto(world, e, (facingOf(world, e) + 3) % 6, extraObstacles);
 
 // --- morale / destruction (battle/systems.js:17-54, supply/flagLost/
 // forced-rout-facing dropped per the file header's scope cuts) -----------

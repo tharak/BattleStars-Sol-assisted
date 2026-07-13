@@ -91,11 +91,11 @@ export function systemLevel(systemId) {
         id: p.id, label: p.label, kind: "belt", radiusKm: 0,
         distanceKm: BELT_AXIS_AU * AU_KM,
         orbit: { refAngleDeg: hashAngleDeg(p.id), refEpochMs: J2000_MS, periodDays: 365.25636 * BELT_AXIS_AU ** 1.5 },
-        // Real bounds of the actual main belt -- see beltParticles in
-        // orbits.js, which the renderer uses to scatter a decorative
-        // particle cloud across this range instead of drawing the belt
-        // as the single point above (that point still anchors the click
-        // target/camera-focus behavior, unchanged).
+        // Real bounds of the actual main belt -- see beltAsteroidHexes in
+        // map/main.js, which populates this range with real individual
+        // "1-hex asteroid" obstacles instead of drawing the belt as the
+        // single point above (that point is now only a distanceKm/orbit
+        // anchor for the asteroid field's own math, not a click target).
         beltInnerAU: BELT_INNER_AU, beltOuterAU: BELT_OUTER_AU,
         moons: [],
       };
