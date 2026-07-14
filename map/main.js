@@ -138,8 +138,8 @@ const ensureEffectLoop = makeEffectLoop();
 // module-level rather than a render-local const.
 let beltObstacles = new Set();
 // Every hex under a body's gravity (a Map of "c,r" -> {cost,colorHex,x,y},
-// see gravityHexes) -- same lifecycle as beltObstacles, read by hexMoveCost
-// from outside any single render.
+// see gravityHexes). `cost` now expresses visual/current strength only;
+// gravity moves ships automatically but no longer consumes extra MP.
 let gravityHexCosts = new Map();
 // The last body (star/planet/moon/belt) clicked at the System level, for
 // the info panel -- see infoFor/renderInfoPanel. Superseded by
@@ -354,25 +354,15 @@ function moveResultHint(res) {
 // so a future per-ship move cost (e.g. a heavier hull that costs more
 // than 1 MP/hex even in open space) is a one-line swap to a lookup here,
 // with hexExtraCost's terrain math untouched either way.
-// Neither the asteroid field nor a gravity well blocks movement outright;
-// they just add to a ship's MP budget to push through -- an
-// asteroid hex demands the rest of a full tank, a gravity well an
-// uncapped extra that grows the closer/deeper in a hex sits (see
-// gravityHexCost). Expressed as *extra* MP on top of MOVE_BASE_COST,
-// not an absolute replacement, so a future ship with its own non-1 base
-// move cost still gets the right total (base + extra) without this
-// function changing. Where both obstacles apply to the same hex,
-// whichever demands more extra wins (Math.max), not their sum. Only
-// doForward reads this -- doBackward mirrors battle/queries.js's own
-// canBack ("backward = the whole move"): a real battle rule that
-// backward always costs a ship's entire MP tank, terrain or not, kept
-// as-is rather than metered like forward to match the same ship
-// config the tactical battle screen uses.
+// Asteroids are the only strategic terrain that changes MP cost: crossing
+// one consumes the full allowance. Gravity is now a positional hazard
+// instead; its visible arrows and automatic drift carry the whole effect,
+// so entering any gravity hex costs the normal forward 1 MP. Backward still
+// consumes the full allowance under the unchanged tactical rule.
 function hexMoveCost(hex) {
   const k = hexKey(hex[0], hex[1]);
   return forwardMovementCost({
     hasAsteroid: beltObstacles.has(k),
-    gravityCost: gravityHexCosts.get(k)?.cost,
   });
 }
 
@@ -1244,15 +1234,13 @@ const GRAVITY_INFLUENCE_RADIUS_FACTOR = 4;
 // in renderSystem2D) -- scaled down per hex by gravityHexIntensity, so
 // only the deepest hexes ever actually reach this value.
 const GRAVITY_HEX_MAX_OPACITY = 0.3;
-// Cost is a real, unbounded falloff, not a flat 3-tier scale -- inversely
+// Strength is a real, unbounded falloff, not a flat 3-tier scale -- inversely
 // proportional to distance in units of the body's own radius, scaled so
 // it lands on exactly 1 MP (the same as open space) right at the edge of
-// GRAVITY_INFLUENCE_RADIUS_FACTOR: a hex FACTOR radii out costs
-// FACTOR/FACTOR = 1; one body-radius out (a planet's own "surface")
-// costs FACTOR; deep inside costs more still, with no ceiling -- next to
-// something as massive as the Sun this can run well past the old fixed
-// cap of 3, which is the point (the pull really is that dominant that
-// close in, not an arbitrary game-balance number). distRadii is floored
+// GRAVITY_INFLUENCE_RADIUS_FACTOR: a hex FACTOR radii out has strength 1;
+// one body-radius out has strength FACTOR; deep inside grows without a
+// ceiling. This strength controls color, line weight, and arrow emphasis,
+// not movement points. distRadii is floored
 // well short of 0 to avoid a divide-by-near-zero singularity exactly at
 // a well's own center.
 function gravityHexCost(distPx, well) {
