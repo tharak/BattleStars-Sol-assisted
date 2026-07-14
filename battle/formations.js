@@ -57,6 +57,9 @@ export function spawnUnit(state, { side, position, facing, isFlagship = false })
   world.add(e, C.Facing, { dir: facing });
   world.add(e, C.Side, { value: side });
   world.add(e, C.Strength, { value: 4 });
+  // A tactical unit is a Fleet.  Its Strength is represented by this
+  // compact, visual-only formation of individual Ships in either renderer.
+  world.add(e, C.FleetFormation, { name: "sphere" });
   world.add(e, C.Morale, { state: MoraleState.STEADY });
   world.add(e, C.Label, { id: (side === Side.BLUE ? "B" : "R") + (i + 1) });
   world.add(e, C.Alive, true);

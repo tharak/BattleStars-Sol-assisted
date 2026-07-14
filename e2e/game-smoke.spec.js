@@ -31,7 +31,7 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   await expect(page.locator("#breadcrumb")).toContainText("Sol");
   await expect(page.locator("#infoPanel")).toBeVisible();
   await expect(page.locator("#turnPanel")).toBeVisible();
-  await expect(page.locator("#turnHeading")).toContainText("Blue turn");
+  await expect(page.locator("#turnHeading")).toContainText("Blue Armada turn");
   await expect(page.locator(".turnShip")).toHaveCount(36);
   await expect(page.locator(".turnShip.ready")).toHaveCount(12);
   await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer", "3d");
@@ -52,6 +52,7 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   }
   await expect(page.locator(".turnShip").first()).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#infoName")).toContainText("B1");
+  await expect(page.locator("#infoFleetFormation")).toHaveValue("sphere");
   if (testInfo.project.name === "desktop-chromium") {
     await page.locator(".turnShip").nth(1).click();
     await expect(page.locator("#infoName")).toContainText("B2");
@@ -75,7 +76,7 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
     await expect(page.locator(".turnShip").first()).toContainText("Acted");
     await expect(page.locator("#infoControls")).toBeHidden();
 
-    for (const [rosterIndex, nextTurn] of [[12, "Red turn"], [24, "Blue turn"]]) {
+    for (const [rosterIndex, nextTurn] of [[12, "Red Armada turn"], [24, "Blue Armada turn"]]) {
       await page.locator(".turnShip").nth(rosterIndex).click();
       await page.locator("#infoGroupMove").click();
       await page.locator("#infoTurnL").click();
@@ -136,7 +137,7 @@ test("the strategic map keeps an intentional 2D fallback path", async ({ page })
 
   await page.goto("/map.html?renderer=2d");
   await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer", "2d");
-  await expect(page.locator("#turnHeading")).toContainText("Blue turn");
+  await expect(page.locator("#turnHeading")).toContainText("Blue Armada turn");
   await expect(page.locator(".turnShip")).toHaveCount(36);
   await expect(page.locator("#mapwrap")).toBeVisible();
   await expect(page.locator("#mapwrap3d")).toBeHidden();

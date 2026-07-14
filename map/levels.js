@@ -281,7 +281,10 @@ export const FACTIONS = {
   green: { label: "Green", startAt: "venus" },
   red:   { label: "Red",   startAt: "mars" },
 };
-export const SHIPS_PER_FACTION = 12;
+// An Armada is the faction-level force. It initially deploys twelve Fleet
+// tokens; each Fleet's Strength then controls how many miniature Ships it
+// visibly contains.
+export const FLEETS_PER_ARMADA = 12;
 
 export const FLEET_POSITIONS = {};
 
@@ -298,5 +301,11 @@ export function initFleetPositions(nowMs = Date.now()) {
   }
 }
 
-// Each faction's starting formation, in memory only (resets on reload).
-export const FLEET_FORMATIONS = { blue: "sphere", green: "sphere", red: "sphere" };
+// The Armada's initial deployment layout only. A Fleet's own in-hex Ship
+// formation is stored on its ECS entity and can be changed in the info panel.
+export const ARMADA_DEPLOYMENT_FORMATIONS = { blue: "sphere", green: "sphere", red: "sphere" };
+
+// Compatibility exports for external scenario scripts. New map code uses the
+// Armada names above; these aliases do not describe a Fleet's in-hex Ships.
+export const SHIPS_PER_FACTION = FLEETS_PER_ARMADA;
+export const FLEET_FORMATIONS = ARMADA_DEPLOYMENT_FORMATIONS;

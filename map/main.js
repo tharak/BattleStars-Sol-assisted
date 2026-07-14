@@ -5,7 +5,7 @@ import {
 import { AU_KM, hashAngleDeg } from "./orbits.js";
 import {
   universeLevel, systemLevel,
-  FLEET_FORMATIONS, FACTIONS, SHIPS_PER_FACTION,
+  ARMADA_DEPLOYMENT_FORMATIONS, FACTIONS, FLEETS_PER_ARMADA,
   FLEET_POSITIONS, initFleetPositions,
 } from "./levels.js";
 import { DIR_ANGLE, directionToward, hexCorners, key as hexKey } from "../battle/hexmath.js";
@@ -14,6 +14,7 @@ import { BOARD_TINT, ACCENT } from "../battle/colors.js";
 import { LINE_WIDTH, LASER_DURATION, LASER_HALO_ALPHA } from "../battle/dimensions.js";
 import { CMD_R, MP_MAX, STATE_NAME } from "../battle/config.js";
 import * as SC from "../battle/core/shipRules.js";
+import { fleetShipPositions } from "../battle/fleetShips.js";
 import { MathRandomSource } from "../battle/core/random.js";
 import { forwardMovementCost } from "../battle/domain/movementRules.js";
 import { makeEffectLoop } from "../battle/core/effectLoop.js";
@@ -47,6 +48,7 @@ const infoName = document.getElementById("infoName");
 const infoDetail = document.getElementById("infoDetail");
 const infoControls = document.getElementById("infoControls");
 const infoShipStatus = document.getElementById("infoShipStatus");
+const infoFleetFormation = document.getElementById("infoFleetFormation");
 const infoTurnL = document.getElementById("infoTurnL");
 const infoTurnR = document.getElementById("infoTurnR");
 const infoForward = document.getElementById("infoForward");
@@ -99,7 +101,7 @@ let path = [
 // Course) from here on, never recomputed from the formation again.
 const world = new SC.World();
 const random = new MathRandomSource();
-const fleetRoster = new Map(Object.keys(FACTIONS).map(faction => [faction, []]));
+const armadaRoster = new Map(Object.keys(FACTIONS).map(faction => [faction, []]));
 let strategicTurn = createStrategicTurnState({ startedAtMs: performance.now() });
 let lastRenderedTimerSecond = null;
 let lastTurnRosterSignature = null;
@@ -209,7 +211,7 @@ function showHoverInfo(hit) {
 }
 
 function livingShipIdsByFaction() {
-  return Object.fromEntries([...fleetRoster].map(([faction, ships]) => [
+  return Object.fromEntries([...armadaRoster].map(([faction, ships]) => [
     faction,
     ships.filter(ship => SC.isAlive(world, ship)),
   ]));
@@ -645,9 +647,10 @@ function renderInfoPanel() {
     const u = selectedShip;
     infoEmpty.style.display = "none";
     infoBody.style.display = "block";
-    infoName.textContent = `${SC.labelOf(world, u)}${SC.isFlagship(world, u) ? " ★" : ""}`;
-    infoDetail.textContent = `${FACTIONS[SC.factionOf(world, u)].label} — Str ${SC.strengthOf(world, u)}, ${STATE_NAME[SC.moraleOf(world, u)]}`;
+    infoName.textContent = `Fleet ${SC.labelOf(world, u)}${SC.isFlagship(world, u) ? " ★" : ""}`;
+    infoDetail.textContent = `${FACTIONS[SC.factionOf(world, u)].label} Armada — ${SC.strengthOf(world, u)} Ships, ${STATE_NAME[SC.moraleOf(world, u)]}`;
     infoControls.style.display = "flex";
+    infoFleetFormation.value = SC.fleetFormationOf(world, u);
     const commandedShips = commandGroupShips();
     const groupMoveSaved = SC.isFlagship(world, u) && groupMovePreferences.has(u);
     const groupMoveEnabled = groupMoveArmed || groupMoveSaved;
@@ -655,7 +658,8 @@ function renderInfoPanel() {
     const groupBackwardRoute = groupMoveArmed ? groupRouteTo(SC.backwardHex(world, u)) : null;
     infoShipStatus.innerHTML =
       `${activation.cmd ? "In command (move + fire)" : "Out of command (move OR fire)"}<br>` +
-      `MP ${activation.mp}/${MP_MAX}${activation.fired ? " · has fired" : ""}` +
+      `MP ${activation.mp}/${MP_MAX}${activation.fired ? " · has fired" : ""}<br>` +
+      `Formation: ${SC.fleetFormationOf(world, u)}` +
       (activation.fireMode ? `<br><span style="color:var(--red)">Pick a highlighted target.</span>` : "") +
       (travelArmed ? `<br><span style="color:var(--red)">Click a destination.</span>` : "") +
       (groupMoveArmed ? `<br><span style="color:var(--gold)">${commandedShips.length} ships moving together. Use the movement controls or pick a destination.</span>` : "");
@@ -698,6 +702,14 @@ infoFire.onclick = armFireMode;
 infoTravel.onclick = armTravel;
 infoGroupMove.onclick = toggleGroupMove;
 infoEnd.onclick = endActivation;
+infoFleetFormation.onchange = () => {
+  if (selectedShip == null) return;
+  const formation = infoFleetFormation.value;
+  if (SC.setFleetFormation(world, selectedShip, formation)) {
+    setHint(`Fleet ${SC.labelOf(world, selectedShip)} formation set to ${formation}.`);
+    render();
+  }
+};
 
 function strategicShipDisplayState(ship, faction, participantSet) {
   if (!SC.isAlive(world, ship)) return { label: "Destroyed", className: "destroyed" };
@@ -740,7 +752,7 @@ function renderTurnClock(nowMs = performance.now()) {
 function renderTurnPanel(nowMs = performance.now()) {
   if (!shipsSpawned) return;
   const activeFaction = activeStrategicFaction(strategicTurn);
-  turnHeading.textContent = `Round ${strategicTurn.round} · ${FACTIONS[activeFaction].label} turn`;
+  turnHeading.textContent = `Round ${strategicTurn.round} · ${FACTIONS[activeFaction].label} Armada turn`;
   renderTurnClock(nowMs);
   const participantSet = new Set(activationParticipants());
   const rosterSignature = JSON.stringify({
@@ -750,19 +762,19 @@ function renderTurnPanel(nowMs = performance.now()) {
     forfeited: strategicTurn.forfeitedShipIds,
     selectedShip,
     participants: [...participantSet],
-    alive: [...fleetRoster.values()].flat().map(ship => SC.isAlive(world, ship)),
+    alive: [...armadaRoster.values()].flat().map(ship => SC.isAlive(world, ship)),
   });
   if (rosterSignature === lastTurnRosterSignature) return;
   lastTurnRosterSignature = rosterSignature;
   turnFactions.replaceChildren();
 
-  for (const [faction, ships] of fleetRoster) {
+  for (const [faction, ships] of armadaRoster) {
     const section = document.createElement("section");
     section.className = `turnFaction${faction === activeFaction ? " active" : ""}`;
     const header = document.createElement("div");
     header.className = "turnFactionHeader";
     const name = document.createElement("span");
-    name.textContent = FACTIONS[faction].label;
+    name.textContent = `${FACTIONS[faction].label} Armada`;
     name.style.color = colorsFor({ faction }).fill;
     const ready = ships.filter(ship => shipCanActThisTurn(ship) && !participantSet.has(ship)).length;
     const livingShips = ships.filter(ship => SC.isAlive(world, ship));
@@ -781,10 +793,10 @@ function renderTurnPanel(nowMs = performance.now()) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `turnShip ${displayState.className}`;
-      button.title = `${SC.labelOf(world, ship)} — ${displayState.label}. Focus this ship.`;
+      button.title = `Fleet ${SC.labelOf(world, ship)} — ${displayState.label}. Pan to this Fleet.`;
       button.setAttribute("aria-pressed", String(selectedShip === ship));
       const label = document.createElement("span");
-      label.textContent = `${SC.labelOf(world, ship)}${SC.isFlagship(world, ship) ? " ★" : ""}`;
+      label.textContent = `Fleet ${SC.labelOf(world, ship)}${SC.isFlagship(world, ship) ? " ★" : ""}`;
       const status = document.createElement("span");
       status.className = "turnShipState";
       status.textContent = displayState.label;
@@ -1105,7 +1117,7 @@ function clearSystemHover(refreshOverlay) {
 // every render, but done exactly once here: from this point on a ship's
 // real Position/Facing components are the only source of truth for where
 // it is and which way it faces, never recomputed from
-// FLEET_POSITIONS/FLEET_FORMATIONS again. Anchored on each faction's
+// FLEET_POSITIONS/ARMADA_DEPLOYMENT_FORMATIONS again. Anchored on each faction's
 // single logical FLEET_POSITIONS point (the exact same log-distance scale
 // as every real body in this view) using the exact same
 // formationLayout()-relative-offset math the old placeShips used. Every
@@ -1117,15 +1129,15 @@ function spawnInitialShips(layout) {
     const angle = Math.atan2(pos.yKm, pos.xKm);
     const r = layout.dist.toPixel(distanceKm);
     const [anchorX, anchorY] = snapToHexGrid(r * Math.cos(angle), r * Math.sin(angle));
-    const { u, flag } = formationLayout(FLEET_FORMATIONS[faction], SHIPS_PER_FACTION);
+    const { u, flag } = formationLayout(ARMADA_DEPLOYMENT_FORMATIONS[faction], FLEETS_PER_ARMADA);
     u.forEach(([fwd, lat], i) => {
       const [dx, dy] = shipHexOffset(fwd, lat);
       const [c, rIdx] = pixelToHexIndex(anchorX + dx, anchorY + dy);
-      const ship = SC.spawnShip(world, {
+      const ship = SC.spawnFleet(world, {
         faction, c, r: rIdx, dir: directionToward([c, rIdx], [0, 0]), isFlagship: i === flag,
         label: `${faction[0].toUpperCase()}${i + 1}`,
       });
-      fleetRoster.get(faction).push(ship);
+      armadaRoster.get(faction).push(ship);
     });
   }
 }
@@ -1154,14 +1166,15 @@ function shipsSnapshot(wells = []) {
     ? new Set(SC.legalTargets(world, activation.u, beltObstacles)) : null;
   const groupMembers = groupMoveArmed ? new Set(commandGroupShips()) : null;
   const targetColor = targets ? colorsFor({ faction: SC.factionOf(world, activation.u) }).fill : null;
-  return SC.aliveShips(world).map(e => {
+  return SC.aliveFleets(world).map(e => {
     const [c, r] = SC.posOf(world, e);
     const [gridX, gridY] = shipHexOffset(c, r);
     const [x, y] = warpedGravityPoint(gridX, gridY, wells);
     const hasActed = hasStrategicShipActed(strategicTurn, e);
     return {
-      id: e, kind: "ship", faction: SC.factionOf(world, e), isFlag: SC.isFlagship(world, e),
+      id: e, kind: "fleet", faction: SC.factionOf(world, e), isFlag: SC.isFlagship(world, e),
       label: SC.labelOf(world, e), facingDeg: DIR_ANGLE[SC.facingOf(world, e)],
+      strength: SC.strengthOf(world, e), formation: SC.fleetFormationOf(world, e),
       isTarget: !!targets?.has(e), targetColor, isGroupMember: !!groupMembers?.has(e),
       hasActed, colorHex: strategicShipColor(SC.factionOf(world, e), hasActed),
       x, y,
@@ -1474,6 +1487,7 @@ function renderSystem3D(entry, data) {
       addShip({
         x: s.x, z: s.y, colorHex: s.colorHex, data: s,
         selected: s.id === selectedShip, facingDeg: s.facingDeg, isFlag: s.isFlag,
+        strength: s.strength, formation: s.formation,
         isTarget: s.isTarget, targetColor: s.targetColor, isGroupMember: s.isGroupMember,
         hasActed: s.hasActed,
       });
@@ -1706,14 +1720,10 @@ function renderSystem2D(entry, data) {
       [x + Math.cos(a - 2.6) * s * 0.353, y + Math.sin(a - 2.6) * s * 0.353],
     ];
   };
-  // One ship, one small hex on its own hex cell (see shipsSnapshot) -- filled
-  // translucent (SHIP_FILL_ALPHA) in the faction color so a tightly-packed
-  // formation still reads as individual ships rather than one solid blob.
-  // Facing is a filled arrow and the flagship gets a "★", same glyph
-  // language as battle/render.js's own unit drawing (ACCENT.flagshipArrow)
-  // -- labels/strength pips aren't duplicated here, that detail already
-  // lives in the info panel.
-  const drawShip = (ship, selected) => {
+  // One Fleet occupies one strategic hex. Its Strength is rendered as that
+  // many compact, facing-aligned Ships inside the Fleet token; the token
+  // remains the single selectable rules entity and click target.
+  const drawFleet = (ship, selected) => {
     const [sx, sy] = worldToScreen(camera2d, ship.x, ship.y);
     const s = scaledStrategicShipIconRadius(camera2d.zoom);
     const colorHex = ship.colorHex;
@@ -1729,17 +1739,23 @@ function renderSystem2D(entry, data) {
     ctx.strokeStyle = selected ? "#ffffff" : (ship.isGroupMember ? ACCENT.flagshipArrow : colorHex);
     ctx.stroke();
 
-    const [tip, base1, base2] = shipArrowPoints(sx, sy, s, ship.facingDeg);
-    ctx.beginPath();
-    ctx.moveTo(...tip); ctx.lineTo(...base1); ctx.lineTo(...base2);
-    ctx.closePath();
-    ctx.fillStyle = ship.isFlag && !ship.hasActed ? ACCENT.flagshipArrow : colorHex;
-    ctx.fill();
-    if (ship.isFlag && s >= 4) {
-      ctx.fillStyle = ACCENT.labelText;
-      ctx.font = "bold 9px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillText("★", sx, sy + 3);
+    const miniSize = Math.max(s * 0.3, 1.1);
+    const miniSpacing = Math.max(s * 1.05, 3);
+    const members = fleetShipPositions({
+      x: sx, y: sy, facingDeg: ship.facingDeg, formation: ship.formation,
+      strength: ship.strength, spacing: miniSpacing,
+    });
+    for (let i = 0; i < members.length; i++) {
+      const [mx, my] = members[i];
+      const [tip, base1, base2] = shipArrowPoints(mx, my, miniSize, ship.facingDeg);
+      ctx.beginPath();
+      ctx.moveTo(...tip); ctx.lineTo(...base1); ctx.lineTo(...base2);
+      ctx.closePath();
+      ctx.fillStyle = ship.isFlag && i === 0 && !ship.hasActed ? ACCENT.flagshipArrow : colorHex;
+      ctx.fill();
+      ctx.strokeStyle = hexToRgba("#ffffff", 0.35);
+      ctx.lineWidth = Math.max(0.6, miniSize * 0.2);
+      ctx.stroke();
     }
     // A legal fire target for the currently-selected ship (see
     // shipsSnapshot) -- outlined in the *attacker's* own color (not
@@ -1785,7 +1801,7 @@ function renderSystem2D(entry, data) {
     }
   }
   for (const well of wells) drawCurrentCue(well);
-  for (const s of ships) s.hitRPx = drawShip(s, s.id === selectedShip);
+  for (const s of ships) s.hitRPx = drawFleet(s, s.id === selectedShip);
   // A shot's tracer, fading over time -- see ensureEffectLoop, which owns
   // expiring `effects` and repainting while any are still fading. Same
   // width/halo/duration parity as battle/render.js's own laser effect

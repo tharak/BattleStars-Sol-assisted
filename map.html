@@ -44,6 +44,7 @@
   #infoControls{display:none;flex-direction:column;gap:6px;margin-top:10px}
   #infoControls>button{width:100%}
   #infoShipStatus{font-size:12px;color:var(--dim);margin:2px 0 4px;line-height:1.4}
+  #infoFleetFormation{width:100%;padding:4px 6px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:4px}
   #infoShipButtons{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0}
   #infoShipButtons button{flex:1 0 40%;padding:4px 6px;font-size:12px}
   #infoGroupMove[aria-pressed="true"]{border-color:var(--gold);color:var(--gold);background:#3b3422}
@@ -63,19 +64,20 @@
   drag to rotate, right-drag or arrow keys to pan, scroll (zooms toward the cursor) or
   <kbd>-</kbd>/<kbd>=</kbd> to zoom manually -- moons are invisible at a glance, same as in real life,
   so zoom in by hand to see them. Click a breadcrumb (or Zoom Out / Esc) to leave a
-  screen. Nothing on the map carries a floating label -- click a body or a ship and its name shows in
-  the panel at the top right instead. Three factions (Blue, Green, Red) each start with a 12-ship
-  fleet near their home planet. The turn roster at the top left shows which faction is active and
-  which ships remain ready; click any roster entry to focus its ship. Each faction has one minute to
-  activate its living ships before its remaining ships forfeit their movement and play passes to the
-  next faction. Every ship is individually selectable and commandable with the
+  screen. Nothing on the map carries a floating label -- click a body or a Fleet and its name shows in
+  the panel at the top right instead. Three factions (Blue, Green, Red) each command an Armada of 12
+  Fleets near their home planet. Each Fleet is shown as its remaining Strength of smaller Ships. The
+  turn roster at the top left shows which Armada is active and which Fleets remain ready; click any
+  roster entry to pan to its Fleet. Each faction has one minute to activate its living Fleets before
+  its remaining Fleets forfeit their movement and play passes to the next faction. Every Fleet is
+  individually selectable and commandable with the
   same controls the tactical battle screen uses: <kbd>Q</kbd>/<kbd>E</kbd> turn, <kbd>W</kbd> forward,
   <kbd>S</kbd> back (costs all remaining MP), <kbd>F</kbd> arms fire mode (or just click a highlighted
   enemy in range/arc/LOS to fire directly), <kbd>Space</kbd> ends the activation. Ships cannot enter
   or pass through occupied hexes. Set Course repositions the selected ship on any unoccupied hex in
   one instant jump, for real interplanetary
   distances the hex-by-hex MP budget can't cover. Selecting a flagship also reveals its command area
-  and can move every friendly ship inside it as one formation using the same Turn, Forward, and Back
+  and can move every friendly Fleet inside it together using the same Turn, Forward, and Back
   controls. The same rules engine also runs standalone as a
   <a href="battle.html">battle rules test bench</a>, for trying scenarios/fleet sizes/control modes
   this view doesn't expose.</p>
@@ -95,12 +97,20 @@
       <div id="turnFactions"></div>
     </aside>
     <div id="infoPanel">
-      <div id="infoEmpty" class="empty">Click a body or ship for details.</div>
+        <div id="infoEmpty" class="empty">Click a body or Fleet for details.</div>
       <div id="infoBody" style="display:none">
         <div id="infoName"></div>
         <div id="infoDetail"></div>
-        <div id="infoControls">
-          <div id="infoShipStatus"></div>
+          <div id="infoControls">
+            <div id="infoShipStatus"></div>
+            <label>Fleet formation
+              <select id="infoFleetFormation" aria-label="Fleet formation">
+                <option value="line">Line</option>
+                <option value="wedge">Wedge</option>
+                <option value="echelon">Echelon</option>
+                <option value="sphere">Sphere</option>
+              </select>
+            </label>
           <div id="infoShipButtons">
             <button id="infoTurnL">◄ Turn</button>
             <button id="infoTurnR">► Turn</button>

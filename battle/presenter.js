@@ -11,13 +11,13 @@ function present(state, presentation, event) {
     case BattleEvent.BATTLE_INITIALIZED:
       presentation.effects = [];
       clearLog();
-      log(`Scenario: ${event.scenario.t} — ${event.fleetSize} squadrons a side, breaks at ${event.breakThreshold}`, "t");
+      log(`Scenario: ${event.scenario.t} — ${event.fleetSize} Fleets per Armada, breaks at ${event.breakThreshold}`, "t");
       break;
     case BattleEvent.DEPLOYMENT_STARTED:
-      log(`${sideName(event.side)}: deploy your squadrons — click your shaded zone.`, "t");
+      log(`${sideName(event.side)} Armada: deploy your Fleets — click your shaded zone.`, "t");
       break;
     case BattleEvent.DEPLOYMENT_CONFIRMED:
-      log(`${sideName(event.side)} deployment confirmed — ${event.fleetSize} squadrons.`, "t");
+      log(`${sideName(event.side)} Armada deployment confirmed — ${event.fleetSize} Fleets.`, "t");
       break;
     case BattleEvent.AI_DEPLOYED:
       log(`${sideName(event.side)} (AI) deploys in ${event.formation} formation.`, "t");
@@ -82,12 +82,12 @@ function presentBattleEnd(state, event) {
   let body;
   if (event.winner === null) {
     title = "Draw";
-    body = `Both fleets stand at turn ${battle.turn}.`;
+    body = `Both Armadas stand at turn ${battle.turn}.`;
   } else {
     title = `${sideName(event.winner)} wins`;
     const loser = event.winner === Side.BLUE ? Side.RED : Side.BLUE;
     body = event.reason === "break"
-      ? `${sideName(loser)}'s fleet breaks on turn ${battle.turn} (${Q.losses(state, loser)} squadrons destroyed or fled).`
+      ? `${sideName(loser)} Armada breaks on turn ${battle.turn} (${Q.losses(state, loser)} Fleets destroyed or fled).`
       : `On time at turn ${battle.turn}: surviving strength ${survivingStrength(Side.BLUE)}–${survivingStrength(Side.RED)}.`;
   }
   const controlName = ["Blue", "Red", "hotseat", "spectate"][state.ctrlMode];

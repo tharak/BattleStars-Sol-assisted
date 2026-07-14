@@ -34,6 +34,7 @@ import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { hexEdgeWidths, hexCorners } from "../battle/hexmath.js";
+import { fleetShipPositions } from "../battle/fleetShips.js";
 import { ACCENT } from "../battle/colors.js";
 import { chooseGraphicsQuality, GraphicsQuality } from "./renderQuality.js";
 
@@ -253,16 +254,10 @@ export function createSystemScene({
     buildGroup.add(new THREE.Line(geo, mat));
   }
 
-  // One ship, one small cone (a 3-sided cone reads as a simple triangular
-  // hull) -- replaces the old addFleet's 3-cone "<" wedge, which stood in
-  // for an entire "12" fleet as one stylized token. Now each of the 12
-  // ships in a formation is its own individual token, hex-positioned (see
-  // shipHexOffset in map/main.js), so this places exactly one. facingDeg
-  // is the ship's real component facing (initially aimed toward the Sun),
-  // applied via a quaternion rather than an Euler angle so there's no
-  // manual sign-guessing about which way "positive rotation" goes in this
-  // scene's particular axis convention.
-  function addShip({ x, z, colorHex, data, selected, facingDeg, isFlag, isTarget, targetColor, isGroupMember, hasActed }) {
+  // A Fleet is one strategic entity and one selectable hex token. Its
+  // Strength is rendered as a compact formation of smaller Ship cones
+  // inside that token, so a loss immediately removes one visible Ship.
+  function addShip({ x, z, colorHex, data, selected, facingDeg, strength = 4, formation = "sphere", isFlag, isTarget, targetColor, isGroupMember, hasActed }) {
     // Grounded at the plane, not lifted -- unlike the old ring-only
     // marker, this group now holds both the flat hex token (which
     // should visibly rest on the orbital plane, at SHIP_BASE_Y) and the raised
@@ -273,19 +268,27 @@ export function createSystemScene({
     group.position.set(x, 0, z);
 
     const s = 3;
-    const geo = new THREE.ConeGeometry(s * 0.55, s * 1.6, 3);
-    // The cone's own orientation already reads as a facing arrow. Ready
-    // flagships retain the gold marker, while acted flagships use the same
-    // darker faction tone as every other acted ship.
-    const mat = new THREE.MeshStandardMaterial({ color: isFlag && !hasActed ? ACCENT.flagshipArrow : colorHex, roughness: 0.6 });
-    const ship = new THREE.Mesh(geo, mat);
-    ship.position.y = SHIP_HEIGHT_ABOVE_PLANE;
+    const geo = new THREE.ConeGeometry(s * 0.22, s * 0.7, 3);
     const rad = facingDeg * Math.PI / 180;
-    ship.quaternion.setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      new THREE.Vector3(Math.cos(rad), 0, Math.sin(rad)),
-    );
-    group.add(ship);
+    const shipPositions = fleetShipPositions({
+      x: 0, y: 0, facingDeg, formation, strength, spacing: s * 0.95,
+    });
+    let leadShip = null;
+    for (let i = 0; i < shipPositions.length; i++) {
+      const [shipX, shipZ] = shipPositions[i];
+      const mat = new THREE.MeshStandardMaterial({
+        color: isFlag && i === 0 && !hasActed ? ACCENT.flagshipArrow : colorHex,
+        roughness: 0.6,
+      });
+      const ship = new THREE.Mesh(geo, mat);
+      ship.position.set(shipX, SHIP_HEIGHT_ABOVE_PLANE, shipZ);
+      ship.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(Math.cos(rad), 0, Math.sin(rad)),
+      );
+      group.add(ship);
+      if (i === 0) leadShip = ship;
+    }
     // Selection outline takes priority over the target outline (a ship
     // can't be both at once anyway -- selected is the acting ship,
     // isTarget is some *other* ship it could fire at); target uses the
@@ -295,8 +298,8 @@ export function createSystemScene({
     if (selected || isTarget || isGroupMember) {
       const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
         new THREE.LineBasicMaterial({ color: selected ? 0xffffff : (isTarget ? targetColor : ACCENT.flagshipArrow) }));
-      edges.position.y = SHIP_HEIGHT_ABOVE_PLANE;
-      edges.quaternion.copy(ship.quaternion);
+      edges.position.copy(leadShip.position);
+      edges.quaternion.copy(leadShip.quaternion);
       group.add(edges);
     }
 

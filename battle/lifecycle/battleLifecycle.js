@@ -7,15 +7,18 @@ import {
 export function initializeBattle(context) {
   context.beginBattle();
   context.BREAK_AT = breakThreshold(context.SIZE);
+  const armadas = [
+    { name: null, supply: context.scen.supA || SupplyState.NORMAL, flagLost: false, roster: [] },
+    { name: null, supply: context.scen.supB || SupplyState.NORMAL, flagLost: false, roster: [] },
+  ];
   context.G = {
     turn: 0,
     lastActed: Side.RED,
     over: false,
     winner: null,
-    fleets: [
-      { name: null, supply: context.scen.supA || SupplyState.NORMAL, flagLost: false, roster: [] },
-      { name: null, supply: context.scen.supB || SupplyState.NORMAL, flagLost: false, roster: [] },
-    ],
+    armadas,
+    // Tactical modules retain this alias while their internal APIs migrate.
+    fleets: armadas,
   };
 }
 

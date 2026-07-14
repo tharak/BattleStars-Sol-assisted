@@ -13,6 +13,7 @@
 import { World } from "../ecs.js";
 import * as C from "../components.js";
 import { RANGE, CMD_R, MP_MAX } from "../config.js";
+import { FLEET_FORMATION_NAMES } from "../fleetShips.js";
 import { FiringArc, MoraleState, SupplyState } from "../domain/constants.js";
 import { resolveCombat } from "../domain/combatRules.js";
 import { moraleStateAfterCheck, resolveMorale } from "../domain/moraleRules.js";
@@ -28,6 +29,14 @@ export const posOf = (world, e) => { const p = world.get(e, C.Position); return 
 export const facingOf = (world, e) => world.get(e, C.Facing).dir;
 export const factionOf = (world, e) => world.get(e, C.Side).value;
 export const strengthOf = (world, e) => world.get(e, C.Strength).value;
+export const fleetFormationOf = (world, e) => world.get(e, C.FleetFormation)?.name || "sphere";
+export const setFleetFormation = (world, e, name) => {
+  if (!FLEET_FORMATION_NAMES.includes(name)) return false;
+  const current = world.get(e, C.FleetFormation);
+  if (current) current.name = name;
+  else world.add(e, C.FleetFormation, { name });
+  return true;
+};
 export const moraleOf = (world, e) => world.get(e, C.Morale).state;
 export const labelOf = (world, e) => world.get(e, C.Label).id;
 export const isFlagship = (world, e) => world.has(e, C.Flagship);
@@ -41,25 +50,32 @@ const setPos = (world, e, pos) => { const p = world.get(e, C.Position); p.c = po
 // than force map/main.js to reach into World internals itself.
 export function setPosition(world, e, c, r) { setPos(world, e, [c, r]); }
 
-export function spawnShip(world, { faction, c, r, dir, isFlagship = false, label }) {
+export function spawnFleet(world, { faction, c, r, dir, isFlagship = false, label, formation = "sphere" }) {
   const e = world.createEntity();
   world.add(e, C.Position, { c, r });
   world.add(e, C.Facing, { dir });
   world.add(e, C.Side, { value: faction });
   world.add(e, C.Strength, { value: 4 });
+  world.add(e, C.FleetFormation, { name: formation });
   world.add(e, C.Morale, { state: MoraleState.STEADY });
   world.add(e, C.Label, { id: label });
   world.add(e, C.Alive, true);
   if (isFlagship) world.add(e, C.Flagship, true);
   return e;
 }
+// Compatibility alias for headless callers while the game-wide Armada/Fleet
+// vocabulary migrates. New production code should call spawnFleet.
+export const spawnShip = spawnFleet;
 
 // --- faction-generic roster queries -------------------------------------
-export const aliveShips = world => world.query(C.Alive);
-export const shipsOfFaction = (world, faction) => aliveShips(world).filter(e => factionOf(world, e) === faction);
-export const enemiesOf = (world, faction) => aliveShips(world).filter(e => factionOf(world, e) !== faction);
-export const friendsOf = (world, e) => shipsOfFaction(world, factionOf(world, e)).filter(v => v !== e);
-export const flagshipOf = (world, faction) => shipsOfFaction(world, faction).find(e => isFlagship(world, e)) ?? null;
+export const aliveFleets = world => world.query(C.Alive);
+export const fleetsOfFaction = (world, faction) => aliveFleets(world).filter(e => factionOf(world, e) === faction);
+export const enemiesOf = (world, faction) => aliveFleets(world).filter(e => factionOf(world, e) !== faction);
+export const friendsOf = (world, e) => fleetsOfFaction(world, factionOf(world, e)).filter(v => v !== e);
+export const flagshipOf = (world, faction) => fleetsOfFaction(world, faction).find(e => isFlagship(world, e)) ?? null;
+// Compatibility aliases for callers still using the old singular Ship model.
+export const aliveShips = aliveFleets;
+export const shipsOfFaction = fleetsOfFaction;
 
 export function inCommand(world, e) {
   const fl = flagshipOf(world, factionOf(world, e));
@@ -71,7 +87,7 @@ export function inCommand(world, e) {
 // module what an asteroid is; the caller decides what else blocks a hex.
 export function occupiedSet(world, extraObstacles) {
   const s = new Set(extraObstacles || []);
-  for (const e of aliveShips(world)) { const [c, r] = posOf(world, e); s.add(key(c, r)); }
+  for (const e of aliveFleets(world)) { const [c, r] = posOf(world, e); s.add(key(c, r)); }
   return s;
 }
 export function nearestEnemy(world, e) {

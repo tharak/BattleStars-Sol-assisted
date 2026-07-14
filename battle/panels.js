@@ -25,11 +25,11 @@ export function updateSetupPanels(state) {
   const ai = document.getElementById("actinfo");
   const sel = setup.selected;
   ai.innerHTML = sel
-    ? `Selected squadron${sel === setup.flagShip ? " — <b>flagship</b>" : ""}. Turn it, set flagship, remove it, ` +
+    ? `Selected Fleet${sel === setup.flagShip ? " — <b>flagship</b>" : ""}. Turn it, set flagship, remove it, ` +
       `or click an empty zone hex to place another.`
     : (setup.placed.length < state.SIZE
-        ? `Click an empty hex in your shaded zone to place your next squadron (${state.SIZE - setup.placed.length} left).`
-        : `All ${state.SIZE} squadrons placed. Click one to adjust, or confirm.`);
+        ? `Click an empty hex in your shaded zone to place your next Fleet (${state.SIZE - setup.placed.length} left).`
+        : `All ${state.SIZE} Fleets placed. Click one to adjust, or confirm.`);
   document.getElementById("btnSetupL").disabled = !sel;
   document.getElementById("btnSetupR").disabled = !sel;
   document.getElementById("btnSetupFlag").disabled = !sel || sel === setup.flagShip;
@@ -48,8 +48,8 @@ export function updatePanels(state) {
   const lossStr = s => `${Q.losses(state, s)}/${state.BREAK_AT} losses`;
   const supStr = s => G.fleets[s].supply === "ok" ? "" : ` (${G.fleets[s].supply} supply)`;
   st.innerHTML = `<span class="who" style="color:var(--gold)">Turn ${G.turn}/${MAX_TURNS}</span> — ` +
-    `<span style="color:var(--blue)">Blue ${G.fleets[0].name}${supStr(0)}: ${lossStr(0)}</span> · ` +
-    `<span style="color:var(--red)">Red ${G.fleets[1].name}${supStr(1)}: ${lossStr(1)}</span>`;
+    `<span style="color:var(--blue)">Blue Armada — ${G.fleets[0].name}${supStr(0)}: ${lossStr(0)}</span> · ` +
+    `<span style="color:var(--red)">Red Armada — ${G.fleets[1].name}${supStr(1)}: ${lossStr(1)}</span>`;
   const ai = document.getElementById("actinfo");
   const btns = { L: document.getElementById("btnL"), F: document.getElementById("btnF"),
                  R: document.getElementById("btnR"), B: document.getElementById("btnB"),
@@ -57,7 +57,7 @@ export function updatePanels(state) {
   if (G.over) { ai.textContent = "Battle over."; for (const b of Object.values(btns)) b.disabled = true; return; }
   const act = state.act;
   if (act && act.u == null) {
-    ai.innerHTML = `<b style="color:${act.side === 0 ? "var(--blue)" : "var(--red)"}">${sideName(act.side)}</b>: click one of your un-activated squadrons.`;
+    ai.innerHTML = `<b style="color:${act.side === 0 ? "var(--blue)" : "var(--red)"}">${sideName(act.side)} Armada</b>: click one of your un-activated Fleets.`;
     for (const b of Object.values(btns)) b.disabled = true;
   } else if (act && act.u != null) {
     const u = act.u;
@@ -65,7 +65,7 @@ export function updatePanels(state) {
       `${act.cmd ? "in command (move + fire)" : "OUT of command (move OR fire)"}<br>` +
       `MP ${act.mp}/${MP_MAX}${act.fired ? " · has fired" : ""}` +
       (act.fireMode ? ` · <span style="color:var(--red)">pick a highlighted target</span>` : "") +
-      (Q.canSwitchSelection(state) ? `<br><span style="color:var(--dim)">Changed your mind? Click another un-activated squadron to switch — nothing's committed yet.</span>` : "");
+      (Q.canSwitchSelection(state) ? `<br><span style="color:var(--dim)">Changed your mind? Click another un-activated Fleet to switch — nothing's committed yet.</span>` : "");
     btns.L.disabled = btns.R.disabled = btns.F.disabled = !Q.canMove(state);
     btns.B.disabled = !Q.canBack(state);
     btns.Fi.disabled = !Q.canFire(state);
