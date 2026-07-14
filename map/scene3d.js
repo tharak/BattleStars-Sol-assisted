@@ -603,14 +603,12 @@ export function createSystemScene({
       controls.update();
       renderFrame();
     },
-    // Roster selection keeps the current viewing angle but recenters and
-    // zooms the camera onto one strategic-map position.
-    focusAt(x, z, focusZoom = 8) {
+    // Roster selection keeps the current viewing angle and zoom while
+    // translating the camera onto one strategic-map position.
+    panTo(x, z) {
       const offset = camera.position.clone().sub(controls.target);
       controls.target.set(x, 0, z);
       camera.position.copy(controls.target).add(offset);
-      camera.zoom = Math.max(camera.zoom, Math.min(maxZoom, focusZoom));
-      camera.updateProjectionMatrix();
       controls.update();
       renderFrame();
     },

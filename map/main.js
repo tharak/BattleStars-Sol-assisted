@@ -656,11 +656,10 @@ function strategicShipDisplayState(ship, faction, participantSet) {
 function focusStrategicShip(ship) {
   const [x, z] = shipHexOffset(...SC.posOf(world, ship));
   if (mapArea.dataset.renderer === "3d" && scene3d) {
-    scene3d.focusAt(x, z);
+    scene3d.panTo(x, z);
   } else {
     camera2d.x = x;
     camera2d.y = z;
-    camera2d.zoom = Math.max(camera2d.zoom, 8);
     render();
   }
 }
