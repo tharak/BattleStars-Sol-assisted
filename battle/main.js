@@ -4,13 +4,22 @@ import { SCENARIOS } from "./config.js";
 import { GameContext } from "./gameContext.js";
 import { EventBus } from "./core/events.js";
 import { MathRandomSource } from "./core/random.js";
-import { newBattle } from "./turnEngine.js";
+import { BattleOrchestrator } from "./battleOrchestrator.js";
 import { wire } from "./input.js";
 import { attachBattlePresenter } from "./presenter.js";
+import { draw } from "./render.js";
+import { updatePanels } from "./panels.js";
 
 const game = new GameContext({ random: new MathRandomSource(), events: new EventBus() });
+const presentation = { effects: [] };
+const orchestrator = new BattleOrchestrator(game, {
+  refresh: () => {
+    draw(game, presentation);
+    updatePanels(game);
+  },
+});
 
-function buildMenu(state) {
+function buildMenu(state, battleOrchestrator) {
   const el = document.getElementById("scenlist");
   SCENARIOS.forEach((s, i) => {
     const b = document.createElement("button");
@@ -27,12 +36,12 @@ function buildMenu(state) {
       const spect = state.ctrlMode === 3;
       document.getElementById("btnStep").style.display = spect ? "" : "none";
       document.getElementById("btnAuto").style.display = spect ? "" : "none";
-      newBattle(state);
+      battleOrchestrator.newBattle();
     };
     el.appendChild(b);
   });
 }
 
-attachBattlePresenter(game);
-wire(game);
-buildMenu(game);
+attachBattlePresenter(game, presentation);
+wire(game, orchestrator);
+buildMenu(game, orchestrator);

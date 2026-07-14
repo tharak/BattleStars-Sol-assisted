@@ -605,7 +605,7 @@ function spawnInitialShips(layout) {
       const [dx, dy] = shipHexOffset(fwd, lat);
       const [c, rIdx] = pixelToHexIndex(anchorX + dx, anchorY + dy);
       SC.spawnShip(world, {
-        faction, c, r: rIdx, dir: df === 0 ? 0 : (df > 0 ? 5 : 1), isFlag: i === flag,
+        faction, c, r: rIdx, dir: df === 0 ? 0 : (df > 0 ? 5 : 1), isFlagship: i === flag,
         label: `${faction[0].toUpperCase()}${i + 1}`,
       });
     });

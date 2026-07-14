@@ -1,6 +1,13 @@
 // Semantic messages produced by the battle domain. In Unreal these map cleanly
 // to multicast delegates or Gameplay Message Router channels.
 export const BattleEvent = Object.freeze({
+  BATTLE_INITIALIZED: "battle.lifecycle.initialized",
+  DEPLOYMENT_STARTED: "battle.deployment.started",
+  DEPLOYMENT_CONFIRMED: "battle.deployment.confirmed",
+  AI_DEPLOYED: "battle.deployment.ai_completed",
+  COMBAT_STARTED: "battle.lifecycle.combat_started",
+  TURN_STARTED: "battle.lifecycle.turn_started",
+  BATTLE_ENDED: "battle.lifecycle.ended",
   MORALE_CHECKED: "battle.morale.checked",
   UNIT_ROUTED: "battle.unit.routed",
   UNIT_DESTROYED: "battle.unit.destroyed",

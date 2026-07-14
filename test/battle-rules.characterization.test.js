@@ -28,7 +28,7 @@ function battleWith(rolls) {
 
 test("failed morale checks move one step down the morale ladder", () => {
   const state = battleWith([3, 3]);
-  const unit = spawnUnit(state, 0, [10, 10], 0, false);
+  const unit = spawnUnit(state, { side: 0, position: [10, 10], facing: 0 });
 
   assert.equal(moraleCheck(state, unit), false);
   assert.equal(state.world.get(unit, C.Morale).state, MoraleState.SHAKEN);
@@ -39,10 +39,10 @@ test("failed morale checks move one step down the morale ladder", () => {
 
 test("morale contagion checks eligible friends within two hexes in roster order", () => {
   const state = battleWith([1, 6]);
-  const source = spawnUnit(state, 0, [10, 10], 0, false);
-  const near = spawnUnit(state, 0, [11, 10], 0, false);
-  const edge = spawnUnit(state, 0, [12, 10], 0, false);
-  const far = spawnUnit(state, 0, [14, 10], 0, false);
+  const source = spawnUnit(state, { side: 0, position: [10, 10], facing: 0 });
+  const near = spawnUnit(state, { side: 0, position: [11, 10], facing: 0 });
+  const edge = spawnUnit(state, { side: 0, position: [12, 10], facing: 0 });
+  const far = spawnUnit(state, { side: 0, position: [14, 10], facing: 0 });
   state.world.get(source, C.Morale).state = MoraleState.ROUTED;
 
   contagion(state, source);
@@ -54,9 +54,9 @@ test("morale contagion checks eligible friends within two hexes in roster order"
 
 test("flagship destruction marks the fleet and checks every survivor", () => {
   const state = battleWith([4, 5]);
-  const flagship = spawnUnit(state, 0, [5, 5], 0, true);
-  const first = spawnUnit(state, 0, [12, 5], 0, false);
-  const second = spawnUnit(state, 0, [15, 5], 0, false);
+  const flagship = spawnUnit(state, { side: 0, position: [5, 5], facing: 0, isFlagship: true });
+  const first = spawnUnit(state, { side: 0, position: [12, 5], facing: 0 });
+  const second = spawnUnit(state, { side: 0, position: [15, 5], facing: 0 });
   const events = [];
   state.events.onAny(event => events.push(event));
 

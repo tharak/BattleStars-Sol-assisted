@@ -48,19 +48,19 @@ export function inSetupZone(side, c) { const [lo, hi] = SETUP_ZONE[side]; return
 // Creates one entity with the full standard component set and registers it
 // on its fleet's roster. Shared by formation deployment and manual setup so
 // both paths produce identical entities.
-export function spawnUnit(state, side, pos, facing, isFlag) {
+export function spawnUnit(state, { side, position, facing, isFlagship = false }) {
   const { world } = state;
   const roster = state.G.fleets[side].roster;
   const i = roster.length;
   const e = world.createEntity();
-  world.add(e, C.Position, { c: pos[0], r: pos[1] });
+  world.add(e, C.Position, { c: position[0], r: position[1] });
   world.add(e, C.Facing, { dir: facing });
   world.add(e, C.Side, { value: side });
   world.add(e, C.Strength, { value: 4 });
   world.add(e, C.Morale, { state: MoraleState.STEADY });
   world.add(e, C.Label, { id: (side === Side.BLUE ? "B" : "R") + (i + 1) });
   world.add(e, C.Alive, true);
-  if (isFlag) world.add(e, C.Flagship, true);
+  if (isFlagship) world.add(e, C.Flagship, true);
   roster.push(e);
   return e;
 }
@@ -69,10 +69,12 @@ export function deployFormation(state, name, side) {
   const { u, flag } = formationLayout(name, state.SIZE);
   const straight = side === Side.BLUE ? 0 : 3, toPos = side === Side.BLUE ? 5 : 4, toNeg = side === Side.BLUE ? 1 : 2;
   const [blueAnchor, redAnchor] = DEPLOY_ANCHOR;
-  const entities = u.map(([fwd, lat, df], i) => spawnUnit(state, side,
-    [side === Side.BLUE ? blueAnchor + fwd : redAnchor - fwd, DEPLOY_ROW_CENTER + lat],
-    df === 0 ? straight : (df > 0 ? toPos : toNeg),
-    i === flag));
+  const entities = u.map(([fwd, lat, df], i) => spawnUnit(state, {
+    side,
+    position: [side === Side.BLUE ? blueAnchor + fwd : redAnchor - fwd, DEPLOY_ROW_CENTER + lat],
+    facing: df === 0 ? straight : (df > 0 ? toPos : toNeg),
+    isFlagship: i === flag,
+  }));
   if (name === "sphere") {
     const c = state.world.get(entities[0], C.Position);
     for (const e of entities.slice(1)) {

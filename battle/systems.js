@@ -127,8 +127,8 @@ export function rotateActivatedUnit(state, direction) {
   return true;
 }
 
-function tryMoveActivatedUnit(state, direction, spendAllMp) {
-  if (spendAllMp ? !Q.canBack(state) : !Q.canMove(state)) return false;
+function tryMoveActivatedUnit(state, { direction, movementPointCost }) {
+  if (movementPointCost === MP_MAX ? !Q.canBack(state) : !Q.canMove(state)) return false;
   const entity = state.act.u;
   const res = SR.stepInto(state.world, entity, direction, {
     isBlocked: next => !inBounds(next[0], next[1]) || Q.occupiedSet(state).has(key(next[0], next[1])),
@@ -141,7 +141,7 @@ function tryMoveActivatedUnit(state, direction, spendAllMp) {
     }
     return false;
   }
-  state.act.mp = spendAllMp ? 0 : state.act.mp - 1;
+  state.act.mp -= movementPointCost;
   state.act.moved = true;
   state.act.fireMode = false;
   return true;
@@ -149,12 +149,18 @@ function tryMoveActivatedUnit(state, direction, spendAllMp) {
 
 export function moveActivatedUnitForward(state) {
   if (!state.act?.u) return false;
-  return tryMoveActivatedUnit(state, Q.facingOf(state, state.act.u), false);
+  return tryMoveActivatedUnit(state, {
+    direction: Q.facingOf(state, state.act.u),
+    movementPointCost: 1,
+  });
 }
 
 export function moveActivatedUnitBackward(state) {
   if (!state.act?.u) return false;
-  return tryMoveActivatedUnit(state, (Q.facingOf(state, state.act.u) + 3) % 6, true);
+  return tryMoveActivatedUnit(state, {
+    direction: (Q.facingOf(state, state.act.u) + 3) % 6,
+    movementPointCost: MP_MAX,
+  });
 }
 
 export function desiredDir(fromPos, goal) {

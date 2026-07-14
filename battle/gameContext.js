@@ -21,10 +21,8 @@ export class GameContext {
     this.moveMode = ActivationOrder.INTERLEAVED;
     this.deployMode = DeploymentMode.MANUAL;
     this.act = null;
-    this.autoTimer = null;
     this.setup = null;
     this.setupQueue = [];
-    this.effects = [];
   }
 
   beginBattle() {
@@ -32,7 +30,6 @@ export class GameContext {
     this.act = null;
     this.setup = null;
     this.setupQueue = [];
-    this.effects = [];
   }
 
   enterMenu() {

@@ -36,16 +36,16 @@ function hexPath(x, y, s) {
 // The loop mechanics themselves are shared with the star map's own
 // tracer-fade loop -- see core/effectLoop.js.
 const ensureEffectLoop = makeEffectLoop();
-export function draw(state) {
-  renderFrame(state);
+export function draw(state, presentation) {
+  renderFrame(state, presentation);
   ensureEffectLoop({
-    pruneExpired: now => { state.effects = state.effects.filter(e => now - e.start < e.dur); },
-    hasEffects: () => state.effects.length > 0,
-    repaint: () => renderFrame(state),
+    pruneExpired: now => { presentation.effects = presentation.effects.filter(e => now - e.start < e.dur); },
+    hasEffects: () => presentation.effects.length > 0,
+    repaint: () => renderFrame(state, presentation),
   });
 }
 
-function renderFrame(state) {
+function renderFrame(state, presentation) {
   cv.width = OX * 2 + HW * (COLS + 0.5); cv.height = OY * 2 + HS * 1.5 * (ROWS - 1) + HS * 2;
   cx2.fillStyle = BOARD_TINT.bg; cx2.fillRect(0, 0, cv.width, cv.height);
 
@@ -158,7 +158,7 @@ function renderFrame(state) {
   // Fire effects are created by the event presenter and faded here, so
   // gameplay systems never own animation state -- see ensureEffectLoop.
   const now = performance.now();
-  for (const eff of state.effects) {
+  for (const eff of presentation.effects) {
     if (eff.type !== "laser") continue;
     const t = (now - eff.start) / eff.dur;
     if (t >= 1) continue;

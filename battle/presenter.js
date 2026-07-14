@@ -1,12 +1,39 @@
 // Browser observer for semantic domain events. Replacing this module with UE
 // delegate listeners leaves systems.js and all battle rules unchanged.
 import { BattleEvent } from "./core/events.js";
-import { sideCls, sideName } from "./config.js";
+import { sideCls, sideName, SupplyState, Side } from "./config.js";
 import { LASER_DURATION } from "./dimensions.js";
-import { log } from "./panels.js";
+import { clearLog, log } from "./panels.js";
+import * as Q from "./queries.js";
 
-function present(state, event) {
+function present(state, presentation, event) {
   switch (event.type) {
+    case BattleEvent.BATTLE_INITIALIZED:
+      presentation.effects = [];
+      clearLog();
+      log(`Scenario: ${event.scenario.t} — ${event.fleetSize} squadrons a side, breaks at ${event.breakThreshold}`, "t");
+      break;
+    case BattleEvent.DEPLOYMENT_STARTED:
+      log(`${sideName(event.side)}: deploy your squadrons — click your shaded zone.`, "t");
+      break;
+    case BattleEvent.DEPLOYMENT_CONFIRMED:
+      log(`${sideName(event.side)} deployment confirmed — ${event.fleetSize} squadrons.`, "t");
+      break;
+    case BattleEvent.AI_DEPLOYED:
+      log(`${sideName(event.side)} (AI) deploys in ${event.formation} formation.`, "t");
+      break;
+    case BattleEvent.COMBAT_STARTED: {
+      const supplyTag = supply => supply === SupplyState.NORMAL ? "" : ` (${supply.toUpperCase()} SUPPLY)`;
+      log(`Blue: ${state.G.fleets[Side.BLUE].name}${supplyTag(state.G.fleets[Side.BLUE].supply)} — ` +
+        `Red: ${state.G.fleets[Side.RED].name}${supplyTag(state.G.fleets[Side.RED].supply)}`);
+      break;
+    }
+    case BattleEvent.TURN_STARTED:
+      log(`— Turn ${event.turn} —`, "t");
+      break;
+    case BattleEvent.BATTLE_ENDED:
+      presentBattleEnd(state, event);
+      break;
     case BattleEvent.MORALE_CHECKED:
       log(`  ${event.label} morale: ${event.roll}${event.modifiers.length ? " " + event.modifiers.join(" ") : ""} = ${event.total} -> ${event.passed ? "holds" : "FAILS"}`,
         event.passed ? null : "bad");
@@ -24,7 +51,7 @@ function present(state, event) {
       log(`${event.attackerLabel} fires at ${event.targetLabel} (${event.arc} arc, ${event.targetNumber}+): ` +
         `[${event.rolls.join(" ")}] -> ${event.hits} hit${event.hits === 1 ? "" : "s"}`,
         event.hits ? sideCls(event.side) : null);
-      state.effects.push({
+      presentation.effects.push({
         type: "laser", from: event.from, to: event.to, side: event.side,
         hit: event.hits > 0, start: performance.now(),
         dur: event.hits > 0 ? LASER_DURATION.hit : LASER_DURATION.miss,
@@ -47,6 +74,36 @@ function present(state, event) {
   }
 }
 
-export function attachBattlePresenter(state) {
-  return state.events.onAny(event => present(state, event));
+function presentBattleEnd(state, event) {
+  const battle = state.G;
+  const survivingStrength = side => Q.aliveOfSide(state, side)
+    .reduce((sum, entity) => sum + Q.strengthOf(state, entity), 0);
+  let title;
+  let body;
+  if (event.winner === null) {
+    title = "Draw";
+    body = `Both fleets stand at turn ${battle.turn}.`;
+  } else {
+    title = `${sideName(event.winner)} wins`;
+    const loser = event.winner === Side.BLUE ? Side.RED : Side.BLUE;
+    body = event.reason === "break"
+      ? `${sideName(loser)}'s fleet breaks on turn ${battle.turn} (${Q.losses(state, loser)} squadrons destroyed or fled).`
+      : `On time at turn ${battle.turn}: surviving strength ${survivingStrength(Side.BLUE)}–${survivingStrength(Side.RED)}.`;
+  }
+  const controlName = ["Blue", "Red", "hotseat", "spectate"][state.ctrlMode];
+  const result = `${state.scen.t} | ctrl=${controlName} | size=${state.SIZE} | ` +
+    `winner=${event.winner === null ? "draw" : sideName(event.winner) + " (" + battle.fleets[event.winner].name + ")"} | ` +
+    `turn=${battle.turn} | strength ${survivingStrength(Side.BLUE)}-${survivingStrength(Side.RED)} | ` +
+    `losses ${Q.losses(state, Side.BLUE)}-${Q.losses(state, Side.RED)}`;
+  log(`BATTLE OVER — ${title}. ${body}`, "t");
+  document.getElementById("ovTitle").textContent = title;
+  document.getElementById("ovBody").textContent = body +
+    (battle.fleets[Side.BLUE].name === "sphere" || battle.fleets[Side.RED].name === "sphere"
+      ? ` (Sphere survival score: ${battle.turn} turns.)` : "");
+  document.getElementById("ovResult").textContent = result;
+  document.getElementById("overlay").style.display = "flex";
+}
+
+export function attachBattlePresenter(state, presentation) {
+  return state.events.onAny(event => present(state, presentation, event));
 }

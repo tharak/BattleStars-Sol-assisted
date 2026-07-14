@@ -41,7 +41,7 @@ const setPos = (world, e, pos) => { const p = world.get(e, C.Position); p.c = po
 // than force map/main.js to reach into World internals itself.
 export function setPosition(world, e, c, r) { setPos(world, e, [c, r]); }
 
-export function spawnShip(world, { faction, c, r, dir, isFlag, label }) {
+export function spawnShip(world, { faction, c, r, dir, isFlagship = false, label }) {
   const e = world.createEntity();
   world.add(e, C.Position, { c, r });
   world.add(e, C.Facing, { dir });
@@ -50,7 +50,7 @@ export function spawnShip(world, { faction, c, r, dir, isFlag, label }) {
   world.add(e, C.Morale, { state: MoraleState.STEADY });
   world.add(e, C.Label, { id: label });
   world.add(e, C.Alive, true);
-  if (isFlag) world.add(e, C.Flagship, true);
+  if (isFlagship) world.add(e, C.Flagship, true);
   return e;
 }
 

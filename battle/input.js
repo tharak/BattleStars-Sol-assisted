@@ -6,16 +6,22 @@ import { BattleCommand, BattleController } from "./controller.js";
 const cv = document.getElementById("cv");
 
 function closeOv() { document.getElementById("overlay").style.display = "none"; }
-function toMenu(state) {
-  closeOv();
-  if (state.autoTimer) { clearInterval(state.autoTimer); state.autoTimer = null; }
-  state.enterMenu();
-  document.getElementById("battle").style.display = "none";
-  document.getElementById("menu").style.display = "block";
-}
-
-export function wire(state) {
-  const controller = new BattleController(state);
+export function wire(state, orchestrator) {
+  const controller = new BattleController(state, orchestrator);
+  let autoTimer = null;
+  const stopAuto = () => {
+    if (!autoTimer) return;
+    clearInterval(autoTimer);
+    autoTimer = null;
+    document.getElementById("btnAuto").textContent = "Auto ▶";
+  };
+  const toMenu = () => {
+    closeOv();
+    stopAuto();
+    orchestrator.enterMenu();
+    document.getElementById("battle").style.display = "none";
+    document.getElementById("menu").style.display = "block";
+  };
   cv.addEventListener("click", ev => {
     const r = cv.getBoundingClientRect();
     const h = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
@@ -28,14 +34,14 @@ export function wire(state) {
   document.getElementById("btnB").onclick = () => controller.execute(BattleCommand.MOVE_BACKWARD);
   document.getElementById("btnFire").onclick = () => controller.execute(BattleCommand.ENTER_FIRE_MODE);
   document.getElementById("btnEnd").onclick = () => controller.execute(BattleCommand.END_ACTIVATION);
-  document.getElementById("btnMenu").onclick = () => toMenu(state);
+  document.getElementById("btnMenu").onclick = toMenu;
   document.getElementById("btnRestart").onclick = () => { closeOv(); controller.execute(BattleCommand.RESTART); };
   document.getElementById("btnStep").onclick = () => controller.execute(BattleCommand.STEP_AI);
   document.getElementById("btnAuto").onclick = function () {
-    if (state.autoTimer) { clearInterval(state.autoTimer); state.autoTimer = null; this.textContent = "Auto ▶"; return; }
+    if (autoTimer) { stopAuto(); return; }
     this.textContent = "Auto ⏸";
-    state.autoTimer = setInterval(() => {
-      if (state.G.over) { clearInterval(state.autoTimer); state.autoTimer = null; }
+    autoTimer = setInterval(() => {
+      if (state.G.over) stopAuto();
       else controller.execute(BattleCommand.STEP_AI);
     }, 220);
   };
@@ -57,7 +63,7 @@ export function wire(state) {
   document.getElementById("btnSetupConfirm").onclick = () => controller.execute(BattleCommand.CONFIRM_DEPLOYMENT);
 
   document.getElementById("ovAgain").onclick = () => { closeOv(); controller.execute(BattleCommand.RESTART); };
-  document.getElementById("ovMenu").onclick = () => toMenu(state);
+  document.getElementById("ovMenu").onclick = toMenu;
   document.getElementById("ovCopy").onclick = () => {
     navigator.clipboard && navigator.clipboard.writeText(document.getElementById("ovResult").textContent);
   };

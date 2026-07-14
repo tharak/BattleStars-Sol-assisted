@@ -56,8 +56,8 @@ test("beginBattle resets the ECS world between matches", () => {
 
 test("fire resolves through injected dice and emits domain events", () => {
   const state = battleWith(new SequenceRandomSource([6, 1, 1, 1, 6]));
-  const attacker = spawnUnit(state, 0, [10, 13], 0, false);
-  const target = spawnUnit(state, 1, [11, 13], 3, false);
+  const attacker = spawnUnit(state, { side: 0, position: [10, 13], facing: 0 });
+  const target = spawnUnit(state, { side: 1, position: [11, 13], facing: 3 });
   const events = [];
   state.events.onAny(event => events.push(event));
 
@@ -72,8 +72,8 @@ test("fire resolves through injected dice and emits domain events", () => {
 
 test("a shaken unit cannot use movement to approach the enemy", () => {
   const state = battleWith(new SeededRandomSource(1));
-  const unit = spawnUnit(state, 0, [10, 13], 0, false);
-  spawnUnit(state, 1, [12, 13], 3, false);
+  const unit = spawnUnit(state, { side: 0, position: [10, 13], facing: 0 });
+  spawnUnit(state, { side: 1, position: [12, 13], facing: 3 });
   state.world.get(unit, C.Morale).state = MoraleState.SHAKEN;
   state.act = { u: unit, mp: MP_MAX, moved: false, fired: false, fireMode: false, cmd: true };
   const events = [];
@@ -112,10 +112,10 @@ test("AI systems can finish a deterministic battle without a browser presenter",
 test("strategic-map combat returns presentation data without owning effects", () => {
   const world = new ShipRules.World();
   const attacker = ShipRules.spawnShip(world, {
-    faction: 0, c: 10, r: 13, dir: 0, isFlag: false, label: "A1",
+    faction: 0, c: 10, r: 13, dir: 0, label: "A1",
   });
   const target = ShipRules.spawnShip(world, {
-    faction: 1, c: 11, r: 13, dir: 3, isFlag: false, label: "T1",
+    faction: 1, c: 11, r: 13, dir: 3, label: "T1",
   });
   const random = new SequenceRandomSource([6, 1, 1, 1, 6]);
 
