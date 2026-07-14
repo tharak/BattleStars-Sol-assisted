@@ -431,7 +431,7 @@ export function createSystemScene({
   // near-black background reads the same way a real alpha gradient would
   // (dimmer near the edge of a well's reach, full color deep inside it),
   // with one flat uniform opacity on the material underneath.
-  function addGravityField({ triangles, intensities, lineSegments, lineIntensities, colorHex }) {
+  function addGravityField({ triangles, intensities, lineSegments, lineIntensities, colorHex, arrowSegments = [] }) {
     const positions = [];
     const colors = [];
     const base = new THREE.Color(colorHex);
@@ -466,6 +466,18 @@ export function createSystemScene({
       resolution: new THREE.Vector2(sizePx, sizePx), transparent: true, opacity: 0.95,
     });
     buildGroup.add(new LineSegments2(lineGeometry, lineMaterial));
+
+    if (arrowSegments.length) {
+      const arrowPositions = [];
+      for (const [x, z] of arrowSegments) arrowPositions.push(x, GRAVITY_LINE_Y + 0.03, z);
+      const arrowGeometry = new LineSegmentsGeometry();
+      arrowGeometry.setPositions(arrowPositions);
+      const arrowMaterial = new LineMaterial({
+        color: new THREE.Color(colorHex), linewidth: gravityLineWidth, resolution: new THREE.Vector2(sizePx, sizePx),
+        transparent: true, opacity: 0.95,
+      });
+      buildGroup.add(new LineSegments2(arrowGeometry, arrowMaterial));
+    }
   }
 
   function addHexLines(cells, hexSize, { color, opacity, linewidth, projectPoint = (x, z) => [x, z] }) {

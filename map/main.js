@@ -1051,14 +1051,10 @@ function sparseOverlaySnapshot() {
   const commandCenter = selectedShip != null && SC.isAlive(world, selectedShip) && SC.isFlagship(world, selectedShip)
     ? SC.posOf(world, selectedShip)
     : null;
-  const hoveredRoute = pointerHex ? reachableMoves.get(hexKey(pointerHex[0], pointerHex[1])) : null;
   return {
     commandCells: commandCenter ? hexPatch(commandCenter, CMD_R).map(toCell) : [],
     hoverCells: hoverPatchCenter ? hexPatch(hoverPatchCenter).map(toCell) : [],
     reachableCells: [...reachableMoves.values()].map(route => ({ ...toCell(route.position), cost: route.cost })),
-    driftSegments: (hoveredRoute?.forcedSteps || []).map(step => ({
-      from: toCell(step.from), to: toCell(step.to),
-    })),
     hoveredKey: pointerHex ? hexKey(pointerHex[0], pointerHex[1]) : null,
     colorHex: activation ? colorsFor({ faction: SC.factionOf(world, activation.u) }).fill : null,
     hexSize: GRID_HEX_SIZE_PX,
@@ -1283,7 +1279,7 @@ function gravityHexes(layout) {
         const cost = gravityHexCost(dist, well);
         const k = hexKey(c, r);
         const existing = cells.get(k);
-        if (!existing || cost > existing.cost) cells.set(k, { cost, colorHex: well.colorHex, x, y, well });
+        if (!existing || cost > existing.cost) cells.set(k, { c, r, cost, colorHex: well.colorHex, x, y, well });
       }
     }
   }
@@ -1309,6 +1305,35 @@ function warpedGravityPoint(x, y, wells) {
 
 function gravityHexCorners(x, y, wells, size = GRID_HEX_SIZE_PX) {
   return hexCorners(x, y, size).map(([px, py]) => warpedGravityPoint(px, py, wells));
+}
+
+// One in-cell arrow per gravity hex says exactly what will happen if a ship
+// stops there: one free drift in this direction.  Its length stays inside
+// the cell, so it communicates force without pretending to be a route.
+function gravityPullArrows(cells, wells) {
+  const arrows = [];
+  for (const cell of cells.values()) {
+    const drift = resolveGravityDrift([cell.c, cell.r], cells, hex => shipHexOffset(hex[0], hex[1]));
+    if (!drift) continue;
+    const [fromX, fromY] = warpedGravityPoint(cell.x, cell.y, wells);
+    const [nextX, nextY] = warpedGravityPoint(...shipHexOffset(...drift.to), wells);
+    const dx = nextX - fromX, dy = nextY - fromY;
+    const length = Math.hypot(dx, dy) || 1;
+    const ux = dx / length, uy = dy / length;
+    const start = [fromX - ux * GRID_HEX_SIZE_PX * 0.2, fromY - uy * GRID_HEX_SIZE_PX * 0.2];
+    const tip = [fromX + ux * GRID_HEX_SIZE_PX * 0.38, fromY + uy * GRID_HEX_SIZE_PX * 0.38];
+    const side = [-uy, ux];
+    const head = GRID_HEX_SIZE_PX * 0.16;
+    arrows.push({
+      colorHex: cell.colorHex, intensity: gravityHexIntensity(cell.cost),
+      segments: [
+        start, tip,
+        tip, [tip[0] - ux * head + side[0] * head, tip[1] - uy * head + side[1] * head],
+        tip, [tip[0] - ux * head - side[0] * head, tip[1] - uy * head - side[1] * head],
+      ],
+    });
+  }
+  return arrows;
 }
 // --- 3D path (primary) ---------------------------------------------------
 
@@ -1403,10 +1428,15 @@ function renderSystem3D(entry, data) {
 
   if (scene3dStaticSource !== entry.systemId) {
     scene.rebuildStatic(({ addBody, addRing, addAsteroid, addGravityField }) => {
+      const arrowsByColor = new Map();
+      for (const arrow of gravityPullArrows(gravityCells, wells)) {
+        if (!arrowsByColor.has(arrow.colorHex)) arrowsByColor.set(arrow.colorHex, []);
+        arrowsByColor.get(arrow.colorHex).push(...arrow.segments);
+      }
       for (const [colorHex, group] of buildGravityFieldGroups(
         gravityCells, wells, GRID_HEX_SIZE_PX, gravityHexIntensity,
       )) {
-        addGravityField({ ...group, colorHex });
+        addGravityField({ ...group, colorHex, arrowSegments: arrowsByColor.get(colorHex) || [] });
       }
       if (layout.center) {
         addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center), spinDirection: gravitySpinDirection(layout.center.id) });
@@ -1609,13 +1639,15 @@ function renderSystem2D(entry, data) {
       });
     }
   }
-  for (const segment of sparseOverlay.driftSegments) {
-    const [fromX, fromY] = warpedGravityPoint(segment.from.x, segment.from.z, wells);
-    const [toX, toY] = warpedGravityPoint(segment.to.x, segment.to.z, wells);
-    const [sx, sy] = worldToScreen(camera2d, fromX, fromY);
-    const [tx, ty] = worldToScreen(camera2d, toX, toY);
-    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty);
-    ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
+  for (const arrow of gravityPullArrows(gravityCells, wells)) {
+    const points = arrow.segments.map(([x, y]) => worldToScreen(camera2d, x, y));
+    ctx.beginPath();
+    for (let i = 0; i < points.length; i += 2) {
+      ctx.moveTo(...points[i]); ctx.lineTo(...points[i + 1]);
+    }
+    ctx.strokeStyle = hexToRgba(arrow.colorHex, 0.45 + arrow.intensity * 0.5);
+    ctx.lineWidth = 1 + arrow.intensity * 1.5;
+    ctx.stroke();
   }
 
   const drawRing = (ringCx, ringCy, worldRadiusPx) => strokeFaintRing(ctx, ringCx, ringCy, worldRadiusPx * camera2d.zoom);
