@@ -69,6 +69,19 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
     await turnLeft.click();
     await expect(page.locator(".turnShip").first()).toContainText("Acted");
     await expect(page.locator("#infoControls")).toBeHidden();
+
+    for (const [rosterIndex, nextTurn] of [[12, "Red turn"], [24, "Blue turn"]]) {
+      await page.locator(".turnShip").nth(rosterIndex).click();
+      await page.locator("#infoGroupMove").click();
+      await page.locator("#infoTurnL").click();
+      await page.locator("#infoEnd").click();
+      await expect(page.locator("#turnHeading")).toContainText(nextTurn);
+    }
+
+    await page.locator(".turnShip").first().click();
+    await expect(page.locator("#infoName")).toContainText("B1");
+    await expect(groupMove).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#hint")).toContainText("command-group move restored");
   }
   expect(await page.locator("#cv3d").evaluate(canvas =>
     !!canvas.getContext("webgl2") || !!canvas.getContext("webgl")

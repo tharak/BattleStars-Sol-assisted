@@ -110,6 +110,7 @@ let selectedShip = null;
 let activation = null;
 let travelArmed = false;
 let groupMoveArmed = false;
+const groupMovePreferences = new Set();
 // Fire's own transient shot-line records, derived here from fire results
 // -- a parallel, map-local array to battle's own presentation effects (not
 // shared with it), each with a start timestamp/duration so ensureEffectLoop
@@ -252,8 +253,12 @@ function selectShip(e) {
     cmd: SC.inCommand(world, e), participantShipIds: [e],
   };
   travelArmed = false;
-  groupMoveArmed = false;
-  setHint(`${SC.labelOf(world, e)} selected.`);
+  groupMoveArmed = SC.isFlagship(world, e)
+    && groupMovePreferences.has(e)
+    && commandGroupShips().length >= 2;
+  setHint(groupMoveArmed
+    ? `${SC.labelOf(world, e)} selected — command-group move restored.`
+    : `${SC.labelOf(world, e)} selected.`);
   renderInfoPanel();
   render();
   return true;
@@ -556,8 +561,15 @@ function armTravel() {
 }
 function toggleGroupMove() {
   const ships = commandGroupShips();
-  if (!activation || !SC.canMove(activation) || ships.length < 2) return;
-  groupMoveArmed = !groupMoveArmed;
+  if (!activation) return;
+  if (groupMoveArmed) {
+    groupMoveArmed = false;
+    groupMovePreferences.delete(activation.u);
+  } else {
+    if (!SC.canMove(activation) || ships.length < 2) return;
+    groupMoveArmed = true;
+    groupMovePreferences.add(activation.u);
+  }
   travelArmed = false;
   activation.fireMode = false;
   setHint(groupMoveArmed
