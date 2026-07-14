@@ -18,6 +18,9 @@ import * as SC from "../battle/core/shipRules.js";
 import { MathRandomSource } from "../battle/core/random.js";
 import { forwardMovementCost } from "../battle/domain/movementRules.js";
 import { makeEffectLoop } from "../battle/core/effectLoop.js";
+import {
+  executeStrategicRoute, findReachableDestinations, hexPatch, resolveStrategicClick, StrategicClickAction,
+} from "./strategicMovement.js";
 
 const canvas = document.getElementById("starmapCv");
 const mapwrap = document.getElementById("mapwrap");
@@ -112,6 +115,14 @@ let lastClickedInfo = null;
 // mousemove pixel while still hovering the same thing.
 let hoverInfo = null;
 let hoverId = null;
+// Sparse map overlays are driven by hex identity, not raw pointer pixels.
+// `pointerHex` also powers map-level destination hit testing; the neutral
+// orientation patch is only present when the pointer is over empty space.
+let pointerHex = null;
+let hoverPatchCenter = null;
+let reachableMoves = new Map();
+let hoverMoveHint = null;
+let persistentHint = "";
 
 initFleetPositions();
 
@@ -226,6 +237,49 @@ function hexMoveCost(hex) {
     gravityCost: gravityHexCosts.get(k)?.cost,
   });
 }
+
+function recomputeReachableMoves() {
+  if (!activation || !SC.isAlive(world, activation.u)) {
+    reachableMoves = new Map();
+  } else {
+    reachableMoves = findReachableDestinations({
+      position: SC.posOf(world, activation.u),
+      facing: SC.facingOf(world, activation.u),
+      activation,
+      moraleState: SC.moraleOf(world, activation.u),
+      enemyPositions: SC.enemiesOf(world, SC.factionOf(world, activation.u)).map(e => SC.posOf(world, e)),
+      movementAllowance: MP_MAX,
+      movementCost: hexMoveCost,
+    });
+  }
+  const hoveredRoute = pointerHex ? reachableMoves.get(hexKey(pointerHex[0], pointerHex[1])) : null;
+  hoverMoveHint = hoveredRoute ? `Move here · ${hoveredRoute.cost} MP` : null;
+  renderHint();
+}
+
+function executeReachableMove(route) {
+  if (!activation || route.cost > activation.mp) return false;
+  const result = executeStrategicRoute(route, {
+    activation,
+    turnLeft: () => SC.turn(world, activation.u, 1),
+    turnRight: () => SC.turn(world, activation.u, -1),
+    moveForward: () => SC.moveForward(world, activation.u),
+    moveBackward: () => SC.moveBackward(world, activation.u),
+  });
+  if (!result.ok) {
+    moveResultHint(result);
+    renderInfoPanel();
+    render();
+    return false;
+  }
+  // The route's individual rule calls mutate only position/facing. The
+  // activation bookkeeping is committed once after the complete route.
+  hoverPatchCenter = null;
+  setHint(`${SC.labelOf(world, activation.u)} moved ${route.cost} MP.`);
+  renderInfoPanel();
+  render();
+  return true;
+}
 function doForward() {
   if (!SC.canMove(activation)) return;
   const cost = hexMoveCost(SC.forwardHex(world, activation.u));
@@ -287,6 +341,7 @@ function setCourse(x, y) {
   SC.setPosition(world, activation.u, c, r);
   setHint(`${SC.labelOf(world, activation.u)} course set.`);
   travelArmed = false;
+  hoverPatchCenter = null;
   renderInfoPanel();
   render();
 }
@@ -297,12 +352,21 @@ function setCourse(x, y) {
 // star/moon/planet/belt info-panel branches. Returns true if the click
 // was fully handled here.
 function handleShipOrDestinationClick(hit, worldPoint) {
-  if (activation && travelArmed && worldPoint) { setCourse(worldPoint[0], worldPoint[1]); return true; }
-  if (hit?.kind === "ship") {
+  const destination = worldPoint ? pixelToHexIndex(worldPoint[0], worldPoint[1]) : null;
+  const route = activation && destination ? reachableMoves.get(hexKey(destination[0], destination[1])) : null;
+  const clickAction = resolveStrategicClick({
+    travelArmed: !!(activation && travelArmed),
+    hasWorldPoint: !!worldPoint,
+    hitKind: hit?.kind,
+    reachable: !!route,
+  });
+  if (clickAction === StrategicClickAction.SET_COURSE) { setCourse(worldPoint[0], worldPoint[1]); return true; }
+  if (clickAction === StrategicClickAction.SHIP) {
     if (activation && SC.legalTargets(world, activation.u, beltObstacles).includes(hit.id)) { doFireAt(hit.id); return true; }
     if (!activation || activation.u !== hit.id) selectShip(hit.id);
     return true;
   }
+  if (clickAction === StrategicClickAction.MOVE) { executeReachableMove(route); return true; }
   return false;
 }
 // Shared by both click handlers' fallthrough (once
@@ -533,28 +597,12 @@ const BELT_CORRIDOR_CENTERS_DEG = [90, 270];
 const BELT_CORRIDOR_HALF_WIDTH_DEG = 12;
 const BELT_ASTEROID_RADIUS_PX = 2.4;
 
-// The "rubber sheet" spacetime grid drawn across the System view -- hex
-// size and how far past the outermost body (Neptune, at ORBIT_MAX_PX) it
-// extends, shared by the 3D and 2D paths so both cover the same area at
-// the same density.
-//
-// The hex lattice is one fixed grid, anchored at the origin -- only the
-// Sun (which sits exactly at that origin) is guaranteed to land on a
-// lattice vertex; every planet's real position is essentially arbitrary
-// relative to it, so the *visually* deepest point of that planet's well
-// is really whichever lattice vertex happens to fall nearest it, not the
-// planet's true position. At the old 20px hex size that quantization
-// error could be up to ~half a hex-width, easily bigger than a small
-// planet's own rendered sphere -- exactly why a planet's dot and its
-// well's apparent center could look offset from each other. A smaller
-// hex size shrinks that worst-case error proportionally.
+// Shared pointy-top strategic hex size. The lattice itself is intentionally
+// sparse: gravity, reachable destinations, occupied tokens, and the hover
+// orientation patch are the only features that reveal cells.
 const GRID_HEX_SIZE_PX = 5;
-const GRID_EXTENT_PX = ORBIT_MAX_PX + 80;
-const GRID_LINE_COLOR = "#39ff14"; // neon green -- matches scene3d.js's GRID_COLOR
-const GRID_LINE_OPACITY = 0.1; // down from 0.6, then 0.35 -- still reading as too bright
 
-// Same pointy-top hex pixel math as the spacetime grid's own tiling (see
-// warpedGridLines below) -- an offset-coordinate [c,r] pair, exactly what
+// Pointy-top pixel math for an offset-coordinate [c,r] pair, exactly what
 // battle/formations.js's formationLayout already returns as each ship's
 // [fwd,lat] position, converts to a pixel offset the same way, so a
 // ship's hex cell lines up with the actual hex cells drawn on screen:
@@ -579,6 +627,47 @@ function pixelToHexIndex(x, y) {
 }
 function snapToHexGrid(x, y) {
   return shipHexOffset(...pixelToHexIndex(x, y));
+}
+
+function sparseOverlaySnapshot() {
+  const toCell = ([c, r]) => {
+    const [x, z] = shipHexOffset(c, r);
+    return { c, r, x, z, key: hexKey(c, r) };
+  };
+  return {
+    hoverCells: hoverPatchCenter ? hexPatch(hoverPatchCenter).map(toCell) : [],
+    reachableCells: [...reachableMoves.values()].map(route => ({ ...toCell(route.position), cost: route.cost })),
+    hoveredKey: pointerHex ? hexKey(pointerHex[0], pointerHex[1]) : null,
+    colorHex: activation ? colorsFor({ faction: SC.factionOf(world, activation.u) }).fill : null,
+    hexSize: GRID_HEX_SIZE_PX,
+  };
+}
+
+function updateSystemHover(hit, worldPoint, refreshOverlay) {
+  showHoverInfo(hit);
+  const nextPointer = worldPoint ? pixelToHexIndex(worldPoint[0], worldPoint[1]) : null;
+  const nextPatch = !hit && nextPointer ? nextPointer : null;
+  const oldPointerKey = pointerHex ? hexKey(pointerHex[0], pointerHex[1]) : null;
+  const nextPointerKey = nextPointer ? hexKey(nextPointer[0], nextPointer[1]) : null;
+  const oldPatchKey = hoverPatchCenter ? hexKey(hoverPatchCenter[0], hoverPatchCenter[1]) : null;
+  const nextPatchKey = nextPatch ? hexKey(nextPatch[0], nextPatch[1]) : null;
+  if (oldPointerKey === nextPointerKey && oldPatchKey === nextPatchKey) return;
+  pointerHex = nextPointer;
+  hoverPatchCenter = nextPatch;
+  const route = nextPointerKey ? reachableMoves.get(nextPointerKey) : null;
+  hoverMoveHint = route ? `Move here · ${route.cost} MP` : null;
+  renderHint();
+  refreshOverlay();
+}
+
+function clearSystemHover(refreshOverlay) {
+  showHoverInfo(null);
+  if (!pointerHex && !hoverPatchCenter && !hoverMoveHint) return;
+  pointerHex = null;
+  hoverPatchCenter = null;
+  hoverMoveHint = null;
+  renderHint();
+  refreshOverlay();
 }
 
 // One-time spawn into the shared `world` (see its declaration above) --
@@ -619,9 +708,9 @@ function ensureShipsSpawned(layout) {
 // Individual ship tokens, not one "12" blob per faction -- each ship sits
 // on its own hex cell, read straight from the world's live Position/
 // Facing components (not recomputed from a formation formula -- see
-// spawnInitialShips) via shipHexOffset, the same conversion the grid
-// itself uses, so a ship's hex cell always lines up with the hex cells
-// actually drawn on screen. Called fresh every render (World lookups are
+// spawnInitialShips) via shipHexOffset, the same conversion every sparse
+// overlay uses, so a ship's token always lines up with its strategic cell.
+// Called fresh every render (World lookups are
 // cheap; this is no more expensive than the old formula-driven version).
 function shipsSnapshot() {
   // Mirrors battle/render.js's own `tgts = Q.canFire(state) ? Q.legalTargets(...) : []`
@@ -654,7 +743,7 @@ function inBeltCorridor(angleDeg) {
   });
 }
 // Every hex cell whose center (via shipHexOffset, the same conversion the
-// grid itself and every ship on it use) falls inside the belt's real
+// strategic lattice and every ship use) falls inside the belt's real
 // inner/outer radius, minus the two clear corridors, minus roughly half
 // the rest -- deterministic per (c,r) via hashAngleDeg (the same "stable,
 // not fabricated" approach the minor moons' synthetic phase already uses
@@ -689,12 +778,8 @@ function updateBeltObstacles(asteroids) {
   beltObstacles = new Set(asteroids.map(a => hexKey(a.c, a.r)));
 }
 
-// The bodies that warp the spacetime grid below -- the Sun and planets,
-// whose already-computed rendered radius (rPx) stands in for "how heavy
-// this looks". Moons are too small to register at this scale and the
-// belt isn't a single point mass, so neither gets a well. colorHex rides
-// along for gravityHexes below (the grid-warp math itself only reads
-// x/z/rPx, so this is a harmless addition for that caller).
+// Gravity wells are the Sun and planets. Moons remain visual bodies only,
+// and the asteroid belt is terrain rather than a single point mass.
 function gravityWells(layout) {
   const wells = [];
   if (layout.center) wells.push({ x: 0, z: 0, rPx: layout.center.rPx, colorHex: colorsFor(layout.center).fill });
@@ -706,8 +791,7 @@ function gravityWells(layout) {
 
 // Gravity influence radius scales with a body's own rendered size --
 // bigger bodies (the Sun, gas giants) reach further and pull harder than
-// small ones (Mercury), matching how the spacetime grid's own visual
-// warp already scales with rPx (see warpedGridLines's falloff). A well
+// small ones (Mercury). A well
 // too small to reach even one hex (radius < GRID_HEX_SIZE_PX) is skipped
 // entirely -- gravityWells already excludes moons, but a very small/
 // close-in planet could still round to nothing.
@@ -804,73 +888,6 @@ function gravityFieldGroups(cells) {
   return groups;
 }
 
-// The "rubber sheet" spacetime grid, flattened: each vertex gets pulled
-// toward every nearby well (in the flat XZ/XY plane, not displaced in
-// height) so cells visibly compress and converge near a mass -- the
-// "space itself curves near mass" picture, as opposed to the "ball
-// sitting in a fabric dimple" one a height-displaced grid gives. Being
-// genuinely flat (no third axis), this same math draws correctly from
-// directly overhead and is shared verbatim by the 3D scene and the 2D
-// fallback -- earlier, the 2D path could only ever show an undeformed
-// grid since it had no depth axis to dip into; now there's nothing 3D-
-// only left about this effect.
-//
-// Per well: falloff is how far the pull reaches (tightly, ~2x the body's
-// own radius, so it reads as a well around that one body rather than a
-// citywide tilt) and strength is how hard it pulls at the center --
-// exaggerated well past real proportion for legibility, the same call
-// already made for planet/moon sizes elsewhere in this view. Each pull is
-// capped at 85% of the vertex's own distance to that well so a vertex can
-// never overshoot past the mass and fold the grid through itself.
-//
-// Tiled with pointy-top hexagons (GRID_HEX_SIZE_PX = center-to-corner
-// radius) rather than a square lattice -- each hex's 6 corners get
-// individually warped, same as a square grid's vertices did, just laid
-// out on a honeycomb instead of rows/columns. An interior edge is shared
-// by two hexes and so gets emitted (and drawn) twice; harmless for a
-// decorative line overlay like this, and simpler than deduping a shared-
-// vertex mesh.
-function warpedGridLines(wells) {
-  const warp = (x, z) => {
-    let wx = 0, wz = 0;
-    for (const w of wells) {
-      const dx = w.x - x, dz = w.z - z;
-      const d = Math.hypot(dx, dz);
-      if (d < 1e-6) continue;
-      const falloff = Math.max(w.rPx * 2, GRID_HEX_SIZE_PX);
-      const strength = w.rPx * 9;
-      // Gaussian, not the 1/(1+x^2) curve tried first -- that one has a
-      // long tail that never really reaches zero, so a heavy well (the
-      // Sun, mainly) kept tugging on every other well's own vertices from
-      // clear across the system. That visibly dragged each planet's
-      // funnel off-center, toward the Sun, so the planet no longer sat at
-      // the middle of its own well. Gaussian falls off fast enough past
-      // its own falloff radius that wells stay independent of each other.
-      const pull = Math.min(strength * Math.exp(-(d * d) / (falloff * falloff)), d * 0.85);
-      wx += (dx / d) * pull;
-      wz += (dz / d) * pull;
-    }
-    return [x + wx, z + wz];
-  };
-
-  const size = GRID_HEX_SIZE_PX;
-  const half = GRID_EXTENT_PX;
-  const rMax = Math.ceil(half / (size * 1.5)) + 1;
-  const qSpan = half / (size * Math.sqrt(3));
-  const segments = [];
-  for (let r = -rMax; r <= rMax; r++) {
-    const cz = size * 1.5 * r;
-    const qMin = Math.floor(-qSpan - r / 2) - 1;
-    const qMax = Math.ceil(qSpan - r / 2) + 1;
-    for (let q = qMin; q <= qMax; q++) {
-      const cx = size * Math.sqrt(3) * (q + r / 2);
-      const corners = hexCorners(cx, cz, size).map(([px, pz]) => warp(px, pz));
-      for (let k = 0; k < 6; k++) segments.push(corners[k], corners[(k + 1) % 6]);
-    }
-  }
-  return segments; // flat pairs of [x,z]; consecutive pairs are one line segment
-}
-
 // --- 3D path (primary) ---------------------------------------------------
 
 let scene3d = null;
@@ -886,7 +903,11 @@ let sceneJustDragged = false;
 function ensureScene3D() {
   if (scene3d) return scene3d;
   scene3d = createSystemScene({ canvas: canvas3d, sizePx: CANVAS_PX, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM });
-  scene3d.controls.addEventListener("start", () => { sceneDragging = true; sceneJustDragged = false; });
+  scene3d.controls.addEventListener("start", () => {
+    sceneDragging = true;
+    sceneJustDragged = false;
+    clearSystemHover(() => scene3d.updateSparseOverlays(sparseOverlaySnapshot()));
+  });
   scene3d.controls.addEventListener("change", () => { if (sceneDragging) sceneJustDragged = true; });
   scene3d.controls.addEventListener("end", () => { sceneDragging = false; });
   return scene3d;
@@ -899,12 +920,15 @@ function renderSystem3D(entry, data) {
 
   const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
   ensureShipsSpawned(layout);
+  const gravityCells = gravityHexes(layout);
+  updateGravityHexes(gravityCells);
+  const beltBody = layout.planets.find(p => p.kind === "belt");
+  const asteroids = beltBody ? beltAsteroidHexes(layout, beltBody) : [];
+  updateBeltObstacles(asteroids);
+  recomputeReachableMoves();
   const ships = shipsSnapshot();
 
-  scene.rebuild(({ addBody, addRing, addShip, addAsteroid, addSpacetimeGrid, addGravityField, addTracer }) => {
-    addSpacetimeGrid({ segments: warpedGridLines(gravityWells(layout)) });
-    const gravityCells = gravityHexes(layout);
-    updateGravityHexes(gravityCells);
+  scene.rebuild(({ addBody, addRing, addShip, addAsteroid, addGravityField, addTracer }) => {
     for (const [colorHex, group] of gravityFieldGroups(gravityCells)) {
       addGravityField({ triangles: group.triangles, intensities: group.intensities, colorHex });
     }
@@ -913,8 +937,6 @@ function renderSystem3D(entry, data) {
     }
     for (const p of layout.planets) {
       if (p.kind === "belt") {
-        const asteroids = beltAsteroidHexes(layout, p);
-        updateBeltObstacles(asteroids);
         for (const a of asteroids) {
           addAsteroid({ x: a.x, z: a.y, radius: BELT_ASTEROID_RADIUS_PX, colorHex: FILL.belt, data: a });
         }
@@ -942,6 +964,7 @@ function renderSystem3D(entry, data) {
       addTracer({ from: shipHexOffset(...eff.from), to: shipHexOffset(...eff.to), hit: eff.hit, alpha });
     }
   });
+  scene.updateSparseOverlays(sparseOverlaySnapshot());
 
   canvas3d.onclick = ev => {
     if (sceneJustDragged) { sceneJustDragged = false; return; }
@@ -954,9 +977,11 @@ function renderSystem3D(entry, data) {
     // Skip during an active rotate/pan drag -- same reasoning as the 2D
     // path's dragState guard, using OrbitControls' own drag flag instead.
     if (sceneDragging) return;
-    showHoverInfo(scene.pick(ev.clientX, ev.clientY));
+    const hit = scene.pick(ev.clientX, ev.clientY);
+    updateSystemHover(hit, scene.groundPoint(ev.clientX, ev.clientY),
+      () => scene.updateSparseOverlays(sparseOverlaySnapshot()));
   };
-  canvas3d.onmouseleave = () => showHoverInfo(null);
+  canvas3d.onmouseleave = () => clearSystemHover(() => scene.updateSparseOverlays(sparseOverlaySnapshot()));
 
   renderInfoPanel();
   renderBreadcrumb();
@@ -1023,6 +1048,12 @@ function renderSystem2D(entry, data) {
 
   const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
   ensureShipsSpawned(layout);
+  const gravityCells = gravityHexes(layout);
+  updateGravityHexes(gravityCells);
+  const beltBody = layout.planets.find(p => p.kind === "belt");
+  const asteroids = beltBody ? beltAsteroidHexes(layout, beltBody) : [];
+  updateBeltObstacles(asteroids);
+  recomputeReachableMoves();
   const ships = shipsSnapshot();
 
   // Only a floor, no ceiling -- a real body's on-screen size grows freely
@@ -1043,27 +1074,11 @@ function renderSystem2D(entry, data) {
   ctx.save();
   ctx.translate(cx, cy);
 
-  // The spacetime grid -- see warpedGridLines above. Being a flat XZ/XY
-  // warp rather than a height dip, the exact same math the 3D scene uses
-  // draws correctly here too now.
-  const gridSegments = warpedGridLines(gravityWells(layout));
-  ctx.strokeStyle = GRID_LINE_COLOR;
-  ctx.lineWidth = 1.5;
-  ctx.globalAlpha = GRID_LINE_OPACITY;
-  for (let i = 0; i < gridSegments.length; i += 2) {
-    const [x1, y1] = worldToScreen(camera2d, gridSegments[i][0], gridSegments[i][1]);
-    const [x2, y2] = worldToScreen(camera2d, gridSegments[i + 1][0], gridSegments[i + 1][1]);
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-
   // Every hex under a body's gravity, tinted that body's own color and
   // faded by how strong the pull is there (gravityHexIntensity) -- the
-  // closer/costlier a hex, the more solid its color reads. Drawn right
-  // after the grid and before any real body/ship, so everything else
+  // closer/costlier a hex, the more solid its color reads. Drawn before
+  // any real body/ship, so everything else
   // still reads clearly on top of it.
-  const gravityCells = gravityHexes(layout);
-  updateGravityHexes(gravityCells);
   for (const { colorHex, x, y, cost } of gravityCells.values()) {
     const [sx, sy] = worldToScreen(camera2d, x, y);
     const corners = hexCorners(sx, sy, GRID_HEX_SIZE_PX * camera2d.zoom);
@@ -1072,6 +1087,32 @@ function renderSystem2D(entry, data) {
     ctx.closePath();
     ctx.fillStyle = hexToRgba(colorHex, GRAVITY_HEX_MAX_OPACITY * gravityHexIntensity(cost));
     ctx.fill();
+  }
+
+  const drawOverlayHex = (cell, { fill = null, stroke, lineWidth = 1 }) => {
+    const [sx, sy] = worldToScreen(camera2d, cell.x, cell.z);
+    const corners = hexCorners(sx, sy, GRID_HEX_SIZE_PX * camera2d.zoom);
+    ctx.beginPath();
+    corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+    ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+  };
+  const sparseOverlay = sparseOverlaySnapshot();
+  for (const cell of sparseOverlay.hoverCells) {
+    drawOverlayHex(cell, { stroke: "rgba(136,146,171,0.55)" });
+  }
+  if (sparseOverlay.colorHex) {
+    for (const cell of sparseOverlay.reachableCells) {
+      const hovered = cell.key === sparseOverlay.hoveredKey;
+      drawOverlayHex(cell, {
+        fill: hexToRgba(sparseOverlay.colorHex, hovered ? 0.42 : 0.18),
+        stroke: sparseOverlay.colorHex,
+        lineWidth: hovered ? 3 : 1.5,
+      });
+    }
   }
 
   const drawRing = (ringCx, ringCy, worldRadiusPx) => strokeFaintRing(ctx, ringCx, ringCy, worldRadiusPx * camera2d.zoom);
@@ -1170,9 +1211,6 @@ function renderSystem2D(entry, data) {
     return Math.max(s * 1.4, 6);
   };
   if (layout.center) drawDot(layout.center, false);
-  const beltBody = layout.planets.find(p => p.kind === "belt");
-  const asteroids = beltBody ? beltAsteroidHexes(layout, beltBody) : [];
-  updateBeltObstacles(asteroids);
   for (const a of asteroids) a.hitRPx = drawAsteroid(a);
   for (const p of layout.planets) {
     if (p.kind === "belt") continue;
@@ -1214,6 +1252,7 @@ function renderSystem2D(entry, data) {
     if (ev.button !== 2) return;
     dragState = { startClientX: ev.clientX, startClientY: ev.clientY, startCameraX: camera2d.x, startCameraY: camera2d.y, moved: false };
     canvas.style.cursor = "grabbing";
+    clearSystemHover(() => render());
   };
   canvas.oncontextmenu = ev => ev.preventDefault();
   canvas.style.cursor = "grab";
@@ -1256,9 +1295,10 @@ function renderSystem2D(entry, data) {
     if (dragState) return;
     const rect = canvas.getBoundingClientRect();
     const x = (ev.clientX - rect.left) - cx, y = (ev.clientY - rect.top) - cy;
-    showHoverInfo(hitAt(x, y));
+    const hit = hitAt(x, y);
+    updateSystemHover(hit, screenToWorld(camera2d, x, y), () => render());
   };
-  canvas.onmouseleave = () => showHoverInfo(null);
+  canvas.onmouseleave = () => clearSystemHover(() => render());
 
   canvas.onwheel = ev => {
     ev.preventDefault();
@@ -1329,19 +1369,22 @@ function render() {
 function zoomIn(enter, label) {
   path.push({ ...enter, label });
   selectedShip = null; activation = null; travelArmed = false;
+  pointerHex = null; hoverPatchCenter = null; hoverMoveHint = null;
   setHint("");
   render();
 }
 function zoomTo(index) {
   path = path.slice(0, index + 1);
   selectedShip = null; activation = null; travelArmed = false;
+  pointerHex = null; hoverPatchCenter = null; hoverMoveHint = null;
   setHint("");
   render();
 }
 function zoomOut() {
   if (path.length > 1) zoomTo(path.length - 2);
 }
-function setHint(text) { hint.textContent = text; }
+function renderHint() { hint.textContent = hoverMoveHint || persistentHint; }
+function setHint(text) { persistentHint = text; renderHint(); }
 
 function renderBreadcrumb() {
   breadcrumb.innerHTML = "";

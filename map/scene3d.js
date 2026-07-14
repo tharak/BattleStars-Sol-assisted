@@ -45,20 +45,19 @@ import { ACCENT } from "../battle/colors.js";
 // as battle" rather than the flat-black void the plain --bg value gave.
 const BG_COLOR = 0x111624;
 const RING_COLOR = 0x2a3350;
-const GRID_COLOR = 0x39ff14; // neon green -- deliberately loud against BG_COLOR, unlike RING_COLOR
 // Y heights of everything that lies flat on (or near) the ecliptic plane,
 // deliberately spread far apart rather than clustered near 0 -- the
 // OrthographicCamera's depth range is (1, 6000) (see camera below), so
 // tight gaps like the 0.05 this scene used to use for orbit rings don't
 // reliably resolve in the depth buffer at typical viewing distances and
-// visibly z-fight/flicker against the grid (or against each other) as the
+// visibly z-fight/flicker against the gravity field (or each other) as the
 // camera moves, rather than reading as "above" it. Ordered bottom to top:
-// the spacetime grid (GRID_Y, unchanged at the literal ground reference)
-// < a gravity-field hex tint < orbit rings < a ship's own flat hex token
+// a gravity-field hex tint < orbit rings < sparse informational overlays
+// < a ship's own flat hex token
 // < the ship's raised 3D cone.
-const GRID_Y = 0;
 const GRAVITY_HEX_Y = 0.15;
 const ORBIT_RING_Y = 0.4;
+const SPARSE_OVERLAY_Y = 0.65;
 const SHIP_BASE_Y = 0.8;
 const SHIP_BASE_EDGE_Y = 0.85;
 const SHIP_HEIGHT_ABOVE_PLANE = 3;
@@ -109,14 +108,25 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
 
   const objectGroup = new THREE.Group();
   scene.add(objectGroup);
+  const transientOverlayGroup = new THREE.Group();
+  scene.add(transientOverlayGroup);
   let pickables = [];
 
-  function clearObjects() {
-    for (const child of [...objectGroup.children]) {
-      objectGroup.remove(child);
+  function clearGroup(group) {
+    for (const child of [...group.children]) {
+      group.remove(child);
       child.traverse?.(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
     }
+  }
+
+  function clearObjects() {
+    clearGroup(objectGroup);
     pickables = [];
+  }
+
+  function clearSparseOverlays() {
+    clearGroup(transientOverlayGroup);
+    renderFrame();
   }
 
   // Real photo textures (solarsystemscope.com, CC BY 4.0 -- see
@@ -203,10 +213,10 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   function addShip({ x, z, colorHex, data, selected, facingDeg, isFlag, isTarget, targetColor }) {
     // Grounded at the plane, not lifted -- unlike the old ring-only
     // marker, this group now holds both the flat hex token (which
-    // should visibly rest on the grid, at SHIP_BASE_Y) and the raised
+    // should visibly rest on the orbital plane, at SHIP_BASE_Y) and the raised
     // cone (which shouldn't); lifting the whole group the way the cone
     // alone used to require would drag the token up with it, floating
-    // it well above the grid/orbit rings instead of sitting on them.
+    // it well above the sparse overlays/orbit rings instead of sitting on them.
     const group = new THREE.Group();
     group.position.set(x, 0, z);
 
@@ -249,9 +259,9 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     // ships. Corner k sits at angle (60k-90) -- a pointy-top hex, same
     // orientation as the hex cell this ship already sits on (see
     // shipHexOffset in map/main.js). Sits at SHIP_BASE_Y, clear of both
-    // the grid and the orbit rings below it (see the Y-height comment
+    // the sparse overlays and orbit rings below it (see the Y-height comment
     // near SHIP_BASE_Y above) so it reads as a token resting on the
-    // grid, not floating at the cone's own height.
+    // orbital plane, not floating at the cone's own height.
     const tapRadius = Math.max(s * 1.8, 3);
     const corners = hexCorners(0, 0, tapRadius);
     const fanPositions = [];
@@ -355,42 +365,11 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     }
   }
 
-  // The "rubber sheet" spacetime grid: a flat reference grid across the
-  // ecliptic plane whose cells compress and converge near each massive
-  // body -- the "space itself curves near mass" picture -- rather than
-  // dipping in height. The warp math itself lives in map/main.js's
-  // warpedGridLines (shared verbatim with the 2D fallback, since it's a
-  // flat XZ deformation with nothing 3D-specific about it); this function
-  // only turns the already-warped `segments` (flat pairs of [x,z], one
-  // line segment per consecutive pair) into geometry. Doubles as texture
-  // that keeps the scene from reading as a flat black void, same job
-  // battle's hex grid does for its own board.
-  function addSpacetimeGrid({ segments }) {
-    const flat = [];
-    for (let i = 0; i < segments.length; i += 2) {
-      const [x1, z1] = segments[i], [x2, z2] = segments[i + 1];
-      flat.push(x1, GRID_Y, z1, x2, GRID_Y, z2);
-    }
-    const geo = new LineSegmentsGeometry();
-    geo.setPositions(flat);
-    // linewidth is in screen pixels (worldUnits defaults to false), so the
-    // grid stays a constant, clearly-visible thickness at any zoom level --
-    // resolution has to be supplied in pixels for that math to work, since
-    // this is a fake "line" built from camera-facing quads, not a real GL
-    // line primitive.
-    const mat = new LineMaterial({
-      color: GRID_COLOR, linewidth: 2, resolution: new THREE.Vector2(sizePx, sizePx),
-      transparent: true, opacity: 0.1, // down from 0.6, then 0.35 -- still reading as too bright
-    });
-    objectGroup.add(new LineSegments2(geo, mat));
-  }
-
   // One merged flat mesh covering every hex a single body's gravity
   // reaches, tinted that body's own color -- a big body's field can cover
   // a thousand-plus hexes (see gravityHexes in map/main.js), so this
-  // batches all of them into one BufferGeometry/one draw call (the same
-  // "don't pay per-cell" idea addSpacetimeGrid already uses for the grid
-  // lines) rather than one mesh per hex. `triangles` is a flat array of
+  // batches all of them into one BufferGeometry/one draw call rather than
+  // one mesh per hex. `triangles` is a flat array of
   // [x,z] pairs, 3 consecutive pairs per triangle -- map/main.js builds
   // it (via battle/hexmath.js's hexCorners, the same hex shape ship
   // tokens use) since this module doesn't know the hex grid's own size.
@@ -421,9 +400,61 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     objectGroup.add(new THREE.Mesh(geo, mat));
   }
 
+  function addHexLines(cells, hexSize, { color, opacity, linewidth }) {
+    if (!cells.length) return;
+    const flat = [];
+    for (const cell of cells) {
+      const corners = hexCorners(cell.x, cell.z, hexSize);
+      for (let k = 0; k < 6; k++) {
+        const [x1, z1] = corners[k], [x2, z2] = corners[(k + 1) % 6];
+        flat.push(x1, SPARSE_OVERLAY_Y, z1, x2, SPARSE_OVERLAY_Y, z2);
+      }
+    }
+    const geometry = new LineSegmentsGeometry();
+    geometry.setPositions(flat);
+    const material = new LineMaterial({
+      color, linewidth, resolution: new THREE.Vector2(sizePx, sizePx), transparent: true, opacity,
+    });
+    transientOverlayGroup.add(new LineSegments2(geometry, material));
+  }
+
+  function addHexFills(cells, hexSize, { color, opacity }) {
+    if (!cells.length) return;
+    const positions = [];
+    for (const cell of cells) {
+      const corners = hexCorners(cell.x, cell.z, hexSize);
+      for (let k = 0; k < 6; k++) {
+        const [x1, z1] = corners[k], [x2, z2] = corners[(k + 1) % 6];
+        positions.push(cell.x, SPARSE_OVERLAY_Y, cell.z, x1, SPARSE_OVERLAY_Y, z1, x2, SPARSE_OVERLAY_Y, z2);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    const material = new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false,
+    });
+    transientOverlayGroup.add(new THREE.Mesh(geometry, material));
+  }
+
+  // Pointer movement only replaces this tiny group; bodies, textures,
+  // gravity fields, asteroids, and ships stay in the persistent group.
+  function updateSparseOverlays({ hoverCells = [], reachableCells = [], hoveredKey = null, colorHex, hexSize }) {
+    clearGroup(transientOverlayGroup);
+    addHexLines(hoverCells, hexSize, { color: 0x8892ab, opacity: 0.55, linewidth: 1 });
+    if (colorHex) {
+      const hovered = reachableCells.filter(cell => cell.key === hoveredKey);
+      const normal = reachableCells.filter(cell => cell.key !== hoveredKey);
+      addHexFills(normal, hexSize, { color: colorHex, opacity: 0.18 });
+      addHexLines(normal, hexSize, { color: colorHex, opacity: 0.75, linewidth: 1.5 });
+      addHexFills(hovered, hexSize, { color: colorHex, opacity: 0.42 });
+      addHexLines(hovered, hexSize, { color: colorHex, opacity: 1, linewidth: 3 });
+    }
+    renderFrame();
+  }
+
   function rebuild(fn) {
     clearObjects();
-    fn({ addBody, addRing, addShip, addAsteroid, addSpacetimeGrid, addGravityField, addTracer });
+    fn({ addBody, addRing, addShip, addAsteroid, addGravityField, addTracer });
     renderFrame();
   }
 
@@ -448,6 +479,8 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   return {
     rebuild,
     renderFrame,
+    updateSparseOverlays,
+    clearSparseOverlays,
     // Whatever real body/fleet is under the cursor, or null. A ship always
     // wins over anything else the ray also hit -- chiefly the asteroid
     // belt's own invisible hit-torus, which spans a full ring around the
