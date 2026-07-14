@@ -186,20 +186,33 @@ function doTurn(dir) {
 function moveResultHint(res) {
   if (res.reason === "shaken") setHint("Shaken — refuses to close the distance.");
 }
+// A plain, terrain-free hex step's own MP price -- the baseline every
+// ship pays before any obstacle is factored in. Kept as its own named
+// constant (rather than a bare 1 sprinkled through the cost math below)
+// so a future per-ship move cost (e.g. a heavier hull that costs more
+// than 1 MP/hex even in open space) is a one-line swap to a lookup here,
+// with hexExtraCost's terrain math untouched either way.
+const MOVE_BASE_COST = 1;
 // Neither the asteroid field nor a gravity well blocks movement outright
 // (see shipCombat.js's stepInto -- only ship occupancy did, and that's
-// gone too); they just cost more of a ship's MP budget to push through
-// -- asteroids always the full budget, a gravity well an uncapped amount
-// that grows the closer/deeper in a hex sits (see gravityHexCost) -- so
-// entering one requires that much MP banked up front, checked here before
-// the move is even attempted (shipCombat.js has no concept of MP at all, that
-// bookkeeping is entirely this file's own). Where both apply to the same
-// hex, whichever demands more wins (Math.max), not their sum.
-function hexMoveCost(hex) {
+// gone too); they just add to a ship's MP budget to push through -- an
+// asteroid hex demands the rest of a full tank, a gravity well an
+// uncapped extra that grows the closer/deeper in a hex sits (see
+// gravityHexCost). Expressed as *extra* MP on top of MOVE_BASE_COST,
+// not an absolute replacement, so the same terrain always costs the
+// same regardless of which direction (forward/backward) a ship enters
+// it from, and so a future ship with its own non-1 base move cost still
+// gets the right total (base + extra) without this function changing.
+// Where both obstacles apply to the same hex, whichever demands more
+// extra wins (Math.max), not their sum.
+function hexExtraCost(hex) {
   const k = hexKey(hex[0], hex[1]);
-  const asteroidCost = beltObstacles.has(k) ? MP_MAX : 1;
-  const gravityCost = gravityHexCosts.get(k)?.cost ?? 1;
-  return Math.max(asteroidCost, gravityCost);
+  const asteroidExtra = beltObstacles.has(k) ? MP_MAX - MOVE_BASE_COST : 0;
+  const gravityExtra = Math.max(0, (gravityHexCosts.get(k)?.cost ?? MOVE_BASE_COST) - MOVE_BASE_COST);
+  return Math.max(asteroidExtra, gravityExtra);
+}
+function hexMoveCost(hex) {
+  return MOVE_BASE_COST + hexExtraCost(hex);
 }
 function doForward() {
   if (!SC.canMove(activation)) return;
