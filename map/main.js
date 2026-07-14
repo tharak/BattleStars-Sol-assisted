@@ -305,7 +305,6 @@ function doTurn(dir) {
     });
     if (!result.ok) return;
     recordActivationParticipants(ships);
-    if (activation.mp === 0) groupMoveArmed = false;
     setHint(`${ships.length} ships turned ${dir > 0 ? "left" : "right"} together for 1 MP.`);
     renderInfoPanel();
     render();
@@ -435,7 +434,6 @@ function executeReachableMove(route) {
   // The route's individual rule calls mutate only position/facing. The
   // activation bookkeeping is committed once after the complete route.
   hoverPatchCenter = null;
-  if (movingAsGroup && activation.mp === 0) groupMoveArmed = false;
   setHint(movingAsGroup
     ? `${route.memberRoutes.length} ships moved together for ${route.cost} MP.`
     : `${SC.labelOf(world, activation.u)} moved ${route.cost} MP.`);

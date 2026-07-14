@@ -52,6 +52,15 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   }
   await expect(page.locator(".turnShip").first()).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#infoName")).toContainText("B1");
+  if (testInfo.project.name === "desktop-chromium") {
+    const groupMove = page.locator("#infoGroupMove");
+    await groupMove.click();
+    await expect(groupMove).toHaveAttribute("aria-pressed", "true");
+    await page.locator("#infoBack").click();
+    await expect(page.locator("#infoShipStatus")).toContainText("MP 0/3");
+    await expect(groupMove).toHaveAttribute("aria-pressed", "true");
+    await expect(groupMove).toContainText("Cancel group move");
+  }
   expect(await page.locator("#cv3d").evaluate(canvas =>
     !!canvas.getContext("webgl2") || !!canvas.getContext("webgl")
   )).toBe(true);
