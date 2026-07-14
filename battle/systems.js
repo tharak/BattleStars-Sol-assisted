@@ -12,7 +12,7 @@
 // (turnToward/desiredDir) have no star-map equivalent (it has no AI), so
 // they're untouched, still living here directly.
 import { hexDist, neighbor, angleBetween, argmin, range, DIR_ANGLE, key } from "./hexmath.js";
-import { RANGE, MP_MAX, HOLD_FORMS, MoraleState, inBounds } from "./config.js";
+import { RANGE, MP_MAX, HOLD_FORMS, MoraleState, inBounds, Side, SupplyState, FiringArc } from "./config.js";
 import { BattleEvent } from "./core/events.js";
 import * as C from "./components.js";
 import * as Q from "./queries.js";
@@ -28,7 +28,7 @@ const setPos = (state, e, pos) => { const p = state.world.get(e, C.Position); p.
 // same-faction contagion cascade) shares one fleet, so this never needs
 // re-deriving per recursion step.
 const fleetMoraleModifier = (state, side) =>
-  (state.G.fleets[side].supply !== "ok" ? -1 : 0) + (state.G.fleets[side].flagLost ? -1 : 0);
+  (state.G.fleets[side].supply !== SupplyState.NORMAL ? -1 : 0) + (state.G.fleets[side].flagLost ? -1 : 0);
 
 // {onChecked, onRouted} for shipRules.js's moraleCheck/contagion/destroy/
 // fire -- entity-derived (via Q.sideOf(state, e/v)), so one instance
@@ -45,7 +45,7 @@ function moraleHooks(state) {
       const side = Q.sideOf(state, e);
       const why = [
         r.supportBonus && "+1 support", r.commandBonus && "+1 command", r.flankPenalty && "−1 flanked",
-        state.G.fleets[side].supply !== "ok" && "−1 supply", state.G.fleets[side].flagLost && "−1 flagship",
+        state.G.fleets[side].supply !== SupplyState.NORMAL && "−1 supply", state.G.fleets[side].flagLost && "−1 flagship",
       ].filter(Boolean);
       state.events.emit(BattleEvent.MORALE_CHECKED, {
         unit: e, label: Q.labelOf(state, e), roll: r.roll, modifier: r.total - r.roll,
@@ -54,7 +54,7 @@ function moraleHooks(state) {
     },
     onRouted: e => {
       const side = Q.sideOf(state, e);
-      state.world.get(e, C.Facing).dir = side === 0 ? 3 : 0;
+      state.world.get(e, C.Facing).dir = side === Side.BLUE ? 3 : 0;
       state.events.emit(BattleEvent.UNIT_ROUTED, { unit: e, label: Q.labelOf(state, e), side });
     },
   };
@@ -99,7 +99,7 @@ export function destroy(state, e) {
 export function fire(state, e, tgt) {
   const side = Q.sideOf(state, e), tgtSide = Q.sideOf(state, tgt);
   const result = SR.fire(state.world, e, tgt, state.random, {
-    needBonus: state.G.fleets[side].supply === "critical" ? 1 : 0,
+    needBonus: state.G.fleets[side].supply === SupplyState.CRITICAL ? 1 : 0,
     onResolved: r => state.events.emit(BattleEvent.SHOT_RESOLVED, {
       attacker: e, attackerLabel: Q.labelOf(state, e), target: tgt, targetLabel: Q.labelOf(state, tgt),
       arc: r.arc, targetNumber: r.need, rolls: r.rolls, hits: r.hits, from: r.from, to: r.to, side,
@@ -177,7 +177,7 @@ export function aiStep(state, e) { // one MP toward nearest enemy; false if unus
 }
 export function flee(state, e) {
   const side = Q.sideOf(state, e);
-  const d = side === 0 ? 3 : 0;
+  const d = side === Side.BLUE ? 3 : 0;
   for (let i = 0; i < MP_MAX; i++) {
     if (Q.facingOf(state, e) !== d) { turnToward(state, e, d); continue; }
     const nx = neighbor(Q.posOf(state, e), d);

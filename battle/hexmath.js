@@ -1,5 +1,6 @@
 // Pure hex/geometry math. Operates only on [c,r] pixel-offset coordinate
 // pairs and plain numbers -- no ECS or game-state coupling at all.
+import { FiringArc } from "./domain/constants.js";
 
 export const S32 = Math.sqrt(3) / 2;
 export const CUBE_DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
@@ -79,9 +80,9 @@ export function relAngle(facing, frm, to) {
 }
 export function incomingArc(tgtPos, tgtFacing, firerPos) {
   const a = relAngle(tgtFacing, tgtPos, firerPos);
-  if (a < 90 - 1e-9) return "front";
-  if (a < 150 - 1e-9) return "flank";
-  return "rear";
+  if (a < 90 - 1e-9) return FiringArc.FRONT;
+  if (a < 150 - 1e-9) return FiringArc.FLANK;
+  return FiringArc.REAR;
 }
 export const inFireArc = (facing, frm, tp) => relAngle(facing, frm, tp) <= 90 + 1e-9;
 

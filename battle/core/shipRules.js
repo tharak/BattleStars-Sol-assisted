@@ -13,7 +13,8 @@
 import { World } from "../ecs.js";
 import { MathRandomSource } from "./random.js";
 import * as C from "../components.js";
-import { RANGE, CMD_R, MP_MAX, MoraleState } from "../config.js";
+import { RANGE, CMD_R, MP_MAX } from "../config.js";
+import { FiringArc, MoraleState } from "../domain/constants.js";
 import { hexDist, neighbor, inFireArc, incomingArc, losClear, key, argmin } from "../hexmath.js";
 
 export { World, MP_MAX, MathRandomSource };
@@ -200,7 +201,11 @@ export function fire(world, e, tgt, random, { needBonus = 0, onResolved, onHit, 
   const strength = strengthOf(world, e);
   const dice = moraleOf(world, e) === MoraleState.STEADY ? strength : Math.ceil(strength / 2);
   const arc = incomingArc(posOf(world, tgt), facingOf(world, tgt), posOf(world, e));
-  const need = { front: 5, flank: 4, rear: 3 }[arc] + needBonus;
+  const need = {
+    [FiringArc.FRONT]: 5,
+    [FiringArc.FLANK]: 4,
+    [FiringArc.REAR]: 3,
+  }[arc] + needBonus;
   let hits = 0; const rolls = [];
   for (let i = 0; i < dice; i++) { const roll = random.d6(); rolls.push(roll); if (roll >= need) hits++; }
   const from = posOf(world, e), to = posOf(world, tgt);
@@ -211,7 +216,7 @@ export function fire(world, e, tgt, random, { needBonus = 0, onResolved, onHit, 
     const tgtStrength = world.get(tgt, C.Strength);
     tgtStrength.value = Math.max(0, tgtStrength.value - hits);
     if (tgtStrength.value === 0) { destroy(world, tgt, random, { onDestroyed, onFlagshipLost, moraleCheckOpts }); destroyed = true; }
-    else moraleCheck(world, tgt, random, { ...moraleCheckOpts, fromFlankOrRear: arc !== "front" });
+    else moraleCheck(world, tgt, random, { ...moraleCheckOpts, fromFlankOrRear: arc !== FiringArc.FRONT });
   }
   return { hits, rolls, arc, need, destroyed, from, to };
 }

@@ -1,7 +1,10 @@
 // Battle lifecycle/orchestration: whose turn is it, activation flow, human
 // command handlers, and win/draw detection. Delegates actual rule
 // resolution to systems.js and reads via queries.js.
-import { MP_MAX, MAX_TURNS, MoraleState, sideName } from "./config.js";
+import {
+  MP_MAX, MAX_TURNS, MoraleState, sideName, Side, SIDES, SupplyState,
+  ControlMode, ActivationOrder, DeploymentMode, opposingSide,
+} from "./config.js";
 import { deployFormation } from "./formations.js";
 import {
   fire, aiActivate, routedActivation, rotateActivatedUnit,
@@ -28,45 +31,45 @@ export function newBattle(state) {
   clearLog();
   log(`Scenario: ${state.scen.t} — ${state.SIZE} squadrons a side, breaks at ${state.BREAK_AT}`, "t");
   state.G = {
-    turn: 0, lastActed: 1, over: false, winner: null,
+    turn: 0, lastActed: Side.RED, over: false, winner: null,
     fleets: [
-      { name: null, supply: state.scen.supA || "ok", flagLost: false, roster: [] },
-      { name: null, supply: state.scen.supB || "ok", flagLost: false, roster: [] },
+      { name: null, supply: state.scen.supA || SupplyState.NORMAL, flagLost: false, roster: [] },
+      { name: null, supply: state.scen.supB || SupplyState.NORMAL, flagLost: false, roster: [] },
     ],
   };
   // Spectate always uses the scenario's exact fixed formation (no manual
   // setup to spectate); "battle formation" deployment mode does the same
   // for any control mode, so a human can take over one of the exact
   // benchmarked matchups instead of freely placing their own squadrons.
-  if (state.ctrlMode === 3 || state.deployMode === 1) {
-    state.G.fleets[0].name = state.scen.a; deployFormation(state, state.scen.a, 0);
-    state.G.fleets[1].name = state.scen.b; deployFormation(state, state.scen.b, 1);
+  if (state.ctrlMode === ControlMode.SPECTATE || state.deployMode === DeploymentMode.FIXED_FORMATION) {
+    state.G.fleets[Side.BLUE].name = state.scen.a; deployFormation(state, state.scen.a, Side.BLUE);
+    state.G.fleets[Side.RED].name = state.scen.b; deployFormation(state, state.scen.b, Side.RED);
     startCombat(state);
     return;
   }
   // Any side you control deploys itself by hand; AI side(s) get a random
   // formation once every human side has confirmed (deployment.confirmSetup).
-  const humanSides = [0, 1].filter(s => humanControls(state, s));
+  const humanSides = SIDES.filter(s => humanControls(state, s));
   state.setupQueue = humanSides.slice(1);
   beginSetupFor(state, humanSides[0]);
 }
 export function startCombat(state) {
   state.phase.transition(BattlePhase.COMBAT);
-  const supTag = s => s === "ok" ? "" : ` (${s.toUpperCase()} SUPPLY)`;
-  log(`Blue: ${state.G.fleets[0].name}${supTag(state.G.fleets[0].supply)} — Red: ${state.G.fleets[1].name}${supTag(state.G.fleets[1].supply)}`);
+  const supTag = s => s === SupplyState.NORMAL ? "" : ` (${s.toUpperCase()} SUPPLY)`;
+  log(`Blue: ${state.G.fleets[Side.BLUE].name}${supTag(state.G.fleets[Side.BLUE].supply)} — Red: ${state.G.fleets[Side.RED].name}${supTag(state.G.fleets[Side.RED].supply)}`);
   newTurn(state); proceed(state);
 }
 
 export function newTurn(state) {
   const G = state.G;
   G.turn++;
-  for (const side of [0, 1]) for (const e of Q.unitsOfSide(state, side)) state.world.remove(e, C.Activated);
+  for (const side of SIDES) for (const e of Q.unitsOfSide(state, side)) state.world.remove(e, C.Activated);
   G.lastActed = G.turn % 2; // side (turn+1)%2 acts first, mirroring the sim
-  if (state.moveMode === 1) {
+  if (state.moveMode === ActivationOrder.SIDE_AT_ONCE) {
     // All-at-once: one side fully activates before the other gets a turn.
     // A single human-controlled side always goes first; otherwise (hotseat,
     // spectate) alternate who opens each turn, same as interleaved mode does.
-    const humanSides = [0, 1].filter(s => humanControls(state, s));
+    const humanSides = SIDES.filter(s => humanControls(state, s));
     G.roundFirst = humanSides.length === 1 ? humanSides[0] : (G.turn + 1) % 2;
   }
   log(`— Turn ${G.turn} —`, "t");
@@ -74,12 +77,12 @@ export function newTurn(state) {
 export function checkEnd(state) {
   const G = state.G;
   if (G.over) return true;
-  for (const s of [0, 1]) if (Q.losses(state, s) >= state.BREAK_AT) return gameOver(state, 1 - s, "break");
-  if (Q.unactivatedOfSide(state, 0).length === 0 && Q.unactivatedOfSide(state, 1).length === 0) {
+  for (const s of SIDES) if (Q.losses(state, s) >= state.BREAK_AT) return gameOver(state, opposingSide(s), "break");
+  if (Q.unactivatedOfSide(state, Side.BLUE).length === 0 && Q.unactivatedOfSide(state, Side.RED).length === 0) {
     if (G.turn >= MAX_TURNS) {
-      const s0 = Q.aliveOfSide(state, 0).reduce((a, e) => a + Q.strengthOf(state, e), 0);
-      const s1 = Q.aliveOfSide(state, 1).reduce((a, e) => a + Q.strengthOf(state, e), 0);
-      return gameOver(state, s0 === s1 ? null : (s0 > s1 ? 0 : 1), "time");
+      const s0 = Q.aliveOfSide(state, Side.BLUE).reduce((a, e) => a + Q.strengthOf(state, e), 0);
+      const s1 = Q.aliveOfSide(state, Side.RED).reduce((a, e) => a + Q.strengthOf(state, e), 0);
+      return gameOver(state, s0 === s1 ? null : (s0 > s1 ? Side.BLUE : Side.RED), "time");
     }
     newTurn(state);
   }
@@ -87,18 +90,18 @@ export function checkEnd(state) {
 }
 export function nextSide(state) {
   const G = state.G;
-  if (state.moveMode === 1) { // exhaust the round's first side entirely before the other side moves at all
+  if (state.moveMode === ActivationOrder.SIDE_AT_ONCE) { // exhaust the round's first side entirely before the other side moves at all
     if (Q.unactivatedOfSide(state, G.roundFirst).length) return G.roundFirst;
-    if (Q.unactivatedOfSide(state, 1 - G.roundFirst).length) return 1 - G.roundFirst;
+    if (Q.unactivatedOfSide(state, opposingSide(G.roundFirst)).length) return opposingSide(G.roundFirst);
     return null;
   }
-  const other = 1 - G.lastActed;
+  const other = opposingSide(G.lastActed);
   if (Q.unactivatedOfSide(state, other).length) return other;
   if (Q.unactivatedOfSide(state, G.lastActed).length) return G.lastActed;
   return null;
 }
 export const humanControls = (state, side) =>
-  state.ctrlMode === 2 ? true : (state.ctrlMode === 3 ? false : side === state.ctrlMode);
+  state.ctrlMode === ControlMode.HOTSEAT ? true : (state.ctrlMode === ControlMode.SPECTATE ? false : side === state.ctrlMode);
 
 export function proceed(state) {
   const G = state.G;
@@ -118,10 +121,10 @@ export function proceed(state) {
     state.world.add(u, C.Activated, true); G.lastActed = side;
     aiActivate(state, u);
     draw(state); updatePanels(state);
-    if (state.ctrlMode === 3) { checkEnd(state); draw(state); updatePanels(state); } // one activation per step/tick
+    if (state.ctrlMode === ControlMode.SPECTATE) { checkEnd(state); draw(state); updatePanels(state); } // one activation per step/tick
     else proceed(state);
   };
-  if (state.ctrlMode === 3) { go(); }
+  if (state.ctrlMode === ControlMode.SPECTATE) { go(); }
   else setTimeout(go, 250);
 }
 
@@ -183,16 +186,16 @@ export function gameOver(state, winner, how) {
   else {
     title = `${sideName(winner)} wins`;
     body = how === "break"
-      ? `${sideName(1 - winner)}'s fleet breaks on turn ${G.turn} (${Q.losses(state, 1 - winner)} squadrons destroyed or fled).`
-      : `On time at turn ${G.turn}: surviving strength ${surv(0)}–${surv(1)}.`;
+      ? `${sideName(opposingSide(winner))}'s fleet breaks on turn ${G.turn} (${Q.losses(state, opposingSide(winner))} squadrons destroyed or fled).`
+      : `On time at turn ${G.turn}: surviving strength ${surv(Side.BLUE)}–${surv(Side.RED)}.`;
   }
   const result = `${state.scen.t} | ctrl=${["Blue", "Red", "hotseat", "spectate"][state.ctrlMode]} | ` +
     `size=${state.SIZE} | winner=${winner === null ? "draw" : sideName(winner) + " (" + G.fleets[winner].name + ")"} | ` +
-    `turn=${G.turn} | strength ${surv(0)}-${surv(1)} | losses ${Q.losses(state, 0)}-${Q.losses(state, 1)}`;
+    `turn=${G.turn} | strength ${surv(Side.BLUE)}-${surv(Side.RED)} | losses ${Q.losses(state, Side.BLUE)}-${Q.losses(state, Side.RED)}`;
   log(`BATTLE OVER — ${title}. ${body}`, "t");
   document.getElementById("ovTitle").textContent = title;
   document.getElementById("ovBody").textContent = body +
-    (G.fleets[0].name === "sphere" || G.fleets[1].name === "sphere" ? ` (Sphere survival score: ${G.turn} turns.)` : "");
+    (G.fleets[Side.BLUE].name === "sphere" || G.fleets[Side.RED].name === "sphere" ? ` (Sphere survival score: ${G.turn} turns.)` : "");
   document.getElementById("ovResult").textContent = result;
   document.getElementById("overlay").style.display = "flex";
   draw(state); updatePanels(state);

@@ -1,9 +1,6 @@
-export const BattlePhase = Object.freeze({
-  MENU: "menu",
-  DEPLOYMENT: "deployment",
-  COMBAT: "combat",
-  GAME_OVER: "game_over",
-});
+import { BattlePhase } from "../domain/constants.js";
+
+export { BattlePhase };
 
 const ALLOWED_TRANSITIONS = Object.freeze({
   [BattlePhase.MENU]: new Set([BattlePhase.DEPLOYMENT, BattlePhase.COMBAT]),

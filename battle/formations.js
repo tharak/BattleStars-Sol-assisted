@@ -1,7 +1,7 @@
 // Formation layouts (pure data) plus the entity factories that turn a
 // layout -- or a player's manually-placed ships -- into real ECS entities.
 import { range, argmin, angleBetween, DIR_ANGLE } from "./hexmath.js";
-import { FORMATION_NAMES, SETUP_ZONE, DEPLOY_ANCHOR, DEPLOY_ROW_CENTER, MoraleState } from "./config.js";
+import { FORMATION_NAMES, SETUP_ZONE, DEPLOY_ANCHOR, DEPLOY_ROW_CENTER, MoraleState, Side } from "./config.js";
 import * as C from "./components.js";
 
 // mirrors battle_sim.py exactly
@@ -58,7 +58,7 @@ export function spawnUnit(state, side, pos, facing, isFlag) {
   world.add(e, C.Side, { value: side });
   world.add(e, C.Strength, { value: 4 });
   world.add(e, C.Morale, { state: MoraleState.STEADY });
-  world.add(e, C.Label, { id: (side === 0 ? "B" : "R") + (i + 1) });
+  world.add(e, C.Label, { id: (side === Side.BLUE ? "B" : "R") + (i + 1) });
   world.add(e, C.Alive, true);
   if (isFlag) world.add(e, C.Flagship, true);
   roster.push(e);
@@ -67,10 +67,10 @@ export function spawnUnit(state, side, pos, facing, isFlag) {
 
 export function deployFormation(state, name, side) {
   const { u, flag } = formationLayout(name, state.SIZE);
-  const straight = side === 0 ? 0 : 3, toPos = side === 0 ? 5 : 4, toNeg = side === 0 ? 1 : 2;
+  const straight = side === Side.BLUE ? 0 : 3, toPos = side === Side.BLUE ? 5 : 4, toNeg = side === Side.BLUE ? 1 : 2;
   const [blueAnchor, redAnchor] = DEPLOY_ANCHOR;
   const entities = u.map(([fwd, lat, df], i) => spawnUnit(state, side,
-    [side === 0 ? blueAnchor + fwd : redAnchor - fwd, DEPLOY_ROW_CENTER + lat],
+    [side === Side.BLUE ? blueAnchor + fwd : redAnchor - fwd, DEPLOY_ROW_CENTER + lat],
     df === 0 ? straight : (df > 0 ? toPos : toNeg),
     i === flag));
   if (name === "sphere") {

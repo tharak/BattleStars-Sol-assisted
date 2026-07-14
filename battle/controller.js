@@ -11,6 +11,7 @@ import {
 import {
   handleSetupClick, setupTurn, setupToggleFlag, setupRemove, confirmSetup,
 } from "./deployment.js";
+import { ControlMode, Side } from "./domain/constants.js";
 
 export const BattleCommand = Object.freeze({
   TURN_LEFT: "turn_left",
@@ -60,7 +61,7 @@ export class BattleController {
       case BattleCommand.RESTART:
         return newBattle(state);
       case BattleCommand.STEP_AI:
-        if (state.ctrlMode === 3 && !state.G?.over) return proceed(state);
+        if (state.ctrlMode === ControlMode.SPECTATE && !state.G?.over) return proceed(state);
         return;
       default:
         throw new Error(`Unknown battle command: ${command}`);
@@ -71,7 +72,7 @@ export class BattleController {
     const state = this.state;
     if (state.setup) return handleSetupClick(state, hex);
     if (!state.G || state.G.over || !state.act) return;
-    const entity = [...Q.aliveOfSide(state, 0), ...Q.aliveOfSide(state, 1)]
+    const entity = [...Q.aliveOfSide(state, Side.BLUE), ...Q.aliveOfSide(state, Side.RED)]
       .find(candidate => {
         const [c, r] = Q.posOf(state, candidate);
         return c === hex[0] && r === hex[1];

@@ -2,6 +2,12 @@
 // the board shape below is web-only -- the Python Monte-Carlo sim still
 // plays on its own rectangular grid, so its cited win rates are unaffected).
 import { hexDist } from "./hexmath.js";
+import { Side, SupplyState } from "./domain/constants.js";
+
+export {
+  MoraleState, SupplyState, FiringArc, Side, SIDES, ControlMode,
+  ActivationOrder, DeploymentMode, opposingSide,
+} from "./domain/constants.js";
 
 export const RANGE = 3, CMD_R = 4, MP_MAX = 3, MAX_TURNS = 15;
 
@@ -18,13 +24,12 @@ export const inBounds = (c, r) => hexDist(BOARD_CENTER, [c, r]) <= BOARD_RADIUS;
 // formation at every fleet size stays inside the hexagon on both sides.
 export const DEPLOY_ANCHOR = [7, 19], DEPLOY_ROW_CENTER = 13;
 
-export const MoraleState = Object.freeze({ STEADY: 0, SHAKEN: 1, ROUTED: 2 });
 export const STATE_NAME = ["Steady", "Shaken", "ROUTED"];
 
 export const HOLD_FORMS = new Set(["sphere"]);
 
-export const sideName = s => s === 0 ? "Blue" : "Red";
-export const sideCls = s => s === 0 ? "b" : "r"; // matches the #log .b/.r CSS classes in styles.css
+export const sideName = s => s === Side.BLUE ? "Blue" : "Red";
+export const sideCls = s => s === Side.BLUE ? "b" : "r"; // matches the #log .b/.r CSS classes in styles.css
 
 export const FORMATION_NAMES = ["line", "spindle", "crescent", "echelon", "sphere", "column"];
 
@@ -50,10 +55,10 @@ export const SCENARIOS = [
   n:"Survival formation in the wrong context on purpose. Score = turns survived, not wins."},
  {t:"Wide Line vs Column (sanity)", a:"line", b:"column",
   n:"Travel order should be slaughtered. If Column ever wins, something is broken."},
- {t:"Low-supply mirror", a:"line", b:"line", supB:"low",
+ {t:"Low-supply mirror", a:"line", b:"line", supB:SupplyState.LOW,
   n:"Red is low on supply (v0.2: −1 morale only, guns unaffected). Sim: 66/34 — a clear but playable handicap. Can you win from behind?"},
  {t:"Flagship hunt (mirror)", a:"line", b:"line",
   n:"Mirror match. Try decapitation: kill the enemy flagship — fleet-wide morale check, permanent −1, command radius gone."},
- {t:"Critical-supply mirror", a:"line", b:"line", supB:"critical",
+ {t:"Critical-supply mirror", a:"line", b:"line", supB:SupplyState.CRITICAL,
   n:"Red is at critical supply (−1 morale AND worse to-hit — the old v0.1 'low'). Sim: 96/3. Near-hopeless by design: never fight like this."},
 ];

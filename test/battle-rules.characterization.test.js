@@ -1,16 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { BattleSession } from "../battle/state.js";
+import { GameContext } from "../battle/gameContext.js";
 import { SequenceRandomSource } from "../battle/core/random.js";
-import { BattleEvent } from "../battle/core/events.js";
+import { BattleEvent, EventBus } from "../battle/core/events.js";
 import { MoraleState } from "../battle/config.js";
 import { spawnUnit } from "../battle/formations.js";
 import { contagion, destroy, moraleCheck } from "../battle/systems.js";
 import * as C from "../battle/components.js";
 
 function battleWith(rolls) {
-  const state = new BattleSession({ random: new SequenceRandomSource(rolls) });
+  const state = new GameContext({
+    random: new SequenceRandomSource(rolls),
+    events: new EventBus(),
+  });
   state.G = {
     turn: 1,
     over: false,

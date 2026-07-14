@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { BattleEvent } from "../battle/core/events.js";
 import { BattlePhase, PhaseMachine } from "../battle/core/phaseMachine.js";
 import { SeededRandomSource, SequenceRandomSource } from "../battle/core/random.js";
-import { BattleSession } from "../battle/state.js";
+import { GameContext } from "../battle/gameContext.js";
+import { EventBus } from "../battle/core/events.js";
 import { deployFormation, spawnUnit } from "../battle/formations.js";
 import { aiActivate, fire, moveActivatedUnitForward } from "../battle/systems.js";
 import { MoraleState, MP_MAX } from "../battle/config.js";
@@ -13,7 +14,7 @@ import * as Q from "../battle/queries.js";
 import * as ShipRules from "../battle/core/shipRules.js";
 
 function battleWith(random) {
-  const state = new BattleSession({ random });
+  const state = new GameContext({ random, events: new EventBus() });
   state.G = {
     turn: 1,
     over: false,

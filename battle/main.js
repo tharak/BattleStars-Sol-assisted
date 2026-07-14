@@ -1,10 +1,14 @@
 // Module entry point: builds the scenario menu, wires up input handling,
 // and bootstraps the browser's BattleSession instance.
 import { SCENARIOS } from "./config.js";
-import { State } from "./state.js";
+import { GameContext } from "./gameContext.js";
+import { EventBus } from "./core/events.js";
+import { MathRandomSource } from "./core/random.js";
 import { newBattle } from "./turnEngine.js";
 import { wire } from "./input.js";
 import { attachBattlePresenter } from "./presenter.js";
+
+const game = new GameContext({ random: new MathRandomSource(), events: new EventBus() });
 
 function buildMenu(state) {
   const el = document.getElementById("scenlist");
@@ -29,6 +33,6 @@ function buildMenu(state) {
   });
 }
 
-attachBattlePresenter(State);
-wire(State);
-buildMenu(State);
+attachBattlePresenter(game);
+wire(game);
+buildMenu(game);
