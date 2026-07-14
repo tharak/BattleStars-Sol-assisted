@@ -7,6 +7,7 @@ import * as SC from "../battle/core/shipRules.js";
 import {
   compareStrategicRoutes,
   executeStrategicGroupRoute,
+  executeStrategicGroupTurn,
   executeStrategicRoute,
   findGroupReachableDestinations,
   findReachableDestinations,
@@ -219,6 +220,36 @@ test("command-group execution moves every member and commits activation once", (
   assert.deepEqual(SC.posOf(world, wing), [1, 1]);
   assert.equal(act.mp, route.remainingMp);
   assert.equal(act.moved, true);
+});
+
+test("command-group turns rotate every member and spend shared MP once", () => {
+  const act = activation({ fireMode: true });
+  const turned = [];
+  const result = executeStrategicGroupTurn([1, 2, 3], {
+    activation: act,
+    turn: id => turned.push(id),
+  });
+
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(turned, [1, 2, 3]);
+  assert.equal(act.mp, MAX_MOVEMENT_POINTS - 1);
+  assert.equal(act.moved, true);
+  assert.equal(act.fireMode, false);
+});
+
+test("command-group backward translation uses the full movement allowance", () => {
+  const routes = findGroupReachableDestinations({
+    leaderId: 1,
+    members: [
+      { id: 1, position: [0, 0], facing: 0, moraleState: MoraleState.STEADY },
+      { id: 2, position: [0, 1], facing: 0, moraleState: MoraleState.STEADY },
+    ],
+    activation: activation(),
+  });
+  const route = routes.get("-1,0");
+
+  assert.equal(route.cost, MAX_MOVEMENT_POINTS);
+  assert.ok(route.memberRoutes.every(plan => plan.route.actions[0] === StrategicMoveAction.BACKWARD));
 });
 
 function movementFixture({ inCommand }) {

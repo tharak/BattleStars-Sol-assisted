@@ -18,7 +18,7 @@ import { MathRandomSource } from "../battle/core/random.js";
 import { forwardMovementCost } from "../battle/domain/movementRules.js";
 import { makeEffectLoop } from "../battle/core/effectLoop.js";
 import {
-  executeStrategicGroupRoute, executeStrategicRoute, findGroupReachableDestinations,
+  executeStrategicGroupRoute, executeStrategicGroupTurn, executeStrategicRoute, findGroupReachableDestinations,
   findReachableDestinations, hexPatch, membersWithinCommand, resolveStrategicClick, StrategicClickAction,
 } from "./strategicMovement.js";
 import { buildGravityFieldGroups, warpGravityPoint } from "./gravityField.js";
@@ -224,7 +224,20 @@ function endActivation() {
   render();
 }
 function doTurn(dir) {
-  if (groupMoveArmed || !SC.canMove(activation)) return;
+  if (groupMoveArmed) {
+    const ships = commandGroupShips();
+    const result = executeStrategicGroupTurn(ships, {
+      activation,
+      turn: ship => SC.turn(world, ship, dir),
+    });
+    if (!result.ok) return;
+    if (activation.mp === 0) groupMoveArmed = false;
+    setHint(`${ships.length} ships turned ${dir > 0 ? "left" : "right"} together for 1 MP.`);
+    renderInfoPanel();
+    render();
+    return;
+  }
+  if (!SC.canMove(activation)) return;
   SC.turn(world, activation.u, dir);
   activation.mp--; activation.moved = true; activation.fireMode = false;
   setHint("");
@@ -283,6 +296,10 @@ function groupMoveText(route) {
   return `${route.memberRoutes.length} ships move together · ${route.cost} MP`;
 }
 
+function groupRouteTo(destination) {
+  return destination ? reachableMoves.get(hexKey(destination[0], destination[1])) : null;
+}
+
 function recomputeReachableMoves() {
   if (!activation || !SC.isAlive(world, activation.u)) {
     reachableMoves = new Map();
@@ -315,7 +332,7 @@ function recomputeReachableMoves() {
 
 function executeReachableMove(route) {
   if (!activation || route.cost > activation.mp) return false;
-  const movingAsGroup = groupMoveArmed && route.memberRoutes;
+  const movingAsGroup = !!(groupMoveArmed && route.memberRoutes);
   const result = movingAsGroup
     ? executeStrategicGroupRoute(route, {
       activation,
@@ -351,7 +368,17 @@ function executeReachableMove(route) {
   return true;
 }
 function doForward() {
-  if (groupMoveArmed || !SC.canMove(activation)) return;
+  if (groupMoveArmed) {
+    const route = groupRouteTo(SC.forwardHex(world, activation.u));
+    if (!route) {
+      setHint("The command group cannot move forward together from here.");
+      renderInfoPanel();
+      return;
+    }
+    executeReachableMove(route);
+    return;
+  }
+  if (!SC.canMove(activation)) return;
   const cost = hexMoveCost(SC.forwardHex(world, activation.u));
   if (activation.mp < cost) { setHint(`Not enough MP -- that hex costs ${cost}.`); renderInfoPanel(); return; }
   const res = SC.moveForward(world, activation.u);
@@ -362,7 +389,17 @@ function doForward() {
   render();
 }
 function doBackward() {
-  if (groupMoveArmed || !SC.canBack(activation)) return;
+  if (groupMoveArmed) {
+    const route = groupRouteTo(SC.backwardHex(world, activation.u));
+    if (!route) {
+      setHint("The command group cannot move back together from here.");
+      renderInfoPanel();
+      return;
+    }
+    executeReachableMove(route);
+    return;
+  }
+  if (!SC.canBack(activation)) return;
   const res = SC.moveBackward(world, activation.u);
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp = 0; activation.moved = true; activation.fireMode = false;
@@ -416,7 +453,7 @@ function toggleGroupMove() {
   travelArmed = false;
   activation.fireMode = false;
   setHint(groupMoveArmed
-    ? `Command-group move armed for ${ships.length} ships. Pick a highlighted destination.`
+    ? `Command-group move armed for ${ships.length} ships. Use Turn/Forward/Back or pick a highlighted destination.`
     : "Command-group move cancelled.");
   renderInfoPanel();
   render();
@@ -482,14 +519,24 @@ function renderInfoPanel() {
     infoDetail.textContent = `${FACTIONS[SC.factionOf(world, u)].label} — Str ${SC.strengthOf(world, u)}, ${STATE_NAME[SC.moraleOf(world, u)]}`;
     infoControls.style.display = "flex";
     const commandedShips = commandGroupShips();
+    const groupForwardRoute = groupMoveArmed ? groupRouteTo(SC.forwardHex(world, u)) : null;
+    const groupBackwardRoute = groupMoveArmed ? groupRouteTo(SC.backwardHex(world, u)) : null;
     infoShipStatus.innerHTML =
       `${activation.cmd ? "In command (move + fire)" : "Out of command (move OR fire)"}<br>` +
       `MP ${activation.mp}/${MP_MAX}${activation.fired ? " · has fired" : ""}` +
       (activation.fireMode ? `<br><span style="color:var(--red)">Pick a highlighted target.</span>` : "") +
       (travelArmed ? `<br><span style="color:var(--red)">Click a destination.</span>` : "") +
-      (groupMoveArmed ? `<br><span style="color:var(--gold)">${commandedShips.length} ships moving together. Pick a highlighted destination.</span>` : "");
-    infoTurnL.disabled = infoTurnR.disabled = infoForward.disabled = groupMoveArmed || !SC.canMove(activation);
-    infoBack.disabled = groupMoveArmed || !SC.canBack(activation);
+      (groupMoveArmed ? `<br><span style="color:var(--gold)">${commandedShips.length} ships moving together. Use the movement controls or pick a destination.</span>` : "");
+    infoTurnL.disabled = infoTurnR.disabled = !SC.canMove(activation);
+    infoForward.disabled = groupMoveArmed ? !groupForwardRoute : !SC.canMove(activation);
+    infoBack.disabled = groupMoveArmed ? !groupBackwardRoute : !SC.canBack(activation);
+    infoTurnL.title = infoTurnR.title = groupMoveArmed ? `Turn all ${commandedShips.length} ships · 1 MP` : "";
+    infoForward.title = groupMoveArmed && groupForwardRoute
+      ? `Move all ${commandedShips.length} ships forward · ${groupForwardRoute.cost} MP`
+      : "";
+    infoBack.title = groupMoveArmed && groupBackwardRoute
+      ? `Move all ${commandedShips.length} ships back · ${groupBackwardRoute.cost} MP`
+      : "1 hex astern, keeps facing — costs all remaining MP";
     infoFire.disabled = !SC.canFire(world, activation, beltObstacles);
     infoGroupMove.style.display = SC.isFlagship(world, u) ? "" : "none";
     infoGroupMove.textContent = groupMoveArmed

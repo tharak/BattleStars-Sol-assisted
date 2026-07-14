@@ -312,3 +312,15 @@ export function executeStrategicGroupRoute(groupRoute, { activation = null, acti
   }
   return { ok: true };
 }
+
+/** Turn every commanded member in place, then spend the shared 1 MP once. */
+export function executeStrategicGroupTurn(memberIds, { activation, turn }) {
+  if (!memberIds?.length || !canMoveDuringActivation(activation)) {
+    return { ok: false, reason: "group_cannot_turn" };
+  }
+  for (const memberId of memberIds) turn(memberId);
+  activation.mp -= 1;
+  activation.moved = true;
+  activation.fireMode = false;
+  return { ok: true };
+}
