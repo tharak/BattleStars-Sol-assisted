@@ -196,7 +196,7 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   // for an entire "12" fleet as one stylized token. Now each of the 12
   // ships in a formation is its own individual token, hex-positioned (see
   // shipHexOffset in map/main.js), so this places exactly one. facingDeg
-  // is the ship's real formation-assigned facing (battle/formations.js),
+  // is the ship's real component facing (initially aimed toward the Sun),
   // applied via a quaternion rather than an Euler angle so there's no
   // manual sign-guessing about which way "positive rotation" goes in this
   // scene's particular axis convention.

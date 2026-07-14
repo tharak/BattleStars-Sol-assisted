@@ -278,8 +278,8 @@ function moonsOf(bodyId) {
 
 export const FACTIONS = {
   blue:  { label: "Blue",  startAt: "earth" },
-  green: { label: "Green", startAt: "saturn" },
-  red:   { label: "Red",   startAt: "jupiter" },
+  green: { label: "Green", startAt: "venus" },
+  red:   { label: "Red",   startAt: "mars" },
 };
 export const SHIPS_PER_FACTION = 12;
 
@@ -299,4 +299,4 @@ export function initFleetPositions(nowMs = Date.now()) {
 }
 
 // Each faction's starting formation, in memory only (resets on reload).
-export const FLEET_FORMATIONS = { blue: "line", green: "line", red: "line" };
+export const FLEET_FORMATIONS = { blue: "sphere", green: "sphere", red: "sphere" };

@@ -9,7 +9,7 @@ import {
   FLEET_FORMATIONS, FACTIONS, SHIPS_PER_FACTION,
   FLEET_POSITIONS, initFleetPositions,
 } from "./levels.js";
-import { DIR_ANGLE, hexCorners, key as hexKey } from "../battle/hexmath.js";
+import { DIR_ANGLE, directionToward, hexCorners, key as hexKey } from "../battle/hexmath.js";
 import { formationLayout } from "../battle/formations.js";
 import { BOARD_TINT, ACCENT } from "../battle/colors.js";
 import { LINE_WIDTH, LASER_DURATION, LASER_HALO_ALPHA } from "../battle/dimensions.js";
@@ -590,9 +590,8 @@ function snapToHexGrid(x, y) {
 // FLEET_POSITIONS/FLEET_FORMATIONS again. Anchored on each faction's
 // single logical FLEET_POSITIONS point (the exact same log-distance scale
 // as every real body in this view) using the exact same
-// formationLayout()-relative-offset math the old placeShips used, so
-// every ship's starting position/formation shape is unchanged from before
-// this session's rewrite.
+// formationLayout()-relative-offset math the old placeShips used. Every
+// ship receives its own six-direction facing toward the Sun at hex [0,0].
 let shipsSpawned = false;
 function spawnInitialShips(layout) {
   for (const [faction, pos] of Object.entries(FLEET_POSITIONS)) {
@@ -601,11 +600,11 @@ function spawnInitialShips(layout) {
     const r = layout.dist.toPixel(distanceKm);
     const [anchorX, anchorY] = snapToHexGrid(r * Math.cos(angle), r * Math.sin(angle));
     const { u, flag } = formationLayout(FLEET_FORMATIONS[faction], SHIPS_PER_FACTION);
-    u.forEach(([fwd, lat, df], i) => {
+    u.forEach(([fwd, lat], i) => {
       const [dx, dy] = shipHexOffset(fwd, lat);
       const [c, rIdx] = pixelToHexIndex(anchorX + dx, anchorY + dy);
       SC.spawnShip(world, {
-        faction, c, r: rIdx, dir: df === 0 ? 0 : (df > 0 ? 5 : 1), isFlagship: i === flag,
+        faction, c, r: rIdx, dir: directionToward([c, rIdx], [0, 0]), isFlagship: i === flag,
         label: `${faction[0].toUpperCase()}${i + 1}`,
       });
     });

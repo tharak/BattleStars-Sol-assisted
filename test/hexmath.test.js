@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  hexDist, neighbor, incomingArc, inFireArc, losClear, key,
+  hexDist, neighbor, directionToward, incomingArc, inFireArc, losClear, key,
 } from "../battle/hexmath.js";
 
 test("hex distance is symmetric across odd-r rows", () => {
@@ -27,6 +27,15 @@ test("neighbor returns the six adjacent odd-r hexes", () => {
   for (let direction = 0; direction < 6; direction++) {
     assert.equal(hexDist(origin, neighbor(origin, direction)), 1);
   }
+});
+
+test("direction toward a target selects the nearest of six hex facings", () => {
+  const origin = [10, 10];
+  for (let direction = 0; direction < 6; direction++) {
+    assert.equal(directionToward(origin, neighbor(origin, direction)), direction);
+  }
+  assert.equal(directionToward([10, 10], [0, 10]), 3);
+  assert.equal(directionToward([0, 10], [10, 10]), 0);
 });
 
 test("fire arcs classify front, flank, and rear without changing seam rules", () => {

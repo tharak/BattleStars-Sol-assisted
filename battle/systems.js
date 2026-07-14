@@ -10,8 +10,8 @@
 // results into this screen's BattleEvent stream. AI behavior
 // (aiActivate/aiStep/flee/routedActivation) and pure facing helpers
 // (turnToward/desiredDir) have no star-map equivalent (it has no AI), so
-// they're untouched, still living here directly.
-import { hexDist, neighbor, angleBetween, argmin, range, DIR_ANGLE, key } from "./hexmath.js";
+// they remain here as the battle-specific adapter over shared hex math.
+import { hexDist, neighbor, directionToward, key } from "./hexmath.js";
 import { RANGE, MP_MAX, HOLD_FORMS, MoraleState, inBounds, Side } from "./config.js";
 import { BattleEvent } from "./core/events.js";
 import { resolveRally } from "./domain/moraleRules.js";
@@ -164,8 +164,7 @@ export function moveActivatedUnitBackward(state) {
 }
 
 export function desiredDir(fromPos, goal) {
-  const ang = angleBetween(fromPos, goal);
-  return argmin(range(0, 5), d => Math.abs(((DIR_ANGLE[d] - ang + 180) % 360 + 360) % 360 - 180));
+  return directionToward(fromPos, goal);
 }
 export function aiStep(state, e) { // one MP toward nearest enemy; false if unusable
   const ne = Q.nearestEnemy(state, e);

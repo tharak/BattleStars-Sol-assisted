@@ -73,6 +73,19 @@ export function angleBetween(a, b) {
   const [ax, ay] = toCart(a), [bx, by] = toCart(b);
   return Math.atan2(by - ay, bx - ax) * 180 / Math.PI;
 }
+export function directionToward(from, goal) {
+  const angle = angleBetween(from, goal);
+  let closestDirection = 0;
+  let closestDelta = Infinity;
+  for (let direction = 0; direction < DIR_ANGLE.length; direction++) {
+    const delta = Math.abs(((DIR_ANGLE[direction] - angle + 180) % 360 + 360) % 360 - 180);
+    if (delta < closestDelta) {
+      closestDirection = direction;
+      closestDelta = delta;
+    }
+  }
+  return closestDirection;
+}
 export function relAngle(facing, frm, to) {
   let a = angleBetween(frm, to) - DIR_ANGLE[facing];
   a = ((a + 180) % 360 + 360) % 360 - 180;

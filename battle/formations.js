@@ -1,6 +1,6 @@
 // Formation layouts (pure data) plus the entity factories that turn a
 // layout -- or a player's manually-placed ships -- into real ECS entities.
-import { range, argmin, angleBetween, DIR_ANGLE } from "./hexmath.js";
+import { range, directionToward } from "./hexmath.js";
 import { FORMATION_NAMES, SETUP_ZONE, DEPLOY_ANCHOR, DEPLOY_ROW_CENTER, MoraleState, Side } from "./config.js";
 import * as C from "./components.js";
 
@@ -79,9 +79,7 @@ export function deployFormation(state, name, side) {
     const c = state.world.get(entities[0], C.Position);
     for (const e of entities.slice(1)) {
       const p = state.world.get(e, C.Position);
-      const ang = angleBetween([c.c, c.r], [p.c, p.r]);
-      state.world.get(e, C.Facing).dir =
-        argmin(range(0, 5), d => Math.abs(((DIR_ANGLE[d] - ang + 180) % 360 + 360) % 360 - 180));
+      state.world.get(e, C.Facing).dir = directionToward([c.c, c.r], [p.c, p.r]);
     }
   }
   return entities;
