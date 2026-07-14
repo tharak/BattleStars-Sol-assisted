@@ -5,10 +5,10 @@ import { buildGravityFieldGroups, warpGravityPoint } from "../map/gravityField.j
 const HEX_SIZE = 5;
 const intensity = cost => cost / 10;
 
-test("gravity deformation pulls line points toward a well", () => {
-  const [x, z] = warpGravityPoint(10, 0, [{ x: 0, z: 0, rPx: 4 }], HEX_SIZE);
+test("gravity deformation bends line points into a spinning inward spiral", () => {
+  const [x, z] = warpGravityPoint(10, 0, [{ x: 0, z: 0, rPx: 4, spinDirection: 1 }], HEX_SIZE);
   assert.ok(x > 0 && x < 10);
-  assert.equal(z, 0);
+  assert.ok(z < 0);
 });
 
 test("same-color neighboring gravity hexes emit their shared thick edge once", () => {

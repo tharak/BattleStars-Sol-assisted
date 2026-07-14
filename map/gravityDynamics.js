@@ -16,10 +16,10 @@ export function gravityDriftDirection(position, gravityCells, positionToWorld) {
   if (distance < 1e-6) return null;
   const inwardX = dx / distance, inwardY = dy / distance;
   const spin = cell.well.spinDirection ?? 1;
-  // A 2:1 inward/tangential blend makes a visible spiral.  It is strong
-  // enough to plan around without turning every approach into an orbit.
-  const flowX = inwardX * 2 - inwardY * spin;
-  const flowY = inwardY * 2 + inwardX * spin;
+  // A tangentially dominant 1:2 blend produces an obvious slingshot arc;
+  // ships still lose radial ground every time the hex grid permits it.
+  const flowX = inwardX - inwardY * spin * 2;
+  const flowY = inwardY + inwardX * spin * 2;
   let bestDirection = 0, bestDot = -Infinity;
   for (let direction = 0; direction < 6; direction++) {
     const next = neighbor(position, direction);

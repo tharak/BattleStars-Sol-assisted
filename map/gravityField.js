@@ -22,8 +22,12 @@ export function warpGravityPoint(x, z, wells, hexSize) {
       strength * Math.exp(-(distance * distance) / (falloff * falloff)),
       distance * 0.85,
     );
-    warpedX += (dx / distance) * pull;
-    warpedZ += (dz / distance) * pull;
+    const inwardX = dx / distance, inwardZ = dz / distance;
+    const spin = well.spinDirection ?? 1;
+    // Match the gameplay current: a small inward tug plus a stronger
+    // tangential sweep bends the field into readable spiral arms.
+    warpedX += inwardX * pull * 0.35 - inwardZ * pull * spin * 0.7;
+    warpedZ += inwardZ * pull * 0.35 + inwardX * pull * spin * 0.7;
   }
   return [warpedX, warpedZ];
 }
