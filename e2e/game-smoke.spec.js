@@ -44,7 +44,20 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }) =
   expect(runtimeCdnRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
 
-  await page.locator("#cv3d").hover({ position: { x: 80, y: 80 } });
+  // Dispatch at a real canvas-relative point without requiring Playwright
+  // to scroll the 950px canvas into a narrow mobile viewport. A physical
+  // locator.hover can be intercepted by the surrounding page there even
+  // though WebGL is active; this still exercises the canvas mousemove path
+  // whose invariant matters here: sparse hover overlays must not rebuild
+  // the retained static scene.
+  await page.locator("#cv3d").evaluate((canvas, position) => {
+    const rect = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new MouseEvent("mousemove", {
+      bubbles: true,
+      clientX: rect.left + position.x,
+      clientY: rect.top + position.y,
+    }));
+  }, { x: 80, y: 80 });
   await expect(page.locator("#cv3d")).toHaveAttribute("data-static-builds", "1");
 
   await page.locator("#cv3d").evaluate(canvas =>
