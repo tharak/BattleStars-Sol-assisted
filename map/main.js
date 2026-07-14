@@ -1358,7 +1358,9 @@ function ensureGravityAnimation() {
       // Cosmetic body spin must not monopolize a constrained browser's main
       // thread while players click movement controls.  Eight FPS is ample
       // for this directional cue and keeps tactical input responsive.
-      if (now - lastGravityAnimationRenderMs >= 125) {
+      // Never redraw for cosmetic spin during an activation.  The command
+      // panel is deliberately stable while a player is issuing orders.
+      if (!activation && now - lastGravityAnimationRenderMs >= 125) {
         lastGravityAnimationRenderMs = now;
         scene3d.animateBodies(now);
       }
