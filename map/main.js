@@ -1043,6 +1043,24 @@ function snapToHexGrid(x, y) {
   return shipHexOffset(...pixelToHexIndex(x, y));
 }
 
+// Gravity is discrete, so every planet that generates a well needs to sit
+// exactly on a cell center.  Moving its moons by the same tiny correction
+// keeps their local rings and cluster visually attached to the planet.
+function snapGravityBodiesToHexGrid(layout) {
+  for (const planet of layout.planets) {
+    if (planet.kind === "belt") continue;
+    const [x, y] = snapToHexGrid(planet.x, planet.y);
+    const dx = x - planet.x, dy = y - planet.y;
+    planet.x = x; planet.y = y;
+    for (const moon of planet.moons) {
+      moon.x += dx;
+      moon.y += dy;
+      moon.tiltZ += dy;
+    }
+  }
+  return layout;
+}
+
 function sparseOverlaySnapshot() {
   const toCell = ([c, r]) => {
     const [x, z] = shipHexOffset(c, r);
@@ -1406,7 +1424,9 @@ function ensureScene3D() {
 let systemStaticCache = null;
 function systemStaticData(data, sourceKey) {
   if (systemStaticCache?.sourceKey === sourceKey) return systemStaticCache;
-  const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
+  const layout = snapGravityBodiesToHexGrid(
+    layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX }),
+  );
   ensureShipsSpawned(layout);
   const wells = gravityWells(layout);
   const gravityCells = gravityHexes(layout);
