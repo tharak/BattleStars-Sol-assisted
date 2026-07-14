@@ -80,6 +80,14 @@ These modules accept plain values and return plain results. They do not know abo
 - `presenter.js` observes semantic game events.
 - `render.js` and `panels.js` read current state and update the browser.
 
+### Strategic rendering
+
+- `map/main.js` dynamically loads `scene3d.js`, coordinates renderer state, and owns the explicit 2D fallback.
+- `map/scene3d.js` is the only Three.js importer. It retains static bodies, gravity, rings, and asteroids separately from dynamic ships and tracers, tracks context loss/restoration, and exposes renderer diagnostics without deciding gameplay.
+- `map/gravityField.js` builds deduplicated gravity geometry as pure data.
+- `map/renderQuality.js` chooses the low/high presentation tier from explicit capability signals.
+- Vite bundles Three.js and textures locally. The production browser tests require real WebGL startup and separately force the 2D and module-load-failure paths.
+
 ## Behavioral safeguards
 
 The test suite covers hex distance and neighbors, firing arcs and LOS edge choice, movement costs, deterministic combat and morale, contagion, flagship loss, activation ordering, break thresholds, victory conditions, lifecycle integration, RNG reproducibility, and dependency boundaries.

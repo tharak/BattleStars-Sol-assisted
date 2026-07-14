@@ -1,0 +1,54 @@
+name: Bug report
+description: Report behavior that is not working as intended
+labels: [bug]
+body:
+  - type: checkboxes
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+      placeholder: Describe the observed behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Strategic map (3D)
+        - Strategic map (2D fallback)
+        - Tactical battle
+        - Monte Carlo simulator
+        - Documentation or tooling
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and operating system
+      placeholder: Chrome 130 on Linux
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots, recordings, or console output

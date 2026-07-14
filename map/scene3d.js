@@ -1,8 +1,6 @@
-// The System map's 3D isometric-style view: a real WebGL scene (Three.js,
-// loaded via the importmap in map.html -- no local install, matching this
-// repo's zero-build-step setup) instead of the flat 2D canvas the rest of
-// the app uses. Universe stays on the 2D canvas (orbitmap.js) -- this
-// module is only ever used for the System level.
+// The System map's 3D isometric-style view. Three.js is bundled by Vite so
+// renderer startup never depends on a third-party CDN at runtime. Universe
+// stays on the 2D canvas (orbitmap.js); this module is only used for System.
 //
 // Positions/sizes come in as plain (x,z,radius) world units from the
 // caller (map/main.js reuses layoutSystemWithMoons's real-distance/real-
@@ -37,6 +35,7 @@ import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { hexEdgeWidths, hexCorners } from "../battle/hexmath.js";
 import { ACCENT } from "../battle/colors.js";
+import { chooseGraphicsQuality, GraphicsQuality } from "./renderQuality.js";
 
 // Matches battle/colors.js's BOARD_TINT.gridCell -- the tone that actually
 // covers most of the battle board (its hexes are filled with this, not
@@ -56,6 +55,7 @@ const RING_COLOR = 0x2a3350;
 // < a ship's own flat hex token
 // < the ship's raised 3D cone.
 const GRAVITY_HEX_Y = 0.15;
+const GRAVITY_LINE_Y = 0.22;
 const ORBIT_RING_Y = 0.4;
 const SPARSE_OVERLAY_Y = 0.65;
 const SHIP_BASE_Y = 0.8;
@@ -63,7 +63,9 @@ const SHIP_BASE_EDGE_Y = 0.85;
 const SHIP_HEIGHT_ABOVE_PLANE = 3;
 const SHIP_FILL_ALPHA = 0.5;
 
-export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
+export function createSystemScene({
+  canvas, sizePx, minZoom, maxZoom, qualityPreference = "auto", onContextStatus = () => {},
+}) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BG_COLOR);
 
@@ -75,9 +77,40 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   camera.lookAt(0, 0, 0);
   camera.updateProjectionMatrix();
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // Default-framebuffer MSAA is an expensive context-creation choice and is
+  // especially painful under software WebGL. The crisp tactical lines do not
+  // rely on it, so keep it off and spend the budget on useful scene detail.
+  const renderer = new THREE.WebGLRenderer({
+    canvas, antialias: false, powerPreference: "high-performance",
+  });
+  const gl = renderer.getContext();
+  let rendererName = "";
+  try {
+    const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
+    rendererName = String(gl.getParameter(
+      debugInfo ? debugInfo.UNMASKED_RENDERER_WEBGL : gl.RENDERER,
+    ));
+  } catch {
+    rendererName = "";
+  }
+  const quality = chooseGraphicsQuality({
+    rendererName,
+    isWebGL2: renderer.capabilities.isWebGL2,
+    maxTextureSize: renderer.capabilities.maxTextureSize,
+    deviceMemory: navigator.deviceMemory,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    coarsePointer: window.matchMedia?.("(pointer: coarse)").matches,
+  }, qualityPreference);
+  const lowQuality = quality === GraphicsQuality.LOW;
+  const bodyWidthSegments = lowQuality ? 14 : 22;
+  const bodyHeightSegments = lowQuality ? 10 : 16;
+  const orbitSegments = lowQuality ? 36 : 72;
+  const gravityLineWidth = lowQuality ? 2 : 3;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, lowQuality ? 1 : 2));
   renderer.setSize(sizePx, sizePx, false);
+  canvas.dataset.renderer = "three";
+  canvas.dataset.rendererState = "active";
+  canvas.dataset.graphicsQuality = quality;
 
   scene.add(new THREE.AmbientLight(0x404050, 1.5));
   scene.add(new THREE.PointLight(0xfff2cc, 8, 0, 0)); // at the origin -- the Sun lights everything else
@@ -106,22 +139,38 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   const renderFrame = () => renderer.render(scene, camera);
   controls.addEventListener("change", renderFrame);
 
-  const objectGroup = new THREE.Group();
-  scene.add(objectGroup);
+  const onContextLost = event => {
+    event.preventDefault();
+    canvas.dataset.rendererState = "lost";
+    onContextStatus({ type: "lost", quality, rendererName });
+  };
+  const onContextRestored = () => {
+    canvas.dataset.rendererState = "active";
+    onContextStatus({ type: "restored", quality, rendererName });
+    renderFrame();
+  };
+  canvas.addEventListener("webglcontextlost", onContextLost, false);
+  canvas.addEventListener("webglcontextrestored", onContextRestored, false);
+
+  const staticGroup = new THREE.Group();
+  const dynamicGroup = new THREE.Group();
+  scene.add(staticGroup);
+  scene.add(dynamicGroup);
   const transientOverlayGroup = new THREE.Group();
   scene.add(transientOverlayGroup);
-  let pickables = [];
+  const staticPickables = [];
+  const dynamicPickables = [];
+  const pickables = [];
+  let buildGroup = staticGroup;
+  let buildPickables = staticPickables;
+  let staticBuildCount = 0;
+  let dynamicBuildCount = 0;
 
   function clearGroup(group) {
     for (const child of [...group.children]) {
       group.remove(child);
       child.traverse?.(o => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
     }
-  }
-
-  function clearObjects() {
-    clearGroup(objectGroup);
-    pickables = [];
   }
 
   function clearSparseOverlays() {
@@ -134,9 +183,8 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   // Earth's own Moon -- see BODY_TEXTURES in map/main.js); everything else
   // (every other moon, the belt) keeps its flat tinted-sphere look, same
   // as before textures existed. Loaded once per URL and cached here for
-  // this scene's whole life -- rebuild() fires on nearly every interaction
-  // (selecting a fleet, panning, ...), and refetching/re-decoding the same
-  // image that often would be wasteful. THREE.TextureLoader.load() returns
+  // this scene's whole life so context restoration or a future static-scene
+  // rebuild never refetches/re-decodes the same image. TextureLoader.load returns
   // immediately with a texture that fills in once the image actually
   // decodes (async) -- the onLoad callback re-renders that one frame so
   // the body doesn't sit blank until the *next* unrelated interaction
@@ -146,7 +194,9 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   function getTexture(url) {
     if (!url) return null;
     if (!textureCache.has(url)) {
-      const tex = textureLoader.load(url, renderFrame);
+      const tex = textureLoader.load(url, renderFrame, undefined, error => {
+        onContextStatus({ type: "asset-error", url, error, quality, rendererName });
+      });
       tex.colorSpace = THREE.SRGBColorSpace;
       textureCache.set(url, tex);
     }
@@ -168,7 +218,7 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   // layoutSystemWithMoons in orbitmap.js.
   function addBody({ x, y = 0, z, radius, color, data, emissive, textureUrl }) {
     const r = Math.max(radius, 0.5);
-    const geo = new THREE.SphereGeometry(r, 22, 16);
+    const geo = new THREE.SphereGeometry(r, bodyWidthSegments, bodyHeightSegments);
     const tex = getTexture(textureUrl);
     const mat = emissive
       ? new THREE.MeshStandardMaterial({
@@ -179,8 +229,8 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y, z);
     mesh.userData = data;
-    objectGroup.add(mesh);
-    pickables.push(mesh);
+    buildGroup.add(mesh);
+    buildPickables.push(mesh);
     return mesh;
   }
 
@@ -191,14 +241,14 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     if (radius < 1) return;
     const tiltRad = tiltDeg * Math.PI / 180;
     const pts = [];
-    for (let i = 0; i <= 72; i++) {
-      const a = (i / 72) * Math.PI * 2;
+    for (let i = 0; i <= orbitSegments; i++) {
+      const a = (i / orbitSegments) * Math.PI * 2;
       const localX = Math.cos(a) * radius, localZ = Math.sin(a) * radius;
       pts.push(new THREE.Vector3(cx + localX, ORBIT_RING_Y - localZ * Math.sin(tiltRad), cz + localZ * Math.cos(tiltRad)));
     }
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
     const mat = new THREE.LineBasicMaterial({ color: RING_COLOR, transparent: true, opacity: 0.4 });
-    objectGroup.add(new THREE.Line(geo, mat));
+    buildGroup.add(new THREE.Line(geo, mat));
   }
 
   // One ship, one small cone (a 3-sided cone reads as a simple triangular
@@ -301,8 +351,8 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     }
 
     group.userData = data;
-    objectGroup.add(group);
-    pickables.push(group);
+    buildGroup.add(group);
+    buildPickables.push(group);
     return group;
   }
 
@@ -311,7 +361,7 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   // see shipHexOffset in map/main.js), not a decorative particle. An
   // irregular low-poly rock (an icosahedron with each vertex nudged by a
   // small amount, deterministically seeded from its own world position so
-  // the same asteroid looks the same on every rebuild()) rather than a
+  // the same asteroid looks the same on every static rebuild) rather than a
   // perfect gem, colored by the caller (map/main.js's FILL.belt) same as
   // every other body here.
   function addAsteroid({ x, z, radius, colorHex, data }) {
@@ -329,19 +379,18 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     mesh.position.set(x, SHIP_BASE_Y + radius * 0.6, z);
     mesh.rotation.set(rand() * Math.PI * 2, rand() * Math.PI * 2, rand() * Math.PI * 2);
     mesh.userData = data;
-    objectGroup.add(mesh);
-    pickables.push(mesh);
+    buildGroup.add(mesh);
+    buildPickables.push(mesh);
     return mesh;
   }
 
   // A shot's tracer: one straight line between firer and target, added
-  // fresh every rebuild() the same as everything else here -- since
-  // clearObjects() wipes the whole scene at the start of every render (see
-  // rebuild below), a tracer simply not being re-added on the next render
-  // IS it disappearing, no separate cleanup/timer needed here. `alpha`
+  // fresh to the dynamic group. That group is replaced each effect frame,
+  // so a tracer simply not being re-added IS it disappearing; no separate
+  // scene cleanup timer is needed here. `alpha`
   // (0..1, computed by the caller from the effect's own start/dur) drives
   // the actual fade -- map/main.js's ensureEffectLoop is what keeps calling
-  // rebuild() with a shrinking alpha across subsequent frames until the
+  // rebuilding the dynamic group with a shrinking alpha until the
   // effect expires, same as battle/render.js's own laser fade.
   function addTracer({ from, to, hit, alpha = 1 }) {
     const geo = new THREE.BufferGeometry().setFromPoints([
@@ -349,7 +398,7 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
       new THREE.Vector3(to[0], SHIP_BASE_Y + 0.1, to[1]),
     ]);
     const mat = new THREE.LineBasicMaterial({ color: hit ? 0xff3355 : 0x8899aa, transparent: true, opacity: 0.9 * alpha });
-    objectGroup.add(new THREE.Line(geo, mat));
+    buildGroup.add(new THREE.Line(geo, mat));
     if (hit) {
       // A wider, dimmer halo line underneath -- same "glow" idea as
       // battle/render.js's LINE_WIDTH.laserHitHalo double-stroke, done
@@ -361,7 +410,7 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
         color: 0xff3355, linewidth: 6, resolution: new THREE.Vector2(sizePx, sizePx),
         transparent: true, opacity: 0.5 * alpha,
       });
-      objectGroup.add(new LineSegments2(haloGeo, haloMat));
+      buildGroup.add(new LineSegments2(haloGeo, haloMat));
     }
   }
 
@@ -382,7 +431,7 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   // near-black background reads the same way a real alpha gradient would
   // (dimmer near the edge of a well's reach, full color deep inside it),
   // with one flat uniform opacity on the material underneath.
-  function addGravityField({ triangles, intensities, colorHex }) {
+  function addGravityField({ triangles, intensities, lineSegments, lineIntensities, colorHex }) {
     const positions = [];
     const colors = [];
     const base = new THREE.Color(colorHex);
@@ -397,7 +446,26 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     const mat = new THREE.MeshBasicMaterial({
       vertexColors: true, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false,
     });
-    objectGroup.add(new THREE.Mesh(geo, mat));
+    buildGroup.add(new THREE.Mesh(geo, mat));
+
+    // Thick local lattice lines carry the same cost gradient as the fill,
+    // but their vertices are already pulled toward the relevant bodies by
+    // map/main.js. LineSegments2 keeps the width real on WebGL hardware.
+    const linePositions = [];
+    const lineColors = [];
+    for (let i = 0; i < lineSegments.length; i++) {
+      linePositions.push(lineSegments[i][0], GRAVITY_LINE_Y, lineSegments[i][1]);
+      const t = lineIntensities[i];
+      lineColors.push(base.r * t, base.g * t, base.b * t);
+    }
+    const lineGeometry = new LineSegmentsGeometry();
+    lineGeometry.setPositions(linePositions);
+    lineGeometry.setColors(lineColors);
+    const lineMaterial = new LineMaterial({
+      color: 0xffffff, vertexColors: true, linewidth: gravityLineWidth,
+      resolution: new THREE.Vector2(sizePx, sizePx), transparent: true, opacity: 0.95,
+    });
+    buildGroup.add(new LineSegments2(lineGeometry, lineMaterial));
   }
 
   function addHexLines(cells, hexSize, { color, opacity, linewidth }) {
@@ -437,7 +505,7 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   }
 
   // Pointer movement only replaces this tiny group; bodies, textures,
-  // gravity fields, asteroids, and ships stay in the persistent group.
+  // gravity fields, asteroids, and ships stay in their retained groups.
   function updateSparseOverlays({ hoverCells = [], reachableCells = [], hoveredKey = null, colorHex, hexSize }) {
     clearGroup(transientOverlayGroup);
     addHexLines(hoverCells, hexSize, { color: 0x8892ab, opacity: 0.55, linewidth: 1 });
@@ -452,10 +520,30 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     renderFrame();
   }
 
-  function rebuild(fn) {
-    clearObjects();
-    fn({ addBody, addRing, addShip, addAsteroid, addGravityField, addTracer });
+  function rebuildGroup(group, groupPickables, fn, api) {
+    clearGroup(group);
+    groupPickables.length = 0;
+    buildGroup = group;
+    buildPickables = groupPickables;
+    fn(api);
+    pickables.length = 0;
+    pickables.push(...dynamicPickables, ...staticPickables);
     renderFrame();
+  }
+
+  function rebuildStatic(fn) {
+    rebuildGroup(
+      staticGroup, staticPickables, fn,
+      { addBody, addRing, addAsteroid, addGravityField },
+    );
+    canvas.dataset.staticBuilds = String(++staticBuildCount);
+  }
+  function rebuildDynamic(fn) {
+    rebuildGroup(
+      dynamicGroup, dynamicPickables, fn,
+      { addShip, addTracer },
+    );
+    canvas.dataset.dynamicBuilds = String(++dynamicBuildCount);
   }
 
   const raycaster = new THREE.Raycaster();
@@ -477,7 +565,8 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
   }
 
   return {
-    rebuild,
+    rebuildStatic,
+    rebuildDynamic,
     renderFrame,
     updateSparseOverlays,
     clearSparseOverlays,
@@ -524,6 +613,29 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
       controls.target.add(offset);
       controls.update();
       renderFrame();
+    },
+    diagnostics() {
+      return {
+        quality,
+        rendererName,
+        pixelRatio: renderer.getPixelRatio(),
+        calls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        staticBuildCount,
+        dynamicBuildCount,
+      };
+    },
+    dispose() {
+      canvas.removeEventListener("webglcontextlost", onContextLost, false);
+      canvas.removeEventListener("webglcontextrestored", onContextRestored, false);
+      controls.dispose();
+      clearGroup(transientOverlayGroup);
+      clearGroup(dynamicGroup);
+      clearGroup(staticGroup);
+      for (const texture of textureCache.values()) texture.dispose();
+      textureCache.clear();
+      renderer.dispose();
+      canvas.dataset.rendererState = "disposed";
     },
     controls,
     camera,

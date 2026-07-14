@@ -2,7 +2,6 @@ import {
   layoutOrbitalBoard, drawOrbitalBoard, hitTest,
   layoutSystemWithMoons, worldToScreen, screenToWorld, strokeFaintRing,
 } from "./orbitmap.js";
-import { createSystemScene } from "./scene3d.js";
 import { AU_KM, hashAngleDeg } from "./orbits.js";
 import {
   universeLevel, systemLevel,
@@ -21,6 +20,7 @@ import { makeEffectLoop } from "../battle/core/effectLoop.js";
 import {
   executeStrategicRoute, findReachableDestinations, hexPatch, resolveStrategicClick, StrategicClickAction,
 } from "./strategicMovement.js";
+import { buildGravityFieldGroups, warpGravityPoint } from "./gravityField.js";
 
 const canvas = document.getElementById("starmapCv");
 const mapwrap = document.getElementById("mapwrap");
@@ -45,6 +45,27 @@ const infoFire = document.getElementById("infoFire");
 const infoTravel = document.getElementById("infoTravel");
 const infoEnd = document.getElementById("infoEnd");
 const mapArea = document.getElementById("mapArea");
+const urlParams = new URLSearchParams(window.location.search);
+const forcedRenderer = urlParams.get("renderer");
+const requestedQuality = ["low", "high"].includes(urlParams.get("quality"))
+  ? urlParams.get("quality")
+  : "auto";
+const RENDERER_LOADING_HINT = "Loading the bundled 3D renderer…";
+let createSystemScene = null;
+let sceneModuleStatus = forcedRenderer === "2d" ? "skipped" : "loading";
+let sceneModuleError = null;
+if (sceneModuleStatus === "loading") {
+  import("./scene3d.js").then(module => {
+    createSystemScene = module.createSystemScene;
+    sceneModuleStatus = "ready";
+    if (persistentHint === RENDERER_LOADING_HINT) setHint("");
+    render();
+  }).catch(error => {
+    sceneModuleError = error;
+    sceneModuleStatus = "failed";
+    render();
+  });
+}
 
 // Navigation stack: [{level:"universe"}, {level:"system",systemId}]. The
 // System map is the merged Star+Body view -- there's no separate "body"
@@ -87,8 +108,8 @@ const effects = [];
 // fading" bookkeeping.
 const ensureEffectLoop = makeEffectLoop();
 // The asteroid field's current hexes (a Set of "c,r" keys, see
-// battle/hexmath.js's key()) -- recomputed every render (updateBeltObstacles)
-// alongside the belt's own asteroid list. Passed into shipRules.js's
+// battle/hexmath.js's key()) -- refreshed from the retained system-layout
+// cache whenever the System renderer paints. Passed into shipRules.js's
 // legalTargets/canFire as extraObstacles (asteroids still block line of
 // sight); movement cost is this file's own concern (see hexMoveCost), not
 // shipRules.js's. Read by the command functions below (doForward,
@@ -96,9 +117,8 @@ const ensureEffectLoop = makeEffectLoop();
 // module-level rather than a render-local const.
 let beltObstacles = new Set();
 // Every hex under a body's gravity (a Map of "c,r" -> {cost,colorHex,x,y},
-// see gravityHexes) -- same lifecycle as beltObstacles: recomputed every
-// render (updateGravityHexes), read by hexMoveCost from outside any
-// single render.
+// see gravityHexes) -- same lifecycle as beltObstacles, read by hexMoveCost
+// from outside any single render.
 let gravityHexCosts = new Map();
 // The last body (star/planet/moon/belt) clicked at the System level, for
 // the info panel -- see infoFor/renderInfoPanel. Superseded by
@@ -487,18 +507,17 @@ const ID_COLORS = { ...PLANET_COLORS, ...MOON_COLORS };
 // but Earth's own, the belt). Only bodies solarsystemscope actually
 // publishes a real photo for get an entry; there's no "closest guess"
 // fallback texture for the rest.
-const TEXTURE_DIR = "map/textures/";
 const BODY_TEXTURES = {
-  sun: TEXTURE_DIR + "2k_sun.jpg",
-  mercury: TEXTURE_DIR + "2k_mercury.jpg",
-  venus: TEXTURE_DIR + "2k_venus_surface.jpg",
-  earth: TEXTURE_DIR + "2k_earth_daymap.jpg",
-  mars: TEXTURE_DIR + "2k_mars.jpg",
-  jupiter: TEXTURE_DIR + "2k_jupiter.jpg",
-  saturn: TEXTURE_DIR + "2k_saturn.jpg",
-  uranus: TEXTURE_DIR + "2k_uranus.jpg",
-  neptune: TEXTURE_DIR + "2k_neptune.jpg",
-  moon: TEXTURE_DIR + "2k_moon.jpg",
+  sun: new URL("./textures/2k_sun.jpg", import.meta.url).href,
+  mercury: new URL("./textures/2k_mercury.jpg", import.meta.url).href,
+  venus: new URL("./textures/2k_venus_surface.jpg", import.meta.url).href,
+  earth: new URL("./textures/2k_earth_daymap.jpg", import.meta.url).href,
+  mars: new URL("./textures/2k_mars.jpg", import.meta.url).href,
+  jupiter: new URL("./textures/2k_jupiter.jpg", import.meta.url).href,
+  saturn: new URL("./textures/2k_saturn.jpg", import.meta.url).href,
+  uranus: new URL("./textures/2k_uranus.jpg", import.meta.url).href,
+  neptune: new URL("./textures/2k_neptune.jpg", import.meta.url).href,
+  moon: new URL("./textures/2k_moon.jpg", import.meta.url).href,
 };
 const textureFor = cell => BODY_TEXTURES[cell.id];
 
@@ -829,6 +848,7 @@ const GRAVITY_HEX_INTENSITY_PER_COST = 0.05;
 function gravityHexIntensity(cost) {
   return Math.min(1, GRAVITY_HEX_MIN_INTENSITY + cost * GRAVITY_HEX_INTENSITY_PER_COST);
 }
+
 // Every hex within reach of the Sun or a planet's gravity, painted that
 // body's own color. Where two wells' reach overlaps, a hex takes
 // whichever well demands the *most* MP (worst case); a tie keeps
@@ -864,34 +884,11 @@ function gravityHexes(layout) {
 function updateGravityHexes(cells) {
   gravityHexCosts = cells;
 }
-// Groups gravity hexes by color into one flat triangle-fan array per
-// color (3 consecutive [x,y] pairs per triangle -- center, corner k,
-// corner k+1), plus a parallel per-vertex intensity array (all 3 of one
-// triangle's vertices share their hex's own intensity, so the gradient
-// steps hex-by-hex rather than blending smoothly across a hex's own
-// area -- consistent with everything else here being hex-discrete, not
-// continuous) -- feeds scene3d.js's addGravityField, which draws one
-// merged mesh per color instead of one per hex (a big body's field can
-// cover a thousand-plus cells).
-function gravityFieldGroups(cells) {
-  const groups = new Map(); // colorHex -> {triangles:[], intensities:[]}
-  for (const { colorHex, x, y, cost } of cells.values()) {
-    const corners = hexCorners(x, y, GRID_HEX_SIZE_PX);
-    let group = groups.get(colorHex);
-    if (!group) { group = { triangles: [], intensities: [] }; groups.set(colorHex, group); }
-    const intensity = gravityHexIntensity(cost);
-    for (let k = 0; k < 6; k++) {
-      group.triangles.push([x, y], corners[k], corners[(k + 1) % 6]);
-      group.intensities.push(intensity, intensity, intensity);
-    }
-  }
-  return groups;
-}
-
 // --- 3D path (primary) ---------------------------------------------------
 
 let scene3d = null;
-let webglFailed = false;
+let scene3dStaticSource = null;
+let webglFailed = forcedRenderer === "2d";
 // Left-drag rotates the camera (see scene3d.js's mouseButtons) but a plain
 // left click also needs to keep selecting/focusing bodies and fleets --
 // OrbitControls' own "start"/"change"/"end" events tell a real rotate-drag
@@ -902,7 +899,28 @@ let sceneDragging = false;
 let sceneJustDragged = false;
 function ensureScene3D() {
   if (scene3d) return scene3d;
-  scene3d = createSystemScene({ canvas: canvas3d, sizePx: CANVAS_PX, minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM });
+  scene3d = createSystemScene({
+    canvas: canvas3d,
+    sizePx: CANVAS_PX,
+    minZoom: MIN_ZOOM,
+    maxZoom: MAX_ZOOM,
+    qualityPreference: requestedQuality,
+    onContextStatus(status) {
+      if (status.type === "lost") {
+        mapArea.dataset.rendererState = "lost";
+        setHint("3D graphics context was lost. Waiting for the browser to restore it…");
+      } else if (status.type === "restored") {
+        mapArea.dataset.rendererState = "active";
+        scene3dStaticSource = null;
+        setHint(`3D graphics restored (${status.quality} quality).`);
+        requestAnimationFrame(() => render());
+      } else if (status.type === "asset-error") {
+        console.warn(`3D texture failed to load: ${status.url}`, status.error);
+      }
+    },
+  });
+  mapArea.dataset.rendererState = "active";
+  mapArea.dataset.graphicsQuality = scene3d.diagnostics().quality;
   scene3d.controls.addEventListener("start", () => {
     sceneDragging = true;
     sceneJustDragged = false;
@@ -913,42 +931,60 @@ function ensureScene3D() {
   return scene3d;
 }
 
+let systemStaticCache = null;
+function systemStaticData(data, sourceKey) {
+  if (systemStaticCache?.sourceKey === sourceKey) return systemStaticCache;
+  const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
+  ensureShipsSpawned(layout);
+  const wells = gravityWells(layout);
+  const gravityCells = gravityHexes(layout);
+  const beltBody = layout.planets.find(p => p.kind === "belt");
+  const asteroids = beltBody ? beltAsteroidHexes(layout, beltBody) : [];
+  systemStaticCache = { sourceKey, layout, wells, gravityCells, asteroids };
+  return systemStaticCache;
+}
+
 function renderSystem3D(entry, data) {
   mapwrap.style.display = "none";
   mapwrap3d.style.display = "inline-block";
+  mapArea.dataset.renderer = "3d";
   const scene = ensureScene3D();
-
-  const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
-  ensureShipsSpawned(layout);
-  const gravityCells = gravityHexes(layout);
+  mapArea.dataset.rendererState = canvas3d.dataset.rendererState;
+  const { layout, wells, gravityCells, asteroids } = systemStaticData(data, entry.systemId);
   updateGravityHexes(gravityCells);
-  const beltBody = layout.planets.find(p => p.kind === "belt");
-  const asteroids = beltBody ? beltAsteroidHexes(layout, beltBody) : [];
   updateBeltObstacles(asteroids);
   recomputeReachableMoves();
   const ships = shipsSnapshot();
 
-  scene.rebuild(({ addBody, addRing, addShip, addAsteroid, addGravityField, addTracer }) => {
-    for (const [colorHex, group] of gravityFieldGroups(gravityCells)) {
-      addGravityField({ triangles: group.triangles, intensities: group.intensities, colorHex });
-    }
-    if (layout.center) {
-      addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center) });
-    }
-    for (const p of layout.planets) {
-      if (p.kind === "belt") {
-        for (const a of asteroids) {
-          addAsteroid({ x: a.x, z: a.y, radius: BELT_ASTEROID_RADIUS_PX, colorHex: FILL.belt, data: a });
+  if (scene3dStaticSource !== entry.systemId) {
+    scene.rebuildStatic(({ addBody, addRing, addAsteroid, addGravityField }) => {
+      for (const [colorHex, group] of buildGravityFieldGroups(
+        gravityCells, wells, GRID_HEX_SIZE_PX, gravityHexIntensity,
+      )) {
+        addGravityField({ ...group, colorHex });
+      }
+      if (layout.center) {
+        addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center) });
+      }
+      for (const p of layout.planets) {
+        if (p.kind === "belt") {
+          for (const a of asteroids) {
+            addAsteroid({ x: a.x, z: a.y, radius: BELT_ASTEROID_RADIUS_PX, colorHex: FILL.belt, data: a });
+          }
+          continue;
         }
-        continue;
+        addRing(0, 0, Math.hypot(p.x, p.y));
+        addBody({ x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, data: p, textureUrl: textureFor(p) });
+        for (const m of p.moons) {
+          addRing(p.x, p.y, m.localRingPx, m.inclinationDeg);
+          addBody({ x: m.x, y: m.tiltHeight, z: m.tiltZ, radius: m.rPx, color: colorsFor(m).fill, data: m, textureUrl: textureFor(m) });
+        }
       }
-      addRing(0, 0, Math.hypot(p.x, p.y));
-      addBody({ x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, data: p, textureUrl: textureFor(p) });
-      for (const m of p.moons) {
-        addRing(p.x, p.y, m.localRingPx, m.inclinationDeg);
-        addBody({ x: m.x, y: m.tiltHeight, z: m.tiltZ, radius: m.rPx, color: colorsFor(m).fill, data: m, textureUrl: textureFor(m) });
-      }
-    }
+    });
+    scene3dStaticSource = entry.systemId;
+  }
+
+  scene.rebuildDynamic(({ addShip, addTracer }) => {
     for (const s of ships) {
       addShip({
         x: s.x, z: s.y, colorHex: colorsFor(s).fill, data: s,
@@ -1041,17 +1077,15 @@ window.addEventListener("mouseup", () => {
 function renderSystem2D(entry, data) {
   mapwrap3d.style.display = "none";
   mapwrap.style.display = "inline-block";
+  mapArea.dataset.renderer = "2d";
+  mapArea.dataset.rendererState = "active";
   canvas.width = CANVAS_PX;
   canvas.height = CANVAS_PX;
   const ctx = canvas.getContext("2d");
   const cx = canvas.width / 2, cy = canvas.height / 2;
 
-  const layout = layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX });
-  ensureShipsSpawned(layout);
-  const gravityCells = gravityHexes(layout);
+  const { layout, wells, gravityCells, asteroids } = systemStaticData(data, entry.systemId);
   updateGravityHexes(gravityCells);
-  const beltBody = layout.planets.find(p => p.kind === "belt");
-  const asteroids = beltBody ? beltAsteroidHexes(layout, beltBody) : [];
   updateBeltObstacles(asteroids);
   recomputeReachableMoves();
   const ships = shipsSnapshot();
@@ -1087,6 +1121,22 @@ function renderSystem2D(entry, data) {
     ctx.closePath();
     ctx.fillStyle = hexToRgba(colorHex, GRAVITY_HEX_MAX_OPACITY * gravityHexIntensity(cost));
     ctx.fill();
+  }
+
+  // A local, body-colored deformation lattice only where gravity exists.
+  // Both opacity and stroke weight climb with the same MP-cost gradient as
+  // the fill, making the deepest pull around a body read most strongly.
+  for (const { colorHex, x, y, cost } of gravityCells.values()) {
+    const intensity = gravityHexIntensity(cost);
+    const corners = hexCorners(x, y, GRID_HEX_SIZE_PX)
+      .map(([px, pz]) => warpGravityPoint(px, pz, wells, GRID_HEX_SIZE_PX))
+      .map(([px, pz]) => worldToScreen(camera2d, px, pz));
+    ctx.beginPath();
+    corners.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
+    ctx.closePath();
+    ctx.strokeStyle = hexToRgba(colorHex, 0.3 + intensity * 0.65);
+    ctx.lineWidth = 1.5 + intensity * 2;
+    ctx.stroke();
   }
 
   const drawOverlayHex = (cell, { fill = null, stroke, lineWidth = 1 }) => {
@@ -1323,18 +1373,54 @@ function zoomSystemByKey2D(factor) {
 
 // --- dispatcher ------------------------------------------------------
 
+function rendererFailure(error) {
+  const detail = error instanceof Error ? error.message : String(error);
+  const contextFailure = /webgl|graphics context|context creation|gpu/i.test(detail);
+  return {
+    detail,
+    contextFailure,
+    hint: contextFailure
+      ? `3D graphics unavailable (${detail}). Showing the 2D map.`
+      : `3D renderer error: ${detail}. Showing the 2D map.`,
+  };
+}
+
+function activate2DFallback(error) {
+  const failure = rendererFailure(error);
+  if (failure.contextFailure) console.warn("3D graphics unavailable; using 2D fallback:", error);
+  else console.error("3D renderer failed; using 2D fallback:", error);
+  webglFailed = true;
+  const failedScene = scene3d;
+  scene3d = null;
+  scene3dStaticSource = null;
+  try { failedScene?.dispose(); } catch (disposeError) {
+    console.warn("3D renderer cleanup also failed:", disposeError);
+  }
+  canvas3d.onclick = null;
+  canvas3d.onmousemove = null;
+  canvas3d.onmouseleave = null;
+  mapArea.dataset.rendererError = failure.detail;
+  setHint(failure.hint);
+}
+
 function renderSystem(entry, data) {
+  if (!webglFailed && sceneModuleStatus === "loading") {
+    renderSystem2D(entry, data);
+    mapArea.dataset.renderer = "loading";
+    mapArea.dataset.rendererState = "loading";
+    if (!persistentHint) setHint(RENDERER_LOADING_HINT);
+    return;
+  }
+  if (!webglFailed && sceneModuleStatus === "failed") activate2DFallback(sceneModuleError);
   if (!webglFailed) {
     try {
       renderSystem3D(entry, data);
       return;
     } catch (err) {
-      console.warn("3D System map unavailable (WebGL context creation failed) -- falling back to the 2D map:", err);
-      webglFailed = true;
-      scene3d = null;
-      canvas3d.onclick = null;
-      setHint("3D view isn't available in this browser (WebGL disabled) — showing the 2D map instead.");
+      activate2DFallback(err);
     }
+  } else if (forcedRenderer === "2d" && mapArea.dataset.renderer !== "2d") {
+    setHint("2D renderer forced by the URL for fallback testing.");
   }
   renderSystem2D(entry, data);
 }
