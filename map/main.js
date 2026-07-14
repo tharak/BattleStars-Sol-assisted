@@ -1324,12 +1324,19 @@ let webglFailed = forcedRenderer === "2d";
 let sceneDragging = false;
 let sceneJustDragged = false;
 let gravityAnimationFrame = null;
+let lastGravityAnimationRenderMs = 0;
 function ensureGravityAnimation() {
   if (gravityAnimationFrame != null) return;
   const tick = now => {
     gravityAnimationFrame = null;
     if (path[path.length - 1]?.level === "system" && mapArea.dataset.renderer === "3d" && scene3d) {
-      scene3d.animateBodies(now);
+      // Cosmetic body spin must not monopolize a constrained browser's main
+      // thread while players click movement controls.  Eight FPS is ample
+      // for this directional cue and keeps tactical input responsive.
+      if (now - lastGravityAnimationRenderMs >= 125) {
+        lastGravityAnimationRenderMs = now;
+        scene3d.animateBodies(now);
+      }
       gravityAnimationFrame = requestAnimationFrame(tick);
     }
   };
