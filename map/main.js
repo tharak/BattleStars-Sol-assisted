@@ -15,6 +15,8 @@ import { BOARD_TINT, ACCENT } from "../battle/colors.js";
 import { LINE_WIDTH, LASER_DURATION, LASER_HALO_ALPHA } from "../battle/dimensions.js";
 import { MP_MAX, STATE_NAME } from "../battle/config.js";
 import * as SC from "../battle/core/shipRules.js";
+import { MathRandomSource } from "../battle/core/random.js";
+import { forwardMovementCost } from "../battle/domain/movementRules.js";
 import { makeEffectLoop } from "../battle/core/effectLoop.js";
 
 const canvas = document.getElementById("starmapCv");
@@ -57,7 +59,7 @@ let path = [
 // morale only change via player commands (turn/forward/back/fire/Set
 // Course) from here on, never recomputed from the formation again.
 const world = new SC.World();
-const random = new SC.MathRandomSource();
+const random = new MathRandomSource();
 // Whichever single ship (an entity id, or null) is currently selected at
 // the System level, plus its in-progress activation -- mirrors
 // battle/state.js's `act` shape ({u,mp,moved,fired,fireMode,cmd}) but
@@ -202,7 +204,6 @@ function moveResultHint(res) {
 // so a future per-ship move cost (e.g. a heavier hull that costs more
 // than 1 MP/hex even in open space) is a one-line swap to a lookup here,
 // with hexExtraCost's terrain math untouched either way.
-const MOVE_BASE_COST = 1;
 // Neither the asteroid field nor a gravity well blocks movement outright
 // (see shipRules.js's stepInto -- only ship occupancy did, and that's
 // gone too); they just add to a ship's MP budget to push through -- an
@@ -218,14 +219,12 @@ const MOVE_BASE_COST = 1;
 // backward always costs a ship's entire MP tank, terrain or not, kept
 // as-is rather than metered like forward to match the same ship
 // config the tactical battle screen uses.
-function hexExtraCost(hex) {
-  const k = hexKey(hex[0], hex[1]);
-  const asteroidExtra = beltObstacles.has(k) ? MP_MAX - MOVE_BASE_COST : 0;
-  const gravityExtra = Math.max(0, (gravityHexCosts.get(k)?.cost ?? MOVE_BASE_COST) - MOVE_BASE_COST);
-  return Math.max(asteroidExtra, gravityExtra);
-}
 function hexMoveCost(hex) {
-  return MOVE_BASE_COST + hexExtraCost(hex);
+  const k = hexKey(hex[0], hex[1]);
+  return forwardMovementCost({
+    hasAsteroid: beltObstacles.has(k),
+    gravityCost: gravityHexCosts.get(k)?.cost,
+  });
 }
 function doForward() {
   if (!SC.canMove(activation)) return;

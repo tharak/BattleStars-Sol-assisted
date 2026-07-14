@@ -2,14 +2,14 @@
 // the board shape below is web-only -- the Python Monte-Carlo sim still
 // plays on its own rectangular grid, so its cited win rates are unaffected).
 import { hexDist } from "./hexmath.js";
-import { Side, SupplyState } from "./domain/constants.js";
+import { Side, SupplyState, MAX_MOVEMENT_POINTS } from "./domain/constants.js";
 
 export {
   MoraleState, SupplyState, FiringArc, Side, SIDES, ControlMode,
   ActivationOrder, DeploymentMode, opposingSide,
 } from "./domain/constants.js";
 
-export const RANGE = 3, CMD_R = 4, MP_MAX = 3, MAX_TURNS = 15;
+export const RANGE = 3, CMD_R = 4, MP_MAX = MAX_MOVEMENT_POINTS, MAX_TURNS = 15;
 
 // The playable board is a hexagon (pointy left/right, flat top/bottom):
 // all hexes within BOARD_RADIUS of BOARD_CENTER. COLS/ROWS are just the

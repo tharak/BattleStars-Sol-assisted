@@ -12,8 +12,9 @@
 // (turnToward/desiredDir) have no star-map equivalent (it has no AI), so
 // they're untouched, still living here directly.
 import { hexDist, neighbor, angleBetween, argmin, range, DIR_ANGLE, key } from "./hexmath.js";
-import { RANGE, MP_MAX, HOLD_FORMS, MoraleState, inBounds, Side, SupplyState, FiringArc } from "./config.js";
+import { RANGE, MP_MAX, HOLD_FORMS, MoraleState, inBounds, Side } from "./config.js";
 import { BattleEvent } from "./core/events.js";
+import { resolveRally } from "./domain/moraleRules.js";
 import * as C from "./components.js";
 import * as Q from "./queries.js";
 import * as SR from "./core/shipRules.js";
@@ -21,14 +22,10 @@ import * as SR from "./core/shipRules.js";
 const { SHAKEN, ROUTED } = MoraleState;
 const setPos = (state, e, pos) => { const p = state.world.get(e, C.Position); p.c = pos[0]; p.r = pos[1]; };
 
-// This side's fleet-wide morale penalty (supply/flagship loss) -- the
-// `extraModifier` shipRules.js's moraleCheck has no concept of. Safe to
-// compute once per call site: every unit a single moraleCheck/contagion/
-// destroy/fire invocation can reach (the checked unit itself, then its
-// same-faction contagion cascade) shares one fleet, so this never needs
-// re-deriving per recursion step.
-const fleetMoraleModifier = (state, side) =>
-  (state.G.fleets[side].supply !== SupplyState.NORMAL ? -1 : 0) + (state.G.fleets[side].flagLost ? -1 : 0);
+const fleetMoraleOptions = (state, side) => ({
+  supplyState: state.G.fleets[side].supply,
+  flagshipLost: state.G.fleets[side].flagLost,
+});
 
 // {onChecked, onRouted} for shipRules.js's moraleCheck/contagion/destroy/
 // fire -- entity-derived (via Q.sideOf(state, e/v)), so one instance
@@ -45,7 +42,7 @@ function moraleHooks(state) {
       const side = Q.sideOf(state, e);
       const why = [
         r.supportBonus && "+1 support", r.commandBonus && "+1 command", r.flankPenalty && "−1 flanked",
-        state.G.fleets[side].supply !== SupplyState.NORMAL && "−1 supply", state.G.fleets[side].flagLost && "−1 flagship",
+        r.supplyPenalty && "−1 supply", r.flagshipPenalty && "−1 flagship",
       ].filter(Boolean);
       state.events.emit(BattleEvent.MORALE_CHECKED, {
         unit: e, label: Q.labelOf(state, e), roll: r.roll, modifier: r.total - r.roll,
@@ -69,20 +66,21 @@ function flagshipLostHook(state, destroyedEntity) {
   return flagSide => {
     state.G.fleets[flagSide].flagLost = true;
     state.events.emit(BattleEvent.FLAGSHIP_LOST, { unit: destroyedEntity, side: flagSide });
-    for (const v of Q.aliveOfSide(state, flagSide)) moraleCheck(state, v, false);
+    for (const v of Q.aliveOfSide(state, flagSide)) moraleCheck(state, v);
   };
 }
 
 /* ---- morale ---- */
-export function moraleCheck(state, e, fromFR) {
+export function moraleCheck(state, e, { fromFlankOrRear = false } = {}) {
+  const fleetOptions = fleetMoraleOptions(state, Q.sideOf(state, e));
   const r = SR.moraleCheck(state.world, e, state.random, {
-    fromFlankOrRear: fromFR, extraModifier: fleetMoraleModifier(state, Q.sideOf(state, e)), ...moraleHooks(state),
+    fromFlankOrRear, ...fleetOptions, ...moraleHooks(state),
   });
   return r ? r.passed : false; // null: dead or already routed, shipRules did nothing
 }
 export function contagion(state, src) {
   SR.contagion(state.world, src, state.random, {
-    extraModifier: fleetMoraleModifier(state, Q.sideOf(state, src)), ...moraleHooks(state),
+    ...fleetMoraleOptions(state, Q.sideOf(state, src)), ...moraleHooks(state),
   });
 }
 export function destroy(state, e) {
@@ -90,7 +88,7 @@ export function destroy(state, e) {
   SR.destroy(state.world, e, state.random, {
     onDestroyed: (v, wasFlag) => state.events.emit(BattleEvent.UNIT_DESTROYED,
       { unit: v, label: Q.labelOf(state, v), side: Q.sideOf(state, v), wasFlagship: wasFlag }),
-    moraleCheckOpts: { extraModifier: fleetMoraleModifier(state, side), ...moraleHooks(state) },
+    moraleCheckOpts: { ...fleetMoraleOptions(state, side), ...moraleHooks(state) },
     onFlagshipLost: flagshipLostHook(state, e),
   });
 }
@@ -99,7 +97,7 @@ export function destroy(state, e) {
 export function fire(state, e, tgt) {
   const side = Q.sideOf(state, e), tgtSide = Q.sideOf(state, tgt);
   const result = SR.fire(state.world, e, tgt, state.random, {
-    needBonus: state.G.fleets[side].supply === SupplyState.CRITICAL ? 1 : 0,
+    supplyState: state.G.fleets[side].supply,
     onResolved: r => state.events.emit(BattleEvent.SHOT_RESOLVED, {
       attacker: e, attackerLabel: Q.labelOf(state, e), target: tgt, targetLabel: Q.labelOf(state, tgt),
       arc: r.arc, targetNumber: r.need, rolls: r.rolls, hits: r.hits, from: r.from, to: r.to, side,
@@ -107,7 +105,7 @@ export function fire(state, e, tgt) {
     onHit: () => state.world.add(tgt, C.HitSinceAct, true),
     onDestroyed: (v, wasFlag) => state.events.emit(BattleEvent.UNIT_DESTROYED,
       { unit: v, label: Q.labelOf(state, v), side: Q.sideOf(state, v), wasFlagship: wasFlag }),
-    moraleCheckOpts: { extraModifier: fleetMoraleModifier(state, tgtSide), ...moraleHooks(state) },
+    moraleCheckOpts: { ...fleetMoraleOptions(state, tgtSide), ...moraleHooks(state) },
     onFlagshipLost: flagshipLostHook(state, tgt),
   });
   return { rolls: result.rolls, hits: result.hits, arc: result.arc, targetNumber: result.need };
@@ -191,17 +189,17 @@ export function flee(state, e) {
 }
 export function routedActivation(state, e) { // shared by AI and human routed units
   if (!Q.hasHitSinceAct(state, e)) {
-    const bonus = Q.inCommand(state, e) ? 1 : 0, r = state.random.d6();
-    if (r + bonus >= 4) {
+    const rally = resolveRally({ inCommand: Q.inCommand(state, e) }, state.random);
+    if (rally.passed) {
       state.world.get(e, C.Morale).state = SHAKEN;
       state.world.remove(e, C.HitSinceAct);
       state.events.emit(BattleEvent.UNIT_RALLIED, {
-        unit: e, label: Q.labelOf(state, e), roll: r, bonus,
+        unit: e, label: Q.labelOf(state, e), roll: rally.roll, bonus: rally.bonus,
       });
       return;
     }
     state.events.emit(BattleEvent.RALLY_FAILED, {
-      unit: e, label: Q.labelOf(state, e), roll: r, bonus,
+      unit: e, label: Q.labelOf(state, e), roll: rally.roll, bonus: rally.bonus,
     });
   }
   state.world.remove(e, C.HitSinceAct);

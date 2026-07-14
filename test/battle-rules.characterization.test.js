@@ -30,9 +30,9 @@ test("failed morale checks move one step down the morale ladder", () => {
   const state = battleWith([3, 3]);
   const unit = spawnUnit(state, 0, [10, 10], 0, false);
 
-  assert.equal(moraleCheck(state, unit, false), false);
+  assert.equal(moraleCheck(state, unit), false);
   assert.equal(state.world.get(unit, C.Morale).state, MoraleState.SHAKEN);
-  assert.equal(moraleCheck(state, unit, false), false);
+  assert.equal(moraleCheck(state, unit), false);
   assert.equal(state.world.get(unit, C.Morale).state, MoraleState.ROUTED);
   assert.equal(state.world.get(unit, C.Facing).dir, 3);
 });

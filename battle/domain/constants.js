@@ -49,3 +49,5 @@ export const MoraleState = Object.freeze({
   SHAKEN: 1,
   ROUTED: 2,
 });
+
+export const MAX_MOVEMENT_POINTS = 3;

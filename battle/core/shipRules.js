@@ -6,18 +6,22 @@
 // turn-based tactical screen) and map/main.js (the open, turn-less,
 // N-faction star map) run on it directly, each supplying only the bits
 // that are genuinely different about their own context via the optional
-// hooks below (needBonus/onHit, extraModifier/onRouted, onFlagshipLost,
+// hooks below (onHit/onRouted/onFlagshipLost,
 // isBlocked) -- not by reimplementing the dice/arc/morale logic a second
 // time. Roster bookkeeping, turn order, AI behavior, supply, and forced
 // rout-facing are battle-only concerns and stay in battle/*.js.
 import { World } from "../ecs.js";
-import { MathRandomSource } from "./random.js";
 import * as C from "../components.js";
 import { RANGE, CMD_R, MP_MAX } from "../config.js";
-import { FiringArc, MoraleState } from "../domain/constants.js";
+import { FiringArc, MoraleState, SupplyState } from "../domain/constants.js";
+import { resolveCombat } from "../domain/combatRules.js";
+import { moraleStateAfterCheck, resolveMorale } from "../domain/moraleRules.js";
+import {
+  canMoveDuringActivation, canMoveBackwardDuringActivation, evaluateMovementStep,
+} from "../domain/movementRules.js";
 import { hexDist, neighbor, inFireArc, incomingArc, losClear, key, argmin } from "../hexmath.js";
 
-export { World, MP_MAX, MathRandomSource };
+export { World, MP_MAX };
 
 // --- component accessors ---------------------------------------------
 export const posOf = (world, e) => { const p = world.get(e, C.Position); return [p.c, p.r]; };
@@ -89,10 +93,10 @@ export function legalTargets(world, e, extraObstacles) {
 // care about), so battle/queries.js just passes state.act straight
 // through.
 export function canMove(act) {
-  return !!(act && act.u != null && act.mp > 0 && (act.cmd || !act.fired));
+  return canMoveDuringActivation(act);
 }
 export function canBack(act) {
-  return canMove(act) && act.mp >= MP_MAX;
+  return canMoveBackwardDuringActivation(act);
 }
 export function canFire(world, act, extraObstacles) {
   return !!(act && act.u != null && !act.fired && (act.cmd || !act.moved) && legalTargets(world, act.u, extraObstacles).length > 0);
@@ -116,11 +120,15 @@ export const backwardHex = (world, e) => neighbor(posOf(world, e), (facingOf(wor
 export function stepInto(world, e, dir, { isBlocked } = {}) {
   const pos = posOf(world, e);
   const nx = neighbor(pos, dir);
-  if (isBlocked?.(nx)) return { ok: false, reason: "blocked" };
-  if (moraleOf(world, e) === MoraleState.SHAKEN) {
-    const ne = nearestEnemy(world, e);
-    if (ne && hexDist(nx, posOf(world, ne)) < hexDist(pos, posOf(world, ne))) return { ok: false, reason: "shaken" };
-  }
+  const nearest = nearestEnemy(world, e);
+  const result = evaluateMovementStep({
+    moraleState: moraleOf(world, e),
+    currentPosition: pos,
+    nextPosition: nx,
+    nearestEnemyPosition: nearest === null ? null : posOf(world, nearest),
+    blocked: !!isBlocked?.(nx),
+  });
+  if (!result.ok) return result;
   setPos(world, e, nx);
   return { ok: true };
 }
@@ -128,8 +136,8 @@ export const moveForward = (world, e, opts) => stepInto(world, e, facingOf(world
 export const moveBackward = (world, e, opts) => stepInto(world, e, (facingOf(world, e) + 3) % 6, opts);
 
 // --- morale / destruction ------------------------------------------------
-// `extraModifier` folds in fleet-wide penalties this module has no
-// concept of (battle's supply/flagLost). `onChecked(e, result)` fires for
+// Supply and flagship state arrive as named options from the owning game
+// context. `onChecked(e, result)` fires for
 // EVERY completed check (pass or fail), right after the roll -- before
 // any state mutation -- which is what battle uses to emit its
 // MORALE_CHECKED log line for each check, including cascade checks
@@ -141,24 +149,33 @@ export const moveBackward = (world, e, opts) => stepInto(world, e, (facingOf(wor
 // modifier flag so a caller can rebuild its own human-readable "why"
 // breakdown (battle's MORALE_CHECKED log line) including whatever extra
 // modifiers it added on top.
-export function moraleCheck(world, e, random, { fromFlankOrRear = false, extraModifier = 0, onRouted, onChecked } = {}) {
+export function moraleCheck(world, e, random, {
+  fromFlankOrRear = false,
+  supplyState = SupplyState.NORMAL,
+  flagshipLost = false,
+  onRouted,
+  onChecked,
+} = {}) {
   if (!isAlive(world, e) || moraleOf(world, e) === MoraleState.ROUTED) return null;
   const pos = posOf(world, e);
   const supportBonus = friendsOf(world, e).some(v => moraleOf(world, v) === MoraleState.STEADY && hexDist(pos, posOf(world, v)) === 1);
   const commandBonus = inCommand(world, e);
-  const flankPenalty = !!fromFlankOrRear;
-  const roll = random.d6();
-  const total = roll + (supportBonus ? 1 : 0) + (commandBonus ? 1 : 0) + (flankPenalty ? -1 : 0) + extraModifier;
-  const passed = total >= 4;
-  const result = { roll, supportBonus, commandBonus, flankPenalty, total, passed };
+  const result = resolveMorale({
+    steadyFriendAdjacent: supportBonus,
+    inCommand: commandBonus,
+    fromFlankOrRear,
+    supplyState,
+    flagshipLost,
+  }, random);
   onChecked?.(e, result);
-  if (!passed) {
+  if (!result.passed) {
     const morale = world.get(e, C.Morale);
-    if (morale.state === MoraleState.STEADY) morale.state = MoraleState.SHAKEN;
-    else {
-      morale.state = MoraleState.ROUTED;
+    morale.state = moraleStateAfterCheck({ currentState: morale.state, passed: result.passed });
+    if (morale.state === MoraleState.ROUTED) {
       onRouted?.(e);
-      contagion(world, e, random, { extraModifier, onRouted, onChecked });
+      contagion(world, e, random, {
+        supplyState, flagshipLost, onRouted, onChecked,
+      });
     }
   }
   return result;
@@ -187,8 +204,8 @@ export function destroy(world, e, random, { onDestroyed, onFlagshipLost, moraleC
 // --- firing ----------------------------------------------------------------
 // Returns rule resolution + presentation coordinates; the caller may
 // create a tracer, sound, log line, or UI message -- this headless
-// function owns none of it. `needBonus` folds in a to-hit penalty this
-// module has no concept of (battle's critical-supply +1). `onResolved(result)`
+// function owns none of it. Supply is explicit so the pure combat
+// calculation can apply the critical-supply target-number rule. `onResolved(result)`
 // fires right after the dice are rolled, before any strength/morale/
 // destroy consequence is applied -- battle uses it to emit SHOT_RESOLVED
 // at the correct point in the sequence, ahead of anything the shot
@@ -197,17 +214,22 @@ export function destroy(world, e, random, { onDestroyed, onFlagshipLost, moraleC
 // `onFlagshipLost`/`moraleCheckOpts` thread straight through to the
 // moraleCheck/destroy this can trigger, so those events keep firing in
 // the same relative order as everything above them.
-export function fire(world, e, tgt, random, { needBonus = 0, onResolved, onHit, onDestroyed, moraleCheckOpts, onFlagshipLost } = {}) {
+export function fire(world, e, tgt, random, {
+  supplyState = SupplyState.NORMAL,
+  onResolved,
+  onHit,
+  onDestroyed,
+  moraleCheckOpts,
+  onFlagshipLost,
+} = {}) {
   const strength = strengthOf(world, e);
-  const dice = moraleOf(world, e) === MoraleState.STEADY ? strength : Math.ceil(strength / 2);
   const arc = incomingArc(posOf(world, tgt), facingOf(world, tgt), posOf(world, e));
-  const need = {
-    [FiringArc.FRONT]: 5,
-    [FiringArc.FLANK]: 4,
-    [FiringArc.REAR]: 3,
-  }[arc] + needBonus;
-  let hits = 0; const rolls = [];
-  for (let i = 0; i < dice; i++) { const roll = random.d6(); rolls.push(roll); if (roll >= need) hits++; }
+  const { hits, rolls, need } = resolveCombat({
+    strength,
+    moraleState: moraleOf(world, e),
+    targetArc: arc,
+    supplyState,
+  }, random);
   const from = posOf(world, e), to = posOf(world, tgt);
   onResolved?.({ hits, rolls, arc, need, from, to });
   let destroyed = false;
