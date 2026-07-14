@@ -58,6 +58,18 @@ test("open-space search includes turns and full forward paths", () => {
   assert.equal(routes.get("0,1").finalFacing, 5);
 });
 
+test("occupied cells cannot be entered or crossed", () => {
+  const blocked = new Set(["1,0"]);
+  const routes = findReachableDestinations({
+    position: [0, 0], facing: 0, activation: activation(),
+    isBlocked: next => blocked.has(key(...next)),
+  });
+
+  assert.equal(routes.has("1,0"), false, "an occupied destination is unavailable");
+  assert.equal(routes.has("2,0"), false, "a route cannot pass through an occupied ship");
+  assert.ok(routes.has("0,-1"), "unblocked directions remain available");
+});
+
 test("backward movement consumes the full allowance", () => {
   const routes = findReachableDestinations({
     position: [0, 0], facing: 0, activation: activation(),

@@ -53,13 +53,22 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   await expect(page.locator(".turnShip").first()).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#infoName")).toContainText("B1");
   if (testInfo.project.name === "desktop-chromium") {
+    await page.locator(".turnShip").nth(1).click();
+    await expect(page.locator("#infoName")).toContainText("B2");
+    await page.locator(".turnShip").first().click();
+    await expect(page.locator("#infoName")).toContainText("B1");
+
     const groupMove = page.locator("#infoGroupMove");
     await groupMove.click();
     await expect(groupMove).toHaveAttribute("aria-pressed", "true");
-    await page.locator("#infoBack").click();
-    await expect(page.locator("#infoShipStatus")).toContainText("MP 0/3");
+    const turnLeft = page.locator("#infoTurnL");
+    await turnLeft.click();
+    await expect(page.locator("#infoShipStatus")).toContainText("MP 2/3");
     await expect(groupMove).toHaveAttribute("aria-pressed", "true");
-    await expect(groupMove).toContainText("Cancel group move");
+    await turnLeft.click();
+    await turnLeft.click();
+    await expect(page.locator(".turnShip").first()).toContainText("Acted");
+    await expect(page.locator("#infoControls")).toBeHidden();
   }
   expect(await page.locator("#cv3d").evaluate(canvas =>
     !!canvas.getContext("webgl2") || !!canvas.getContext("webgl")

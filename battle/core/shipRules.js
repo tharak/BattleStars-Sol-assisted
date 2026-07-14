@@ -113,8 +113,8 @@ export const backwardHex = (world, e) => neighbor(posOf(world, e), (facingOf(wor
 
 // `isBlocked(nextPos)`, if given, is checked before the universal Shaken-
 // refusal rule -- battle passes board-bounds + ship-occupancy; the star
-// map passes nothing (ships don't collide there, terrain only costs MP,
-// a concern map/main.js owns entirely outside this module). Returns
+// map passes ship occupancy while terrain only costs MP, a concern
+// map/main.js owns entirely outside this module. Returns
 // {ok:true} or {ok:false, reason:"blocked"|"shaken"}; never mutates MP,
 // that bookkeeping belongs to each caller's own activation object.
 export function stepInto(world, e, dir, { isBlocked } = {}) {

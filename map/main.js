@@ -24,7 +24,7 @@ import {
 import {
   activeStrategicFaction, canStrategicShipAct, completeStrategicActivations,
   createStrategicTurnState, expireStrategicTurn, hasStrategicShipActed,
-  strategicTurnRemainingMs,
+  isStrategicActivationExhausted, strategicTurnRemainingMs,
 } from "./strategicTurns.js";
 import { buildGravityFieldGroups, warpGravityPoint } from "./gravityField.js";
 
@@ -296,6 +296,26 @@ function completeCurrentActivation({ preserveHint = false } = {}) {
 function endActivation() {
   completeCurrentActivation();
 }
+
+function completeExhaustedActivation() {
+  if (!activation || !isStrategicActivationExhausted({
+    canMove: SC.canMove(activation),
+    canFire: SC.canFire(world, activation, beltObstacles),
+  })) return false;
+  const label = SC.labelOf(world, activation.u);
+  setHint(persistentHint
+    ? `${persistentHint} Activation complete.`
+    : `${label} has no actions remaining. Activation complete.`);
+  completeCurrentActivation({ preserveHint: true });
+  return true;
+}
+
+function finishActionRender() {
+  if (completeExhaustedActivation()) return;
+  renderInfoPanel();
+  render();
+}
+
 function doTurn(dir) {
   if (groupMoveArmed) {
     const ships = commandGroupShips();
@@ -306,19 +326,18 @@ function doTurn(dir) {
     if (!result.ok) return;
     recordActivationParticipants(ships);
     setHint(`${ships.length} ships turned ${dir > 0 ? "left" : "right"} together for 1 MP.`);
-    renderInfoPanel();
-    render();
+    finishActionRender();
     return;
   }
   if (!SC.canMove(activation)) return;
   SC.turn(world, activation.u, dir);
   activation.mp--; activation.moved = true; activation.fireMode = false;
   setHint("");
-  renderInfoPanel();
-  render();
+  finishActionRender();
 }
 function moveResultHint(res) {
   if (res.reason === "shaken") setHint("Shaken — refuses to close the distance.");
+  else if (res.reason === "blocked") setHint("Another ship blocks that hex.");
 }
 // A plain, terrain-free hex step's own MP price -- the baseline every
 // ship pays before any obstacle is factored in. Kept as its own named
@@ -326,9 +345,8 @@ function moveResultHint(res) {
 // so a future per-ship move cost (e.g. a heavier hull that costs more
 // than 1 MP/hex even in open space) is a one-line swap to a lookup here,
 // with hexExtraCost's terrain math untouched either way.
-// Neither the asteroid field nor a gravity well blocks movement outright
-// (see shipRules.js's stepInto -- only ship occupancy did, and that's
-// gone too); they just add to a ship's MP budget to push through -- an
+// Neither the asteroid field nor a gravity well blocks movement outright;
+// they just add to a ship's MP budget to push through -- an
 // asteroid hex demands the rest of a full tank, a gravity well an
 // uncapped extra that grows the closer/deeper in a hex sits (see
 // gravityHexCost). Expressed as *extra* MP on top of MOVE_BASE_COST,
@@ -347,6 +365,17 @@ function hexMoveCost(hex) {
     hasAsteroid: beltObstacles.has(k),
     gravityCost: gravityHexCosts.get(k)?.cost,
   });
+}
+
+function movementBlocker(movingShips) {
+  const moving = new Set(movingShips);
+  const occupied = new Set();
+  for (const ship of SC.aliveShips(world)) {
+    if (moving.has(ship)) continue;
+    const [c, r] = SC.posOf(world, ship);
+    occupied.add(hexKey(c, r));
+  }
+  return nextPosition => occupied.has(hexKey(nextPosition[0], nextPosition[1]));
 }
 
 function commandGroupShips() {
@@ -378,13 +407,16 @@ function recomputeReachableMoves() {
   if (!activation || !SC.isAlive(world, activation.u)) {
     reachableMoves = new Map();
   } else if (groupMoveArmed) {
+    const members = commandGroupMembers();
+    const groupIsBlocked = movementBlocker(members.map(member => member.id));
     reachableMoves = findGroupReachableDestinations({
       leaderId: activation.u,
-      members: commandGroupMembers(),
+      members,
       activation,
       enemyPositions: SC.enemiesOf(world, SC.factionOf(world, activation.u)).map(e => SC.posOf(world, e)),
       movementAllowance: MP_MAX,
       movementCost: (_member, nextPosition) => hexMoveCost(nextPosition),
+      isBlocked: (_member, nextPosition) => groupIsBlocked(nextPosition),
     });
   } else {
     reachableMoves = findReachableDestinations({
@@ -395,6 +427,7 @@ function recomputeReachableMoves() {
       enemyPositions: SC.enemiesOf(world, SC.factionOf(world, activation.u)).map(e => SC.posOf(world, e)),
       movementAllowance: MP_MAX,
       movementCost: hexMoveCost,
+      isBlocked: movementBlocker([activation.u]),
     });
   }
   const hoveredRoute = pointerHex ? reachableMoves.get(hexKey(pointerHex[0], pointerHex[1])) : null;
@@ -407,22 +440,26 @@ function recomputeReachableMoves() {
 function executeReachableMove(route) {
   if (!activation || route.cost > activation.mp) return false;
   const movingAsGroup = !!(groupMoveArmed && route.memberRoutes);
+  const movingShips = movingAsGroup
+    ? route.memberRoutes.map(plan => plan.memberId)
+    : [activation.u];
+  const isBlocked = movementBlocker(movingShips);
   const result = movingAsGroup
     ? executeStrategicGroupRoute(route, {
       activation,
       actionsFor: ship => ({
         turnLeft: () => SC.turn(world, ship, 1),
         turnRight: () => SC.turn(world, ship, -1),
-        moveForward: () => SC.moveForward(world, ship),
-        moveBackward: () => SC.moveBackward(world, ship),
+        moveForward: () => SC.moveForward(world, ship, { isBlocked }),
+        moveBackward: () => SC.moveBackward(world, ship, { isBlocked }),
       }),
     })
     : executeStrategicRoute(route, {
       activation,
       turnLeft: () => SC.turn(world, activation.u, 1),
       turnRight: () => SC.turn(world, activation.u, -1),
-      moveForward: () => SC.moveForward(world, activation.u),
-      moveBackward: () => SC.moveBackward(world, activation.u),
+      moveForward: () => SC.moveForward(world, activation.u, { isBlocked }),
+      moveBackward: () => SC.moveBackward(world, activation.u, { isBlocked }),
     });
   if (!result.ok) {
     moveResultHint(result);
@@ -437,8 +474,7 @@ function executeReachableMove(route) {
   setHint(movingAsGroup
     ? `${route.memberRoutes.length} ships moved together for ${route.cost} MP.`
     : `${SC.labelOf(world, activation.u)} moved ${route.cost} MP.`);
-  renderInfoPanel();
-  render();
+  finishActionRender();
   return true;
 }
 function doForward() {
@@ -455,12 +491,11 @@ function doForward() {
   if (!SC.canMove(activation)) return;
   const cost = hexMoveCost(SC.forwardHex(world, activation.u));
   if (activation.mp < cost) { setHint(`Not enough MP -- that hex costs ${cost}.`); renderInfoPanel(); return; }
-  const res = SC.moveForward(world, activation.u);
+  const res = SC.moveForward(world, activation.u, { isBlocked: movementBlocker([activation.u]) });
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp -= cost; activation.moved = true; activation.fireMode = false;
   setHint("");
-  renderInfoPanel();
-  render();
+  finishActionRender();
 }
 function doBackward() {
   if (groupMoveArmed) {
@@ -474,12 +509,11 @@ function doBackward() {
     return;
   }
   if (!SC.canBack(activation)) return;
-  const res = SC.moveBackward(world, activation.u);
+  const res = SC.moveBackward(world, activation.u, { isBlocked: movementBlocker([activation.u]) });
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp = 0; activation.moved = true; activation.fireMode = false;
   setHint("");
-  renderInfoPanel();
-  render();
+  finishActionRender();
 }
 // Arms the cosmetic "fire mode" hint -- exactly like battle, clicking a
 // legal target fires regardless of whether this was pressed first (see
@@ -505,12 +539,12 @@ function doFireAt(tgt) {
   setHint(`${SC.labelOf(world, firer)} fires (${result.arc} arc, ${result.need}+): [${result.rolls.join(" ")}] → ` +
     `${result.hits} hit${result.hits === 1 ? "" : "s"}${result.destroyed ? " — destroyed!" : ""}`);
   if (!activation.cmd) { completeCurrentActivation({ preserveHint: true }); return; } // out of command: fire was the whole activation
-  renderInfoPanel();
-  render();
+  finishActionRender();
 }
 // Arms Set Course -- the next click anywhere (body, ship, or empty space)
 // becomes the selected ship's new position, an instant reposition with
-// none of moveForward/moveBackward's neighbor/occupancy/Shaken rules
+// none of moveForward/moveBackward's neighbor/Shaken rules. Its endpoint
+// still cannot overlap another ship.
 // (matching the old whole-fleet moveFleet's own instant-move semantics),
 // for real interplanetary distances the hex-by-hex MP budget can't cover.
 function armTravel() {
@@ -534,6 +568,11 @@ function toggleGroupMove() {
 }
 function setCourse(x, y) {
   const [c, r] = pixelToHexIndex(x, y);
+  if (movementBlocker([activation.u])([c, r])) {
+    setHint("Another ship already occupies that destination.");
+    renderInfoPanel();
+    return;
+  }
   SC.setPosition(world, activation.u, c, r);
   activation.courseSet = true;
   setHint(`${SC.labelOf(world, activation.u)} course set.`);

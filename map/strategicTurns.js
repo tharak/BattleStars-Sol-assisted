@@ -21,6 +21,10 @@ export const activeStrategicFaction = state => state.factionOrder[state.factionI
 export const strategicTurnRemainingMs = (state, nowMs) => Math.max(0, state.deadlineMs - nowMs);
 export const hasStrategicShipActed = (state, shipId) => state.actedShipIds.includes(shipId);
 
+export function isStrategicActivationExhausted({ canMove = false, canFire = false } = {}) {
+  return !canMove && !canFire;
+}
+
 export function canStrategicShipAct(state, { shipId, faction, alive = true }) {
   return !!alive && faction === activeStrategicFaction(state) && !hasStrategicShipActed(state, shipId);
 }

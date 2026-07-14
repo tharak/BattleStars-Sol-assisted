@@ -8,6 +8,7 @@ import {
   createStrategicTurnState,
   expireStrategicTurn,
   hasStrategicShipActed,
+  isStrategicActivationExhausted,
   strategicTurnRemainingMs,
 } from "../map/strategicTurns.js";
 
@@ -24,6 +25,12 @@ test("strategic turns start with Blue and a one-minute deadline", () => {
   assert.equal(strategicTurnRemainingMs(state, 1_000), 60_000);
   assert.equal(canStrategicShipAct(state, { shipId: 1, faction: "blue" }), true);
   assert.equal(canStrategicShipAct(state, { shipId: 3, faction: "green" }), false);
+});
+
+test("an activation ends only when neither movement nor firing remains", () => {
+  assert.equal(isStrategicActivationExhausted({ canMove: true, canFire: false }), false);
+  assert.equal(isStrategicActivationExhausted({ canMove: false, canFire: true }), false);
+  assert.equal(isStrategicActivationExhausted({ canMove: false, canFire: false }), true);
 });
 
 test("completing every living faction ship starts the next faction turn", () => {
