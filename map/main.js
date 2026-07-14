@@ -21,6 +21,11 @@ import {
   executeStrategicGroupRoute, executeStrategicGroupTurn, executeStrategicRoute, findGroupReachableDestinations,
   findReachableDestinations, hexPatch, membersWithinCommand, resolveStrategicClick, StrategicClickAction,
 } from "./strategicMovement.js";
+import {
+  activeStrategicFaction, canStrategicShipAct, completeStrategicActivations,
+  createStrategicTurnState, expireStrategicTurn, hasStrategicShipActed,
+  strategicTurnRemainingMs,
+} from "./strategicTurns.js";
 import { buildGravityFieldGroups, warpGravityPoint } from "./gravityField.js";
 
 const canvas = document.getElementById("starmapCv");
@@ -47,6 +52,10 @@ const infoTravel = document.getElementById("infoTravel");
 const infoGroupMove = document.getElementById("infoGroupMove");
 const infoEnd = document.getElementById("infoEnd");
 const mapArea = document.getElementById("mapArea");
+const turnPanel = document.getElementById("turnPanel");
+const turnHeading = document.getElementById("turnHeading");
+const turnClock = document.getElementById("turnClock");
+const turnFactions = document.getElementById("turnFactions");
 const urlParams = new URLSearchParams(window.location.search);
 const forcedRenderer = urlParams.get("renderer");
 const requestedQuality = ["low", "high"].includes(urlParams.get("quality"))
@@ -86,6 +95,10 @@ let path = [
 // Course) from here on, never recomputed from the formation again.
 const world = new SC.World();
 const random = new MathRandomSource();
+const fleetRoster = new Map(Object.keys(FACTIONS).map(faction => [faction, []]));
+let strategicTurn = createStrategicTurnState({ startedAtMs: performance.now() });
+let lastRenderedTimerSecond = null;
+let lastTurnRosterSignature = null;
 // Whichever single ship (an entity id, or null) is currently selected at
 // the System level, plus its in-progress activation -- mirrors
 // the tactical GameContext's `act` shape ({u,mp,moved,fired,fireMode,cmd})
@@ -189,19 +202,61 @@ function showHoverInfo(hit) {
   hoverInfo = infoFor(hit);
   renderInfoPanel();
 }
+
+function livingShipIdsByFaction() {
+  return Object.fromEntries([...fleetRoster].map(([faction, ships]) => [
+    faction,
+    ships.filter(ship => SC.isAlive(world, ship)),
+  ]));
+}
+
+function shipCanActThisTurn(ship) {
+  return canStrategicShipAct(strategicTurn, {
+    shipId: ship,
+    faction: SC.factionOf(world, ship),
+    alive: SC.isAlive(world, ship),
+  });
+}
+
+function activationParticipants() {
+  return activation?.participantShipIds || (activation ? [activation.u] : []);
+}
+
+function recordActivationParticipants(ships) {
+  if (!activation) return;
+  activation.participantShipIds = [...new Set([...activationParticipants(), ...ships])];
+}
+
+function activationCommitted() {
+  return !!(activation && (activation.moved || activation.fired || activation.courseSet || activationParticipants().length > 1));
+}
+
 // Selecting a ship resets its activation fresh (mirrors
-// battle/lifecycle/activationLifecycle.js:selectUnit) -- there's no "un-activated" gating
-// like battle's own selectUnit checks (Q.isActivated), since there's no
-// turn order here: any living ship, any faction, can be picked up at any
-// time (see shipRules.js's header for why).
+// battle/lifecycle/activationLifecycle.js:selectUnit). Strategic turns add
+// the active-faction and already-acted gates around the shared ship rules.
 function selectShip(e) {
+  if (!SC.isAlive(world, e) || !shipCanActThisTurn(e)) {
+    const faction = FACTIONS[activeStrategicFaction(strategicTurn)].label;
+    setHint(`${SC.labelOf(world, e)} cannot act now — it is ${faction}'s turn or this ship has already acted.`);
+    renderTurnPanel();
+    return false;
+  }
+  if (activation?.u === e) return true;
+  if (activation && activationCommitted()) {
+    setHint(`End ${SC.labelOf(world, activation.u)}'s activation before selecting another ship.`);
+    return false;
+  }
   selectedShip = e;
-  activation = { u: e, mp: MP_MAX, moved: false, fired: false, fireMode: false, cmd: SC.inCommand(world, e) };
+  activation = {
+    u: e, mp: MP_MAX, moved: false, fired: false, fireMode: false,
+    cmd: SC.inCommand(world, e), participantShipIds: [e],
+  };
   travelArmed = false;
   groupMoveArmed = false;
   setHint(`${SC.labelOf(world, e)} selected.`);
   renderInfoPanel();
   render();
+  return true;
 }
 // Deselects without touching the hint -- shared by endActivation (which
 // does want to clear it, an explicit "I'm done" action) and doFireAt's
@@ -215,13 +270,31 @@ function clearSelection() {
   travelArmed = false;
   groupMoveArmed = false;
 }
-// Mirrors the tactical activation lifecycle, but with no proceed handoff
-// hand-off to another unit/side -- there's nothing to hand off to.
-function endActivation() {
+// Mirrors the tactical activation lifecycle, then hands control to the next
+// faction once every living ship in the active faction has acted.
+function completeCurrentActivation({ preserveHint = false } = {}) {
+  if (!activation) return;
+  const resultHint = persistentHint;
+  const previousFaction = activeStrategicFaction(strategicTurn);
+  const previousRound = strategicTurn.round;
+  strategicTurn = completeStrategicActivations(strategicTurn, {
+    shipIds: activationParticipants(),
+    livingShipIdsByFaction: livingShipIdsByFaction(),
+    nowMs: performance.now(),
+  });
+  lastRenderedTimerSecond = null;
   clearSelection();
-  setHint("");
+  if (strategicTurn.round !== previousRound || activeStrategicFaction(strategicTurn) !== previousFaction) {
+    const nextTurn = `${FACTIONS[activeStrategicFaction(strategicTurn)].label} turn begins.`;
+    setHint(preserveHint ? `${resultHint} ${nextTurn}` : nextTurn);
+  } else if (!preserveHint) {
+    setHint("");
+  }
   renderInfoPanel();
   render();
+}
+function endActivation() {
+  completeCurrentActivation();
 }
 function doTurn(dir) {
   if (groupMoveArmed) {
@@ -231,6 +304,7 @@ function doTurn(dir) {
       turn: ship => SC.turn(world, ship, dir),
     });
     if (!result.ok) return;
+    recordActivationParticipants(ships);
     if (activation.mp === 0) groupMoveArmed = false;
     setHint(`${ships.length} ships turned ${dir > 0 ? "left" : "right"} together for 1 MP.`);
     renderInfoPanel();
@@ -279,6 +353,7 @@ function hexMoveCost(hex) {
 function commandGroupShips() {
   if (!activation || !SC.isAlive(world, activation.u) || !SC.isFlagship(world, activation.u)) return [];
   const friendlyMembers = SC.shipsOfFaction(world, SC.factionOf(world, activation.u))
+    .filter(ship => shipCanActThisTurn(ship))
     .map(id => ({ id, position: SC.posOf(world, id) }));
   return membersWithinCommand(activation.u, friendlyMembers, CMD_R).map(member => member.id);
 }
@@ -356,6 +431,7 @@ function executeReachableMove(route) {
     render();
     return false;
   }
+  if (movingAsGroup) recordActivationParticipants(route.memberRoutes.map(plan => plan.memberId));
   // The route's individual rule calls mutate only position/facing. The
   // activation bookkeeping is committed once after the complete route.
   hoverPatchCenter = null;
@@ -430,7 +506,7 @@ function doFireAt(tgt) {
   activation.fired = true; activation.fireMode = false;
   setHint(`${SC.labelOf(world, firer)} fires (${result.arc} arc, ${result.need}+): [${result.rolls.join(" ")}] → ` +
     `${result.hits} hit${result.hits === 1 ? "" : "s"}${result.destroyed ? " — destroyed!" : ""}`);
-  if (!activation.cmd) { clearSelection(); renderInfoPanel(); render(); return; } // out of command: fire was the whole activation
+  if (!activation.cmd) { completeCurrentActivation({ preserveHint: true }); return; } // out of command: fire was the whole activation
   renderInfoPanel();
   render();
 }
@@ -461,6 +537,7 @@ function toggleGroupMove() {
 function setCourse(x, y) {
   const [c, r] = pixelToHexIndex(x, y);
   SC.setPosition(world, activation.u, c, r);
+  activation.courseSet = true;
   setHint(`${SC.labelOf(world, activation.u)} course set.`);
   travelArmed = false;
   hoverPatchCenter = null;
@@ -566,6 +643,125 @@ infoFire.onclick = armFireMode;
 infoTravel.onclick = armTravel;
 infoGroupMove.onclick = toggleGroupMove;
 infoEnd.onclick = endActivation;
+
+function strategicShipDisplayState(ship, faction, participantSet) {
+  if (!SC.isAlive(world, ship)) return { label: "Destroyed", className: "destroyed" };
+  if (participantSet.has(ship)) return { label: "Acting", className: "acting" };
+  if (strategicTurn.forfeitedShipIds.includes(ship)) return { label: "Timed out", className: "spent" };
+  if (hasStrategicShipActed(strategicTurn, ship)) return { label: "Acted", className: "spent" };
+  if (faction === activeStrategicFaction(strategicTurn)) return { label: "Ready", className: "ready" };
+  return { label: "Waiting", className: "waiting" };
+}
+
+function focusStrategicShip(ship) {
+  const [x, z] = shipHexOffset(...SC.posOf(world, ship));
+  if (mapArea.dataset.renderer === "3d" && scene3d) {
+    scene3d.focusAt(x, z);
+  } else {
+    camera2d.x = x;
+    camera2d.y = z;
+    camera2d.zoom = Math.max(camera2d.zoom, 8);
+    render();
+  }
+}
+
+function selectShipFromRoster(ship) {
+  focusStrategicShip(ship);
+  if (shipCanActThisTurn(ship)) {
+    selectShip(ship);
+    return;
+  }
+  const faction = SC.factionOf(world, ship);
+  const state = strategicShipDisplayState(ship, faction, new Set(activationParticipants()));
+  setHint(`${SC.labelOf(world, ship)} focused — ${state.label.toLowerCase()}.`);
+  renderTurnPanel();
+}
+
+function renderTurnClock(nowMs = performance.now()) {
+  const remainingSeconds = Math.ceil(strategicTurnRemainingMs(strategicTurn, nowMs) / 1000);
+  lastRenderedTimerSecond = remainingSeconds;
+  turnClock.textContent = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")} remaining`;
+}
+
+function renderTurnPanel(nowMs = performance.now()) {
+  if (!shipsSpawned) return;
+  const activeFaction = activeStrategicFaction(strategicTurn);
+  turnHeading.textContent = `Round ${strategicTurn.round} · ${FACTIONS[activeFaction].label} turn`;
+  renderTurnClock(nowMs);
+  const participantSet = new Set(activationParticipants());
+  const rosterSignature = JSON.stringify({
+    round: strategicTurn.round,
+    activeFaction,
+    acted: strategicTurn.actedShipIds,
+    forfeited: strategicTurn.forfeitedShipIds,
+    selectedShip,
+    participants: [...participantSet],
+    alive: [...fleetRoster.values()].flat().map(ship => SC.isAlive(world, ship)),
+  });
+  if (rosterSignature === lastTurnRosterSignature) return;
+  lastTurnRosterSignature = rosterSignature;
+  turnFactions.replaceChildren();
+
+  for (const [faction, ships] of fleetRoster) {
+    const section = document.createElement("section");
+    section.className = `turnFaction${faction === activeFaction ? " active" : ""}`;
+    const header = document.createElement("div");
+    header.className = "turnFactionHeader";
+    const name = document.createElement("span");
+    name.textContent = FACTIONS[faction].label;
+    name.style.color = colorsFor({ faction }).fill;
+    const ready = ships.filter(ship => shipCanActThisTurn(ship) && !participantSet.has(ship)).length;
+    const livingShips = ships.filter(ship => SC.isAlive(world, ship));
+    const factionState = document.createElement("span");
+    factionState.className = "turnFactionState";
+    factionState.textContent = faction === activeFaction
+      ? `${ready} ready`
+      : (livingShips.length && livingShips.every(ship => hasStrategicShipActed(strategicTurn, ship)) ? "complete" : "waiting");
+    header.append(name, factionState);
+    section.appendChild(header);
+
+    const shipList = document.createElement("div");
+    shipList.className = "turnShips";
+    for (const ship of ships) {
+      const displayState = strategicShipDisplayState(ship, faction, participantSet);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `turnShip ${displayState.className}`;
+      button.title = `${SC.labelOf(world, ship)} — ${displayState.label}. Focus this ship.`;
+      button.setAttribute("aria-pressed", String(selectedShip === ship));
+      const label = document.createElement("span");
+      label.textContent = `${SC.labelOf(world, ship)}${SC.isFlagship(world, ship) ? " ★" : ""}`;
+      const status = document.createElement("span");
+      status.className = "turnShipState";
+      status.textContent = displayState.label;
+      button.append(label, status);
+      button.onclick = () => selectShipFromRoster(ship);
+      shipList.appendChild(button);
+    }
+    section.appendChild(shipList);
+    turnFactions.appendChild(section);
+  }
+}
+
+function tickStrategicTurn(nowMs = performance.now()) {
+  if (!shipsSpawned) return;
+  const expiringFaction = activeStrategicFaction(strategicTurn);
+  const result = expireStrategicTurn(strategicTurn, {
+    livingShipIdsByFaction: livingShipIdsByFaction(),
+    nowMs,
+  });
+  if (result.expired) {
+    if (activation && SC.factionOf(world, activation.u) === expiringFaction) activation.mp = 0;
+    strategicTurn = result.state;
+    clearSelection();
+    lastRenderedTimerSecond = null;
+    setHint(`${FACTIONS[expiringFaction].label} ran out of time — ${result.expiredShipIds.length} remaining ships lost their MP. ${FACTIONS[activeStrategicFaction(strategicTurn)].label} turn begins.`);
+    render();
+    return;
+  }
+  const remainingSeconds = Math.ceil(strategicTurnRemainingMs(strategicTurn, nowMs) / 1000);
+  if (remainingSeconds !== lastRenderedTimerSecond) renderTurnClock(nowMs);
+}
 
 function levelData(entry) {
   return entry.level === "system" ? systemLevel(entry.systemId) : universeLevel();
@@ -843,10 +1039,11 @@ function spawnInitialShips(layout) {
     u.forEach(([fwd, lat], i) => {
       const [dx, dy] = shipHexOffset(fwd, lat);
       const [c, rIdx] = pixelToHexIndex(anchorX + dx, anchorY + dy);
-      SC.spawnShip(world, {
+      const ship = SC.spawnShip(world, {
         faction, c, r: rIdx, dir: directionToward([c, rIdx], [0, 0]), isFlagship: i === flag,
         label: `${faction[0].toUpperCase()}${i + 1}`,
       });
+      fleetRoster.get(faction).push(ship);
     });
   }
 }
@@ -1570,8 +1767,11 @@ function render() {
   // it'd sit there showing stale System-level info over an unrelated
   // screen.
   infoPanel.style.display = entry.level === "system" ? "block" : "none";
-  if (entry.level === "system") renderSystem(entry, data);
-  else renderUniverse(entry, data);
+  turnPanel.style.display = entry.level === "system" ? "block" : "none";
+  if (entry.level === "system") {
+    renderSystem(entry, data);
+    renderTurnPanel();
+  } else renderUniverse(entry, data);
   // Mirrors battle/render.js's own draw()/ensureEffectLoop split: render()
   // paints one frame (reading whatever's left in `effects`, each already
   // carrying its own alpha-implying start/dur), and whenever a laser is
@@ -1663,3 +1863,4 @@ document.addEventListener("keydown", ev => {
 });
 
 render();
+setInterval(() => tickStrategicTurn(), 250);

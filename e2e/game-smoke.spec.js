@@ -17,7 +17,7 @@ test("the tactical battle boots and starts a scenario", async ({ page }) => {
   expect(pageErrors).toEqual([]);
 });
 
-test("the strategic map boots the bundled Three.js renderer", async ({ page }) => {
+test("the strategic map boots the bundled Three.js renderer", async ({ page }, testInfo) => {
   const pageErrors = [];
   const runtimeCdnRequests = [];
   page.on("pageerror", error => pageErrors.push(error.message));
@@ -30,6 +30,10 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }) =
   await page.goto("/map.html");
   await expect(page.locator("#breadcrumb")).toContainText("Sol");
   await expect(page.locator("#infoPanel")).toBeVisible();
+  await expect(page.locator("#turnPanel")).toBeVisible();
+  await expect(page.locator("#turnHeading")).toContainText("Blue turn");
+  await expect(page.locator(".turnShip")).toHaveCount(36);
+  await expect(page.locator(".turnShip.ready")).toHaveCount(12);
   await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer", "3d");
   await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer-state", "active");
   await expect(page.locator("#mapwrap3d")).toBeVisible();
@@ -38,6 +42,16 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }) =
   await expect(page.locator("#cv3d")).toHaveAttribute("data-renderer-state", "active");
   await expect(page.locator("#cv3d")).toHaveAttribute("data-graphics-quality", /^(low|high)$/);
   await expect(page.locator("#cv3d")).toHaveAttribute("data-static-builds", "1");
+  const firstRosterShip = page.locator(".turnShip").first();
+  if (testInfo.project.name === "mobile-chromium") {
+    const box = await firstRosterShip.boundingBox();
+    expect(box).not.toBeNull();
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  } else {
+    await firstRosterShip.click();
+  }
+  await expect(page.locator(".turnShip").first()).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#infoName")).toContainText("B1");
   expect(await page.locator("#cv3d").evaluate(canvas =>
     !!canvas.getContext("webgl2") || !!canvas.getContext("webgl")
   )).toBe(true);
@@ -86,6 +100,8 @@ test("the strategic map keeps an intentional 2D fallback path", async ({ page })
 
   await page.goto("/map.html?renderer=2d");
   await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer", "2d");
+  await expect(page.locator("#turnHeading")).toContainText("Blue turn");
+  await expect(page.locator(".turnShip")).toHaveCount(36);
   await expect(page.locator("#mapwrap")).toBeVisible();
   await expect(page.locator("#mapwrap3d")).toBeHidden();
   await expect(page.locator("#hint")).toContainText("forced by the URL");

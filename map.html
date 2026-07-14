@@ -18,6 +18,23 @@
     padding:8px;display:inline-block;position:relative;max-width:100%}
   #mapwrap3d canvas{border-radius:4px}
   #mapArea{position:relative;display:inline-block;max-width:100%}
+  #turnPanel{position:absolute;top:16px;left:16px;width:230px;max-height:calc(100% - 32px);
+    overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:10px 12px;font-size:12px;z-index:5}
+  #turnHeading{font-weight:bold;font-size:14px}
+  #turnClock{color:var(--gold);font-variant-numeric:tabular-nums;margin:2px 0 8px}
+  .turnFaction{margin-top:8px}
+  .turnFactionHeader{display:flex;justify-content:space-between;gap:6px;font-weight:bold;margin-bottom:3px}
+  .turnFactionState{font-size:10px;text-transform:uppercase;color:var(--dim)}
+  .turnFaction.active .turnFactionState{color:var(--gold)}
+  .turnShips{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+  .turnShip{display:flex;justify-content:space-between;gap:4px;min-width:0;padding:3px 5px;
+    font-size:11px;text-align:left}
+  .turnShip span:first-child{overflow:hidden;text-overflow:ellipsis}
+  .turnShipState{color:var(--dim);font-size:9px;text-transform:uppercase}
+  .turnShip.ready{border-color:var(--gold)}
+  .turnShip.acting{border-color:#fff;color:#fff}
+  .turnShip.spent,.turnShip.destroyed{opacity:.55}
   #infoPanel{position:absolute;top:16px;right:16px;width:200px;max-width:calc(100% - 32px);
     background:var(--panel);border:1px solid var(--line);border-radius:8px;
     padding:10px 12px;font-size:13px;z-index:5}
@@ -29,6 +46,11 @@
   #infoShipStatus{font-size:12px;color:var(--dim);margin:2px 0 4px;line-height:1.4}
   #infoShipButtons{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0}
   #infoShipButtons button{flex:1 0 40%;padding:4px 6px;font-size:12px}
+  @media(max-width:520px){
+    #turnPanel{width:145px;max-height:260px;padding:8px}
+    .turnShips{grid-template-columns:1fr}
+    #infoPanel{width:170px;top:292px}
+  }
 </style>
 </head>
 <body>
@@ -42,7 +64,10 @@
   so zoom in by hand to see them. Click a breadcrumb (or Zoom Out / Esc) to leave a
   screen. Nothing on the map carries a floating label -- click a body or a ship and its name shows in
   the panel at the top right instead. Three factions (Blue, Green, Red) each start with a 12-ship
-  fleet near their home planet, and every ship is individually selectable and commandable with the
+  fleet near their home planet. The turn roster at the top left shows which faction is active and
+  which ships remain ready; click any roster entry to focus its ship. Each faction has one minute to
+  activate its living ships before its remaining ships forfeit their movement and play passes to the
+  next faction. Every ship is individually selectable and commandable with the
   same controls the tactical battle screen uses: <kbd>Q</kbd>/<kbd>E</kbd> turn, <kbd>W</kbd> forward,
   <kbd>S</kbd> back (costs all remaining MP), <kbd>F</kbd> arms fire mode (or just click a highlighted
   enemy in range/arc/LOS to fire directly), <kbd>Space</kbd> ends the activation. Set Course
@@ -62,6 +87,11 @@
   <div id="mapArea">
     <div id="mapwrap"><canvas id="starmapCv"></canvas></div>
     <div id="mapwrap3d" style="display:none"><canvas id="cv3d"></canvas></div>
+    <aside id="turnPanel" aria-label="Strategic turn roster">
+      <div id="turnHeading"></div>
+      <div id="turnClock" role="timer"></div>
+      <div id="turnFactions"></div>
+    </aside>
     <div id="infoPanel">
       <div id="infoEmpty" class="empty">Click a body or ship for details.</div>
       <div id="infoBody" style="display:none">

@@ -603,6 +603,17 @@ export function createSystemScene({
       controls.update();
       renderFrame();
     },
+    // Roster selection keeps the current viewing angle but recenters and
+    // zooms the camera onto one strategic-map position.
+    focusAt(x, z, focusZoom = 8) {
+      const offset = camera.position.clone().sub(controls.target);
+      controls.target.set(x, 0, z);
+      camera.position.copy(controls.target).add(offset);
+      camera.zoom = Math.max(camera.zoom, Math.min(maxZoom, focusZoom));
+      camera.updateProjectionMatrix();
+      controls.update();
+      renderFrame();
+    },
     // Arrow-key panning: move the camera and its orbit target together,
     // along the camera's own on-screen right/"up" directions flattened
     // onto the ground plane, so the keys always move the view the way
