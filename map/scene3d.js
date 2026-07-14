@@ -260,7 +260,7 @@ export function createSystemScene({
   // applied via a quaternion rather than an Euler angle so there's no
   // manual sign-guessing about which way "positive rotation" goes in this
   // scene's particular axis convention.
-  function addShip({ x, z, colorHex, data, selected, facingDeg, isFlag, isTarget, targetColor, isGroupMember }) {
+  function addShip({ x, z, colorHex, data, selected, facingDeg, isFlag, isTarget, targetColor, isGroupMember, hasActed }) {
     // Grounded at the plane, not lifted -- unlike the old ring-only
     // marker, this group now holds both the flat hex token (which
     // should visibly rest on the orbital plane, at SHIP_BASE_Y) and the raised
@@ -272,12 +272,10 @@ export function createSystemScene({
 
     const s = 3;
     const geo = new THREE.ConeGeometry(s * 0.55, s * 1.6, 3);
-    // The cone's own orientation already reads as a facing arrow, so the
-    // flagship marker is just a color swap -- gold (ACCENT.flagshipArrow),
-    // matching battle/render.js's flagship-arrow convention -- rather than
-    // new geometry (this token is getting replaced by a real ship mesh
-    // later, not worth a bigger investment now).
-    const mat = new THREE.MeshStandardMaterial({ color: isFlag ? ACCENT.flagshipArrow : colorHex, roughness: 0.6 });
+    // The cone's own orientation already reads as a facing arrow. Ready
+    // flagships retain the gold marker, while acted flagships use the same
+    // darker faction tone as every other acted ship.
+    const mat = new THREE.MeshStandardMaterial({ color: isFlag && !hasActed ? ACCENT.flagshipArrow : colorHex, roughness: 0.6 });
     const ship = new THREE.Mesh(geo, mat);
     ship.position.y = SHIP_HEIGHT_ABOVE_PLANE;
     const rad = facingDeg * Math.PI / 180;

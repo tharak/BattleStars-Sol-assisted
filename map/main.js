@@ -27,6 +27,9 @@ import {
   isStrategicActivationExhausted, strategicTurnRemainingMs,
 } from "./strategicTurns.js";
 import { buildGravityFieldGroups, warpGravityPoint } from "./gravityField.js";
+import {
+  scaledStrategicShipIconRadius, strategicShipColor, STRATEGIC_FACTION_COLORS,
+} from "./shipAppearance.js";
 
 const canvas = document.getElementById("starmapCv");
 const mapwrap = document.getElementById("mapwrap");
@@ -901,11 +904,7 @@ const textureFor = cell => BODY_TEXTURES[cell.id];
 // shipsSnapshot), and a small icon needs to read as a bright dot from
 // across the whole system at a glance, not blend into the rest of the
 // palette the way a bigger shape safely could.
-const FACTION_COLORS = {
-  blue:  { fill: "#00e5ff", stroke: "#00e5ff" },
-  green: { fill: "#00ffb3", stroke: "#00ffb3" },
-  red:   { fill: "#ff1053", stroke: "#ff1053" },
-};
+const FACTION_COLORS = STRATEGIC_FACTION_COLORS;
 
 function colorsFor(cell) {
   const p = (cell.faction && FACTION_COLORS[cell.faction]) || ID_COLORS[cell.id];
@@ -1125,10 +1124,12 @@ function shipsSnapshot() {
   return SC.aliveShips(world).map(e => {
     const [c, r] = SC.posOf(world, e);
     const [x, y] = shipHexOffset(c, r);
+    const hasActed = hasStrategicShipActed(strategicTurn, e);
     return {
       id: e, kind: "ship", faction: SC.factionOf(world, e), isFlag: SC.isFlagship(world, e),
       label: SC.labelOf(world, e), facingDeg: DIR_ANGLE[SC.facingOf(world, e)],
       isTarget: !!targets?.has(e), targetColor, isGroupMember: !!groupMembers?.has(e),
+      hasActed, colorHex: strategicShipColor(SC.factionOf(world, e), hasActed),
       x, y,
     };
   });
@@ -1367,9 +1368,10 @@ function renderSystem3D(entry, data) {
   scene.rebuildDynamic(({ addShip, addTracer }) => {
     for (const s of ships) {
       addShip({
-        x: s.x, z: s.y, colorHex: colorsFor(s).fill, data: s,
+        x: s.x, z: s.y, colorHex: s.colorHex, data: s,
         selected: s.id === selectedShip, facingDeg: s.facingDeg, isFlag: s.isFlag,
         isTarget: s.isTarget, targetColor: s.targetColor, isGroupMember: s.isGroupMember,
+        hasActed: s.hasActed,
       });
     }
     // A shot's tracer, fading over time -- see ensureEffectLoop, which owns
@@ -1413,10 +1415,6 @@ const camera2d = { x: 0, y: 0, zoom: 1 };
 const clampZoom2d = z => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
 const WHEEL_SENSITIVITY = 0.0015;
 const DRAG_THRESHOLD_PX = 4;
-// A ship's own icon is well inside its hex cell (see shipHexOffset) --
-// GRID_HEX_SIZE_PX's flat-to-flat width is its own hard ceiling on how
-// big this can get before neighboring ships' icons start touching.
-const SHIP_ICON_BASE_PX = 2.2;
 const SHIP_FILL_ALPHA = 0.5;
 
 // "#rrggbb" -> "rgba(r,g,b,alpha)" -- ship tokens fill at 50% alpha (see
@@ -1585,25 +1583,25 @@ function renderSystem2D(entry, data) {
   // lives in the info panel.
   const drawShip = (ship, selected) => {
     const [sx, sy] = worldToScreen(camera2d, ship.x, ship.y);
-    const s = Math.min(Math.max(SHIP_ICON_BASE_PX * camera2d.zoom, 1.5), 10);
-    const colors = colorsFor(ship);
+    const s = scaledStrategicShipIconRadius(camera2d.zoom);
+    const colorHex = ship.colorHex;
     const tapRadius = Math.max(s * 1.8, 6);
     const corners = hexCorners(sx, sy, s);
 
     ctx.beginPath();
     corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
     ctx.closePath();
-    ctx.fillStyle = hexToRgba(colors.fill, SHIP_FILL_ALPHA);
+    ctx.fillStyle = hexToRgba(colorHex, SHIP_FILL_ALPHA);
     ctx.fill();
     ctx.lineWidth = selected || ship.isGroupMember ? 2 : 1;
-    ctx.strokeStyle = selected ? "#ffffff" : (ship.isGroupMember ? ACCENT.flagshipArrow : colors.stroke);
+    ctx.strokeStyle = selected ? "#ffffff" : (ship.isGroupMember ? ACCENT.flagshipArrow : colorHex);
     ctx.stroke();
 
     const [tip, base1, base2] = shipArrowPoints(sx, sy, s, ship.facingDeg);
     ctx.beginPath();
     ctx.moveTo(...tip); ctx.lineTo(...base1); ctx.lineTo(...base2);
     ctx.closePath();
-    ctx.fillStyle = ship.isFlag ? ACCENT.flagshipArrow : ACCENT.labelText;
+    ctx.fillStyle = ship.isFlag && !ship.hasActed ? ACCENT.flagshipArrow : colorHex;
     ctx.fill();
     if (ship.isFlag && s >= 4) {
       ctx.fillStyle = ACCENT.labelText;
