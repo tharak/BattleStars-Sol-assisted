@@ -62,8 +62,8 @@ const world = new SC.World();
 const random = new MathRandomSource();
 // Whichever single ship (an entity id, or null) is currently selected at
 // the System level, plus its in-progress activation -- mirrors
-// battle/state.js's `act` shape ({u,mp,moved,fired,fireMode,cmd}) but
-// owned here directly rather than through a shared battle State, since
+// the tactical GameContext's `act` shape ({u,mp,moved,fired,fireMode,cmd})
+// but owned here directly rather than through a tactical context, since
 // there's no turn order to hand off to (see shipRules.js's header for
 // why). travelArmed is Set-Course's own "next click is a destination"
 // flag, armed by the Travel button and consumed by the next click.
@@ -71,7 +71,7 @@ let selectedShip = null;
 let activation = null;
 let travelArmed = false;
 // Fire's own transient shot-line records, derived here from fire results
-// -- a parallel, map-local array to battle's own state.effects (not
+// -- a parallel, map-local array to battle's own presentation effects (not
 // shared with it), each with a start timestamp/duration so ensureEffectLoop
 // can fade it out over subsequent frames exactly like battle/render.js's
 // own laser effect, instead of a static line that only ever repaints when
@@ -156,7 +156,7 @@ function showHoverInfo(hit) {
   renderInfoPanel();
 }
 // Selecting a ship resets its activation fresh (mirrors
-// battle/turnEngine.js:selectUnit) -- there's no "un-activated" gating
+// battle/lifecycle/activationLifecycle.js:selectUnit) -- there's no "un-activated" gating
 // like battle's own selectUnit checks (Q.isActivated), since there's no
 // turn order here: any living ship, any faction, can be picked up at any
 // time (see shipRules.js's header for why).
@@ -179,7 +179,7 @@ function clearSelection() {
   activation = null;
   travelArmed = false;
 }
-// Mirrors battle/turnEngine.js:endActivation, but with no proceed(state)
+// Mirrors the tactical activation lifecycle, but with no proceed handoff
 // hand-off to another unit/side -- there's nothing to hand off to.
 function endActivation() {
   clearSelection();

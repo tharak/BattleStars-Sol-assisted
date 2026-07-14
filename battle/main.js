@@ -1,5 +1,5 @@
-// Module entry point: builds the scenario menu, wires up input handling,
-// and bootstraps the browser's BattleSession instance.
+// Browser composition root: constructs one explicit game context and its
+// runtime dependencies, then wires the scenario menu and input handling.
 import { SCENARIOS } from "./config.js";
 import { GameContext } from "./gameContext.js";
 import { EventBus } from "./core/events.js";
@@ -9,6 +9,7 @@ import { wire } from "./input.js";
 import { attachBattlePresenter } from "./presenter.js";
 import { draw } from "./render.js";
 import { updatePanels } from "./panels.js";
+import { ControlMode } from "./domain/constants.js";
 
 const game = new GameContext({ random: new MathRandomSource(), events: new EventBus() });
 const presentation = { effects: [] };
@@ -33,7 +34,7 @@ function buildMenu(state, battleOrchestrator) {
       state.deployMode = +document.querySelector('input[name="deploymode"]:checked').value;
       document.getElementById("menu").style.display = "none";
       document.getElementById("battle").style.display = "block";
-      const spect = state.ctrlMode === 3;
+      const spect = state.ctrlMode === ControlMode.SPECTATE;
       document.getElementById("btnStep").style.display = spect ? "" : "none";
       document.getElementById("btnAuto").style.display = spect ? "" : "none";
       battleOrchestrator.newBattle();

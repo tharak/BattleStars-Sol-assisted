@@ -1,7 +1,7 @@
 // The actual ship ruleset: movement, firing, morale/destruction, legal-
 // target arcs/LOS -- pure functions over a battle/ecs.js World +
 // battle/components.js keys, with no idea what "side 0/1", "a fleet
-// roster", "supply", "turn order", or "AI" are. This is the ONE real
+// roster", "turn order", or "AI" are. This is the ONE real
 // implementation; both battle/queries.js+battle/systems.js (the 2-side,
 // turn-based tactical screen) and map/main.js (the open, turn-less,
 // N-faction star map) run on it directly, each supplying only the bits

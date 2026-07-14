@@ -6,7 +6,7 @@
 // coding the same expiry boundary two different ways. One shared
 // implementation now backs both; each caller supplies its own effect-list
 // access and repaint function since each owns a differently-shaped effect
-// list (battle's lives on a BattleSession, the map's is a plain module
+// list (battle's lives in browser presentation state, the map's is a module
 // array) -- this module only owns the RAF bookkeeping.
 //
 // makeEffectLoop() returns a fresh ensureEffectLoop(...) with its own

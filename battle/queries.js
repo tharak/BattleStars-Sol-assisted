@@ -56,8 +56,7 @@ export function pickTarget(state, e) { // AI: nearest, tiebreak lowest strength
 }
 
 // --- current-activation predicates -----------------------------------------
-// Pure reads of `state.act`; live here (not in turnEngine.js) so both
-// turnEngine.js and panels.js can depend on them without a module cycle.
+// Pure reads of `state.act`; shared by lifecycle and presentation code.
 export function canSwitchSelection(state) {
   return !!(state.act && state.act.u != null && !state.act.moved && !state.act.fired);
 }
