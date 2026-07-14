@@ -70,6 +70,34 @@ test("occupied cells cannot be entered or crossed", () => {
   assert.ok(routes.has("0,-1"), "unblocked directions remain available");
 });
 
+test("a gravity drift becomes the advertised destination without extra MP", () => {
+  const routes = findReachableDestinations({
+    position: [0, 0], facing: 0, activation: activation({ mp: 1 }),
+    resolveForcedMovement: position => position[0] === 1
+      ? { from: position, to: [1, -1], direction: 1, wellId: "earth" }
+      : null,
+  });
+  const route = routes.get("1,-1");
+  assert.equal(route.cost, 1);
+  assert.equal(route.remainingMp, 0);
+  assert.deepEqual(route.forcedSteps, [{ from: [1, 0], to: [1, -1], direction: 1, wellId: "earth", actionIndex: 0 }]);
+});
+
+test("route execution applies its advertised forced gravity step", () => {
+  const applied = [];
+  const route = {
+    actions: [StrategicMoveAction.FORWARD], remainingMp: 2,
+    forcedSteps: [{ from: [1, 0], to: [1, -1], actionIndex: 0 }],
+  };
+  const result = executeStrategicRoute(route, {
+    activation: activation(), turnLeft: () => {}, turnRight: () => {},
+    moveForward: () => ({ ok: true }), moveBackward: () => ({ ok: true }),
+    applyForcedStep: step => applied.push(step.to),
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(applied, [[1, -1]]);
+});
+
 test("backward movement consumes the full allowance", () => {
   const routes = findReachableDestinations({
     position: [0, 0], facing: 0, activation: activation(),

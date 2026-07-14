@@ -162,6 +162,7 @@ export function createSystemScene({
   const dynamicPickables = [];
   const pickables = [];
   let buildGroup = staticGroup;
+  const spinningBodies = [];
   let buildPickables = staticPickables;
   let staticBuildCount = 0;
   let dynamicBuildCount = 0;
@@ -216,7 +217,7 @@ export function createSystemScene({
   // of a flat color. `y` (default 0, the shared orbital plane) is only
   // ever nonzero for a major moon with real inclination -- see
   // layoutSystemWithMoons in orbitmap.js.
-  function addBody({ x, y = 0, z, radius, color, data, emissive, textureUrl }) {
+  function addBody({ x, y = 0, z, radius, color, data, emissive, textureUrl, spinDirection = 1 }) {
     const r = Math.max(radius, 0.5);
     const geo = new THREE.SphereGeometry(r, bodyWidthSegments, bodyHeightSegments);
     const tex = getTexture(textureUrl);
@@ -231,6 +232,7 @@ export function createSystemScene({
     mesh.userData = data;
     buildGroup.add(mesh);
     buildPickables.push(mesh);
+    if (data?.kind === "star" || data?.kind === "planet") spinningBodies.push({ mesh, spinDirection });
     return mesh;
   }
 
@@ -466,11 +468,11 @@ export function createSystemScene({
     buildGroup.add(new LineSegments2(lineGeometry, lineMaterial));
   }
 
-  function addHexLines(cells, hexSize, { color, opacity, linewidth }) {
+  function addHexLines(cells, hexSize, { color, opacity, linewidth, projectPoint = (x, z) => [x, z] }) {
     if (!cells.length) return;
     const flat = [];
     for (const cell of cells) {
-      const corners = hexCorners(cell.x, cell.z, hexSize);
+      const corners = hexCorners(cell.x, cell.z, hexSize).map(([x, z]) => projectPoint(x, z));
       for (let k = 0; k < 6; k++) {
         const [x1, z1] = corners[k], [x2, z2] = corners[(k + 1) % 6];
         flat.push(x1, SPARSE_OVERLAY_Y, z1, x2, SPARSE_OVERLAY_Y, z2);
@@ -484,14 +486,15 @@ export function createSystemScene({
     transientOverlayGroup.add(new LineSegments2(geometry, material));
   }
 
-  function addHexFills(cells, hexSize, { color, opacity }) {
+  function addHexFills(cells, hexSize, { color, opacity, projectPoint = (x, z) => [x, z] }) {
     if (!cells.length) return;
     const positions = [];
     for (const cell of cells) {
-      const corners = hexCorners(cell.x, cell.z, hexSize);
+      const [centerX, centerZ] = projectPoint(cell.x, cell.z);
+      const corners = hexCorners(cell.x, cell.z, hexSize).map(([x, z]) => projectPoint(x, z));
       for (let k = 0; k < 6; k++) {
         const [x1, z1] = corners[k], [x2, z2] = corners[(k + 1) % 6];
-        positions.push(cell.x, SPARSE_OVERLAY_Y, cell.z, x1, SPARSE_OVERLAY_Y, z1, x2, SPARSE_OVERLAY_Y, z2);
+        positions.push(centerX, SPARSE_OVERLAY_Y, centerZ, x1, SPARSE_OVERLAY_Y, z1, x2, SPARSE_OVERLAY_Y, z2);
       }
     }
     const geometry = new THREE.BufferGeometry();
@@ -504,20 +507,20 @@ export function createSystemScene({
 
   // Pointer movement only replaces this tiny group; bodies, textures,
   // gravity fields, asteroids, and ships stay in their retained groups.
-  function updateSparseOverlays({ commandCells = [], hoverCells = [], reachableCells = [], hoveredKey = null, colorHex, hexSize }) {
+  function updateSparseOverlays({ commandCells = [], hoverCells = [], reachableCells = [], hoveredKey = null, colorHex, hexSize, projectPoint }) {
     clearGroup(transientOverlayGroup);
     if (colorHex) {
-      addHexFills(commandCells, hexSize, { color: colorHex, opacity: 0.035 });
-      addHexLines(commandCells, hexSize, { color: colorHex, opacity: 0.2, linewidth: 1 });
+      addHexFills(commandCells, hexSize, { color: colorHex, opacity: 0.035, projectPoint });
+      addHexLines(commandCells, hexSize, { color: colorHex, opacity: 0.2, linewidth: 1, projectPoint });
     }
-    addHexLines(hoverCells, hexSize, { color: 0x8892ab, opacity: 0.55, linewidth: 1 });
+    addHexLines(hoverCells, hexSize, { color: 0x8892ab, opacity: 0.55, linewidth: 1, projectPoint });
     if (colorHex) {
       const hovered = reachableCells.filter(cell => cell.key === hoveredKey);
       const normal = reachableCells.filter(cell => cell.key !== hoveredKey);
-      addHexFills(normal, hexSize, { color: colorHex, opacity: 0.18 });
-      addHexLines(normal, hexSize, { color: colorHex, opacity: 0.75, linewidth: 1.5 });
-      addHexFills(hovered, hexSize, { color: colorHex, opacity: 0.42 });
-      addHexLines(hovered, hexSize, { color: colorHex, opacity: 1, linewidth: 3 });
+      addHexFills(normal, hexSize, { color: colorHex, opacity: 0.18, projectPoint });
+      addHexLines(normal, hexSize, { color: colorHex, opacity: 0.75, linewidth: 1.5, projectPoint });
+      addHexFills(hovered, hexSize, { color: colorHex, opacity: 0.42, projectPoint });
+      addHexLines(hovered, hexSize, { color: colorHex, opacity: 1, linewidth: 3, projectPoint });
     }
     renderFrame();
   }
@@ -534,6 +537,7 @@ export function createSystemScene({
   }
 
   function rebuildStatic(fn) {
+    spinningBodies.length = 0;
     rebuildGroup(
       staticGroup, staticPickables, fn,
       { addBody, addRing, addAsteroid, addGravityField },
@@ -570,6 +574,12 @@ export function createSystemScene({
     rebuildStatic,
     rebuildDynamic,
     renderFrame,
+    animateBodies(nowMs) {
+      // A readable game-rate spin, not real-time day length.  It matches the
+      // direction of the tactical current marker supplied by map/main.js.
+      for (const { mesh, spinDirection } of spinningBodies) mesh.rotation.y = spinDirection * nowMs / 9000;
+      renderFrame();
+    },
     updateSparseOverlays,
     clearSparseOverlays,
     // Whatever real body/fleet is under the cursor, or null. A ship always

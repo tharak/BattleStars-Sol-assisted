@@ -87,6 +87,7 @@ function makeRoute(state, action, cost) {
     actions: [...state.actions, action],
     backwardSteps: state.backwardSteps + (action === StrategicMoveAction.BACKWARD ? 1 : 0),
     turns: state.turns + (action === StrategicMoveAction.TURN_LEFT || action === StrategicMoveAction.TURN_RIGHT ? 1 : 0),
+    ...(state.forcedSteps?.length ? { forcedSteps: [...state.forcedSteps] } : {}),
   };
 }
 
@@ -109,6 +110,7 @@ export function findReachableDestinations({
   movementAllowance = MAX_MOVEMENT_POINTS,
   movementCost = nextPosition => forwardMovementCost(),
   isBlocked = () => false,
+  resolveForcedMovement = () => null,
 }) {
   const destinations = new Map();
   if (!position || facing == null || !canMoveDuringActivation(activation)) return destinations;
@@ -155,7 +157,9 @@ export function findReachableDestinations({
       if (Number.isFinite(forwardCost) && forwardCost > 0 && state.remainingMp >= forwardCost
           && canTakeStep({ moraleState, position: state.position, nextPosition: forwardPosition, enemyPositions, isBlocked })) {
         const route = makeRoute(state, StrategicMoveAction.FORWARD, forwardCost);
-        candidates.push({ ...state, ...route, position: forwardPosition });
+        const drift = resolveForcedMovement(forwardPosition);
+        if (drift) (route.forcedSteps ||= []).push({ ...drift, actionIndex: route.actions.length - 1 });
+        candidates.push({ ...state, ...route, position: drift?.to || forwardPosition });
       }
     }
 
@@ -165,7 +169,9 @@ export function findReachableDestinations({
       const backwardPosition = neighbor(state.position, (state.facing + 3) % 6);
       if (canTakeStep({ moraleState, position: state.position, nextPosition: backwardPosition, enemyPositions, isBlocked })) {
         const route = makeRoute(state, StrategicMoveAction.BACKWARD, movementAllowance);
-        candidates.push({ ...state, ...route, position: backwardPosition });
+        const drift = resolveForcedMovement(backwardPosition);
+        if (drift) (route.forcedSteps ||= []).push({ ...drift, actionIndex: route.actions.length - 1 });
+        candidates.push({ ...state, ...route, position: drift?.to || backwardPosition });
       }
     }
 
@@ -211,6 +217,7 @@ export function findGroupReachableDestinations({
   movementAllowance = MAX_MOVEMENT_POINTS,
   movementCost = (_member, nextPosition) => forwardMovementCost(),
   isBlocked = () => false,
+  resolveForcedMovement = (_member, position) => null,
 }) {
   const destinations = new Map();
   const leader = members.find(member => member.id === leaderId);
@@ -227,6 +234,7 @@ export function findGroupReachableDestinations({
       movementAllowance,
       movementCost: nextPosition => movementCost(member, nextPosition),
       isBlocked: nextPosition => isBlocked(member, nextPosition),
+      resolveForcedMovement: position => resolveForcedMovement(member, position),
     }));
   }
 
@@ -278,14 +286,18 @@ export function executeStrategicRoute(route, {
   turnRight,
   moveForward,
   moveBackward,
+  applyForcedStep = () => {},
 }) {
   if (!route) return { ok: false, reason: "missing_route" };
-  for (const action of route.actions) {
+  for (let actionIndex = 0; actionIndex < route.actions.length; actionIndex++) {
+    const action = route.actions[actionIndex];
     if (action === StrategicMoveAction.TURN_LEFT) turnLeft();
     else if (action === StrategicMoveAction.TURN_RIGHT) turnRight();
     else {
       const result = action === StrategicMoveAction.FORWARD ? moveForward() : moveBackward();
       if (!result?.ok) return result || { ok: false, reason: "step_failed" };
+      const drift = route.forcedSteps?.find(step => step.actionIndex === actionIndex);
+      if (drift) applyForcedStep(drift);
     }
   }
   if (activation) {

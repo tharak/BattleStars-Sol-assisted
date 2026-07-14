@@ -27,6 +27,7 @@ import {
   isStrategicActivationExhausted, strategicTurnRemainingMs,
 } from "./strategicTurns.js";
 import { buildGravityFieldGroups, warpGravityPoint } from "./gravityField.js";
+import { gravitySpinDirection, resolveGravityDrift } from "./gravityDynamics.js";
 import {
   scaledStrategicShipIconRadius, strategicShipColor, STRATEGIC_FACTION_COLORS,
 } from "./shipAppearance.js";
@@ -174,9 +175,9 @@ initFleetPositions();
 // the same way setHint(...) already works.
 function infoFor(hit) {
   if (!hit) return null;
-  if (hit.kind === "star") return { name: hit.label, detail: "The star this system orbits." };
+  if (hit.kind === "star") return { name: hit.label, detail: `The star this system orbits. Gravity current: ${gravitySpinDirection(hit.id) > 0 ? "clockwise" : "counter-clockwise"}.` };
   if (hit.kind === "moon") return { name: hit.label, detail: `Moon of ${hit.parentLabel}.` };
-  if (hit.kind === "planet") return { name: hit.label, detail: "Planet." };
+  if (hit.kind === "planet") return { name: hit.label, detail: `Planet. Gravity current: ${gravitySpinDirection(hit.id) > 0 ? "clockwise" : "counter-clockwise"}.` };
   if (hit.kind === "asteroid") return { name: "Asteroid", detail: `Costs a full ${MP_MAX} MP to push through; still blocks line of sight.` };
   if (hit.kind === "ship") {
     return {
@@ -425,6 +426,7 @@ function recomputeReachableMoves() {
       movementAllowance: MP_MAX,
       movementCost: (_member, nextPosition) => hexMoveCost(nextPosition),
       isBlocked: (_member, nextPosition) => groupIsBlocked(nextPosition),
+      resolveForcedMovement: (_member, position) => gravityDrift(position),
     });
   } else {
     reachableMoves = findReachableDestinations({
@@ -436,6 +438,7 @@ function recomputeReachableMoves() {
       movementAllowance: MP_MAX,
       movementCost: hexMoveCost,
       isBlocked: movementBlocker([activation.u]),
+      resolveForcedMovement: gravityDrift,
     });
   }
   const hoveredRoute = pointerHex ? reachableMoves.get(hexKey(pointerHex[0], pointerHex[1])) : null;
@@ -460,6 +463,7 @@ function executeReachableMove(route) {
         turnRight: () => SC.turn(world, ship, -1),
         moveForward: () => SC.moveForward(world, ship, { isBlocked }),
         moveBackward: () => SC.moveBackward(world, ship, { isBlocked }),
+        applyForcedStep: drift => SC.setPosition(world, ship, ...drift.to),
       }),
     })
     : executeStrategicRoute(route, {
@@ -468,6 +472,7 @@ function executeReachableMove(route) {
       turnRight: () => SC.turn(world, activation.u, -1),
       moveForward: () => SC.moveForward(world, activation.u, { isBlocked }),
       moveBackward: () => SC.moveBackward(world, activation.u, { isBlocked }),
+      applyForcedStep: drift => SC.setPosition(world, activation.u, ...drift.to),
     });
   if (!result.ok) {
     moveResultHint(result);
@@ -480,8 +485,8 @@ function executeReachableMove(route) {
   // activation bookkeeping is committed once after the complete route.
   hoverPatchCenter = null;
   setHint(movingAsGroup
-    ? `${route.memberRoutes.length} ships moved together for ${route.cost} MP.`
-    : `${SC.labelOf(world, activation.u)} moved ${route.cost} MP.`);
+    ? `${route.memberRoutes.length} ships moved together for ${route.cost} MP; gravity may have separated the formation.`
+    : `${SC.labelOf(world, activation.u)} moved ${route.cost} MP${route.forcedSteps?.length ? " and drifted with the current" : ""}.`);
   finishActionRender();
   return true;
 }
@@ -502,7 +507,9 @@ function doForward() {
   const res = SC.moveForward(world, activation.u, { isBlocked: movementBlocker([activation.u]) });
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp -= cost; activation.moved = true; activation.fireMode = false;
-  setHint("");
+  const drift = gravityDrift(SC.posOf(world, activation.u));
+  if (drift) SC.setPosition(world, activation.u, ...drift.to);
+  setHint(drift ? `Gravity current pulls ${SC.labelOf(world, activation.u)} one hex ${drift.wellId === "sun" ? "around the Sun" : `around ${drift.wellId}`}.` : "");
   finishActionRender();
 }
 function doBackward() {
@@ -520,7 +527,9 @@ function doBackward() {
   const res = SC.moveBackward(world, activation.u, { isBlocked: movementBlocker([activation.u]) });
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp = 0; activation.moved = true; activation.fireMode = false;
-  setHint("");
+  const drift = gravityDrift(SC.posOf(world, activation.u));
+  if (drift) SC.setPosition(world, activation.u, ...drift.to);
+  setHint(drift ? `Gravity current pulls ${SC.labelOf(world, activation.u)} one hex.` : "");
   finishActionRender();
 }
 // Arms the cosmetic "fire mode" hint -- exactly like battle, clicking a
@@ -589,8 +598,10 @@ function setCourse(x, y) {
     return;
   }
   SC.setPosition(world, activation.u, c, r);
+  const drift = gravityDrift([c, r]);
+  if (drift) SC.setPosition(world, activation.u, ...drift.to);
   activation.courseSet = true;
-  setHint(`${SC.labelOf(world, activation.u)} course set.`);
+  setHint(`${SC.labelOf(world, activation.u)} course set${drift ? " — captured by the gravity current" : ""}.`);
   travelArmed = false;
   hoverPatchCenter = null;
   renderInfoPanel();
@@ -1013,7 +1024,20 @@ function pixelToHexIndex(x, y) {
   const size = GRID_HEX_SIZE_PX;
   const r = Math.round(y / (size * 1.5));
   const c = Math.round(x / (size * Math.sqrt(3)) - 0.5 * (r & 1));
-  return [c, r];
+  const wells = systemStaticCache?.wells || [];
+  if (!wells.length) return [c, r];
+  // Invert the bounded visual warp by finding the nearest projected cell in
+  // a small local patch.  Logical positions remain regular axial hexes.
+  let best = [c, r], bestDistance = Infinity;
+  for (let rr = r - 2; rr <= r + 2; rr++) {
+    for (let cc = c - 2; cc <= c + 2; cc++) {
+      const [gx, gy] = shipHexOffset(cc, rr);
+      const [wx, wy] = warpedGravityPoint(gx, gy, wells);
+      const distance = (wx - x) ** 2 + (wy - y) ** 2;
+      if (distance < bestDistance) { best = [cc, rr]; bestDistance = distance; }
+    }
+  }
+  return best;
 }
 function snapToHexGrid(x, y) {
   return shipHexOffset(...pixelToHexIndex(x, y));
@@ -1027,13 +1051,18 @@ function sparseOverlaySnapshot() {
   const commandCenter = selectedShip != null && SC.isAlive(world, selectedShip) && SC.isFlagship(world, selectedShip)
     ? SC.posOf(world, selectedShip)
     : null;
+  const hoveredRoute = pointerHex ? reachableMoves.get(hexKey(pointerHex[0], pointerHex[1])) : null;
   return {
     commandCells: commandCenter ? hexPatch(commandCenter, CMD_R).map(toCell) : [],
     hoverCells: hoverPatchCenter ? hexPatch(hoverPatchCenter).map(toCell) : [],
     reachableCells: [...reachableMoves.values()].map(route => ({ ...toCell(route.position), cost: route.cost })),
+    driftSegments: (hoveredRoute?.forcedSteps || []).map(step => ({
+      from: toCell(step.from), to: toCell(step.to),
+    })),
     hoveredKey: pointerHex ? hexKey(pointerHex[0], pointerHex[1]) : null,
     colorHex: activation ? colorsFor({ faction: SC.factionOf(world, activation.u) }).fill : null,
     hexSize: GRID_HEX_SIZE_PX,
+    projectPoint: (x, z) => warpedGravityPoint(x, z, systemStaticCache?.wells || []),
   };
 }
 
@@ -1109,7 +1138,7 @@ function ensureShipsSpawned(layout) {
 // overlay uses, so a ship's token always lines up with its strategic cell.
 // Called fresh every render (World lookups are
 // cheap; this is no more expensive than the old formula-driven version).
-function shipsSnapshot() {
+function shipsSnapshot(wells = []) {
   // Mirrors battle/render.js's own `tgts = Q.canFire(state) ? Q.legalTargets(...) : []`
   // -- only highlight targets while the selected ship could actually still
   // fire this activation (not, say, after it's already fired). The
@@ -1123,7 +1152,8 @@ function shipsSnapshot() {
   const targetColor = targets ? colorsFor({ faction: SC.factionOf(world, activation.u) }).fill : null;
   return SC.aliveShips(world).map(e => {
     const [c, r] = SC.posOf(world, e);
-    const [x, y] = shipHexOffset(c, r);
+    const [gridX, gridY] = shipHexOffset(c, r);
+    const [x, y] = warpedGravityPoint(gridX, gridY, wells);
     const hasActed = hasStrategicShipActed(strategicTurn, e);
     return {
       id: e, kind: "ship", faction: SC.factionOf(world, e), isFlag: SC.isFlagship(world, e),
@@ -1182,9 +1212,9 @@ function updateBeltObstacles(asteroids) {
 // and the asteroid belt is terrain rather than a single point mass.
 function gravityWells(layout) {
   const wells = [];
-  if (layout.center) wells.push({ x: 0, z: 0, rPx: layout.center.rPx, colorHex: colorsFor(layout.center).fill });
+  if (layout.center) wells.push({ id: layout.center.id, x: 0, z: 0, rPx: layout.center.rPx, colorHex: colorsFor(layout.center).fill, spinDirection: gravitySpinDirection(layout.center.id) });
   for (const p of layout.planets) {
-    if (p.kind !== "belt") wells.push({ x: p.x, z: p.y, rPx: p.rPx, colorHex: colorsFor(p).fill });
+    if (p.kind !== "belt") wells.push({ id: p.id, x: p.x, z: p.y, rPx: p.rPx, colorHex: colorsFor(p).fill, spinDirection: gravitySpinDirection(p.id) });
   }
   return wells;
 }
@@ -1253,7 +1283,7 @@ function gravityHexes(layout) {
         const cost = gravityHexCost(dist, well);
         const k = hexKey(c, r);
         const existing = cells.get(k);
-        if (!existing || cost > existing.cost) cells.set(k, { cost, colorHex: well.colorHex, x, y });
+        if (!existing || cost > existing.cost) cells.set(k, { cost, colorHex: well.colorHex, x, y, well });
       }
     }
   }
@@ -1264,6 +1294,21 @@ function gravityHexes(layout) {
 // after computing it, mirroring updateBeltObstacles above.
 function updateGravityHexes(cells) {
   gravityHexCosts = cells;
+}
+
+function gravityDrift(position) {
+  return resolveGravityDrift(position, gravityHexCosts, hex => shipHexOffset(hex[0], hex[1]));
+}
+
+function warpedGravityPoint(x, y, wells) {
+  // The deformation is visual, but it is now used consistently by every
+  // tactical marker.  The existing falloff remains bounded away from a
+  // body's center so the discrete logical grid stays readable.
+  return warpGravityPoint(x, y, wells, GRID_HEX_SIZE_PX);
+}
+
+function gravityHexCorners(x, y, wells, size = GRID_HEX_SIZE_PX) {
+  return hexCorners(x, y, size).map(([px, py]) => warpedGravityPoint(px, py, wells));
 }
 // --- 3D path (primary) ---------------------------------------------------
 
@@ -1278,6 +1323,18 @@ let webglFailed = forcedRenderer === "2d";
 // fires right after a rotate-drag releases.
 let sceneDragging = false;
 let sceneJustDragged = false;
+let gravityAnimationFrame = null;
+function ensureGravityAnimation() {
+  if (gravityAnimationFrame != null) return;
+  const tick = now => {
+    gravityAnimationFrame = null;
+    if (path[path.length - 1]?.level === "system" && mapArea.dataset.renderer === "3d" && scene3d) {
+      scene3d.animateBodies(now);
+      gravityAnimationFrame = requestAnimationFrame(tick);
+    }
+  };
+  gravityAnimationFrame = requestAnimationFrame(tick);
+}
 function ensureScene3D() {
   if (scene3d) return scene3d;
   scene3d = createSystemScene({
@@ -1335,7 +1392,7 @@ function renderSystem3D(entry, data) {
   updateGravityHexes(gravityCells);
   updateBeltObstacles(asteroids);
   recomputeReachableMoves();
-  const ships = shipsSnapshot();
+  const ships = shipsSnapshot(wells);
 
   if (scene3dStaticSource !== entry.systemId) {
     scene.rebuildStatic(({ addBody, addRing, addAsteroid, addGravityField }) => {
@@ -1345,7 +1402,7 @@ function renderSystem3D(entry, data) {
         addGravityField({ ...group, colorHex });
       }
       if (layout.center) {
-        addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center) });
+        addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center), spinDirection: gravitySpinDirection(layout.center.id) });
       }
       for (const p of layout.planets) {
         if (p.kind === "belt") {
@@ -1355,7 +1412,7 @@ function renderSystem3D(entry, data) {
           continue;
         }
         addRing(0, 0, Math.hypot(p.x, p.y));
-        addBody({ x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, data: p, textureUrl: textureFor(p) });
+        addBody({ x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, data: p, textureUrl: textureFor(p), spinDirection: gravitySpinDirection(p.id) });
         for (const m of p.moons) {
           addRing(p.x, p.y, m.localRingPx, m.inclinationDeg);
           addBody({ x: m.x, y: m.tiltHeight, z: m.tiltZ, radius: m.rPx, color: colorsFor(m).fill, data: m, textureUrl: textureFor(m) });
@@ -1383,6 +1440,7 @@ function renderSystem3D(entry, data) {
     }
   });
   scene.updateSparseOverlays(sparseOverlaySnapshot());
+  ensureGravityAnimation();
 
   canvas3d.onclick = ev => {
     if (sceneJustDragged) { sceneJustDragged = false; return; }
@@ -1466,7 +1524,7 @@ function renderSystem2D(entry, data) {
   updateGravityHexes(gravityCells);
   updateBeltObstacles(asteroids);
   recomputeReachableMoves();
-  const ships = shipsSnapshot();
+  const ships = shipsSnapshot(wells);
 
   // Only a floor, no ceiling -- a real body's on-screen size grows freely
   // with zoom, same as the 3D scene's actual spheres do (there's nothing
@@ -1492,8 +1550,8 @@ function renderSystem2D(entry, data) {
   // any real body/ship, so everything else
   // still reads clearly on top of it.
   for (const { colorHex, x, y, cost } of gravityCells.values()) {
-    const [sx, sy] = worldToScreen(camera2d, x, y);
-    const corners = hexCorners(sx, sy, GRID_HEX_SIZE_PX * camera2d.zoom);
+    const corners = gravityHexCorners(x, y, wells)
+      .map(([px, py]) => worldToScreen(camera2d, px, py));
     ctx.beginPath();
     corners.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
     ctx.closePath();
@@ -1506,8 +1564,7 @@ function renderSystem2D(entry, data) {
   // the fill, making the deepest pull around a body read most strongly.
   for (const { colorHex, x, y, cost } of gravityCells.values()) {
     const intensity = gravityHexIntensity(cost);
-    const corners = hexCorners(x, y, GRID_HEX_SIZE_PX)
-      .map(([px, pz]) => warpGravityPoint(px, pz, wells, GRID_HEX_SIZE_PX))
+    const corners = gravityHexCorners(x, y, wells)
       .map(([px, pz]) => worldToScreen(camera2d, px, pz));
     ctx.beginPath();
     corners.forEach(([px, py], i) => (i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
@@ -1518,8 +1575,8 @@ function renderSystem2D(entry, data) {
   }
 
   const drawOverlayHex = (cell, { fill = null, stroke, lineWidth = 1 }) => {
-    const [sx, sy] = worldToScreen(camera2d, cell.x, cell.z);
-    const corners = hexCorners(sx, sy, GRID_HEX_SIZE_PX * camera2d.zoom);
+    const corners = gravityHexCorners(cell.x, cell.z, wells)
+      .map(([px, py]) => worldToScreen(camera2d, px, py));
     ctx.beginPath();
     corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
     ctx.closePath();
@@ -1545,6 +1602,14 @@ function renderSystem2D(entry, data) {
       });
     }
   }
+  for (const segment of sparseOverlay.driftSegments) {
+    const [fromX, fromY] = warpedGravityPoint(segment.from.x, segment.from.z, wells);
+    const [toX, toY] = warpedGravityPoint(segment.to.x, segment.to.z, wells);
+    const [sx, sy] = worldToScreen(camera2d, fromX, fromY);
+    const [tx, ty] = worldToScreen(camera2d, toX, toY);
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(tx, ty);
+    ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
+  }
 
   const drawRing = (ringCx, ringCy, worldRadiusPx) => strokeFaintRing(ctx, ringCx, ringCy, worldRadiusPx * camera2d.zoom);
   const drawDot = (body, selected) => {
@@ -1559,6 +1624,24 @@ function renderSystem2D(entry, data) {
     ctx.strokeStyle = selected ? "#ffffff" : colors.stroke;
     ctx.stroke();
     return [sx, sy, rPx];
+  };
+  const drawCurrentCue = well => {
+    const [sx, sy] = worldToScreen(camera2d, well.x, well.z);
+    const radius = Math.max((well.rPx + 5) * camera2d.zoom, 8);
+    const start = -Math.PI * 0.75;
+    const end = start + Math.PI * 1.35 * well.spinDirection;
+    ctx.beginPath();
+    ctx.arc(sx, sy, radius, start, end, well.spinDirection < 0);
+    ctx.strokeStyle = hexToRgba(well.colorHex, 0.85);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    const tipX = sx + Math.cos(end) * radius, tipY = sy + Math.sin(end) * radius;
+    const tangent = end + (well.spinDirection > 0 ? Math.PI / 2 : -Math.PI / 2);
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(tipX - Math.cos(tangent - 0.55) * 5, tipY - Math.sin(tangent - 0.55) * 5);
+    ctx.lineTo(tipX - Math.cos(tangent + 0.55) * 5, tipY - Math.sin(tangent + 0.55) * 5);
+    ctx.closePath(); ctx.fillStyle = well.colorHex; ctx.fill();
   };
   // battle/hexmath.js's facingArrowPoints is tuned for battle's fixed
   // HS=17 board (fixed -4/-11px offsets, not proportional to hs) --
@@ -1652,6 +1735,7 @@ function renderSystem2D(entry, data) {
       drawDot(m, false);
     }
   }
+  for (const well of wells) drawCurrentCue(well);
   for (const s of ships) s.hitRPx = drawShip(s, s.id === selectedShip);
   // A shot's tracer, fading over time -- see ensureEffectLoop, which owns
   // expiring `effects` and repainting while any are still fading. Same

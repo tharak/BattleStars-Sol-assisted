@@ -14,7 +14,10 @@ export function warpGravityPoint(x, z, wells, hexSize) {
     const distance = Math.hypot(dx, dz);
     if (distance < 1e-6) continue;
     const falloff = Math.max(well.rPx * 2, hexSize);
-    const strength = well.rPx * 9;
+    // This is a screen-space explanation of the current, not a coordinate
+    // transform for physics.  Bound it below half a hex so deformed cells
+    // remain individually legible and pointer inversion stays unambiguous.
+    const strength = Math.min(well.rPx * 9, hexSize * 0.42);
     const pull = Math.min(
       strength * Math.exp(-(distance * distance) / (falloff * falloff)),
       distance * 0.85,
@@ -51,7 +54,9 @@ export function buildGravityFieldGroups(cells, wells, hexSize, intensityForCost)
     const intensity = intensityForCost(cost);
     for (let k = 0; k < 6; k++) {
       const from = corners[k], to = corners[(k + 1) % 6];
-      group.triangles.push([x, y], from, to);
+      // Fills and thick edges must share the same warped geometry.  Keeping
+      // only the lines warped was the source of the misleading preview.
+      group.triangles.push(warped([x, y]), warped(from), warped(to));
       group.intensities.push(intensity, intensity, intensity);
       const key = edgeKey(from, to);
       const existing = group.edges.get(key);
