@@ -35,7 +35,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
-import { hexEdgeWidths } from "../battle/hexmath.js";
+import { hexEdgeWidths, hexCorners } from "../battle/hexmath.js";
 import { ACCENT } from "../battle/colors.js";
 
 // Matches battle/colors.js's BOARD_TINT.gridCell -- the tone that actually
@@ -253,11 +253,7 @@ export function createSystemScene({ canvas, sizePx, minZoom, maxZoom }) {
     // near SHIP_BASE_Y above) so it reads as a token resting on the
     // grid, not floating at the cone's own height.
     const tapRadius = Math.max(s * 1.8, 3);
-    const corners = [];
-    for (let k = 0; k < 6; k++) {
-      const a = (60 * k - 90) * Math.PI / 180;
-      corners.push([Math.cos(a) * tapRadius, Math.sin(a) * tapRadius]);
-    }
+    const corners = hexCorners(0, 0, tapRadius);
     const fanPositions = [];
     for (let k = 0; k < 6; k++) {
       const [x1, z1] = corners[k], [x2, z2] = corners[(k + 1) % 6];

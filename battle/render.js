@@ -1,10 +1,11 @@
 // Canvas rendering. Reads component data via queries.js and colors via
 // colors.js -- never mutates game state.
 import { COLS, ROWS, RANGE, CMD_R, HS, HW, OX, OY, MoraleState, inBounds } from "./config.js";
-import { DIR_ANGLE, hexDist, losClear, inFireArc, key, facingArrowPoints } from "./hexmath.js";
+import { DIR_ANGLE, hexDist, losClear, inFireArc, key, facingArrowPoints, hexCorners } from "./hexmath.js";
 import { inSetupZone } from "./formations.js";
 import { SIDE_COLORS, STATE_COLORS, ACCENT, BOARD_TINT } from "./colors.js";
 import { LINE_WIDTH, LASER_HALO_ALPHA } from "./dimensions.js";
+import { makeEffectLoop } from "./core/effectLoop.js";
 import * as Q from "./queries.js";
 
 const { SHAKEN, ROUTED } = MoraleState;
@@ -23,11 +24,7 @@ export function pixelToHex(x, y) {
 }
 function hexPath(x, y, s) {
   cx2.beginPath();
-  for (let k = 0; k < 6; k++) {
-    const a = (60 * k - 90) * Math.PI / 180;
-    const px = x + s * Math.cos(a), py = y + s * Math.sin(a);
-    k ? cx2.lineTo(px, py) : cx2.moveTo(px, py);
-  }
+  hexCorners(x, y, s).forEach(([px, py], k) => (k ? cx2.lineTo(px, py) : cx2.moveTo(px, py)));
   cx2.closePath();
 }
 
@@ -36,21 +33,16 @@ function hexPath(x, y, s) {
 // systems.fire()) it also keeps a requestAnimationFrame loop alive to fade
 // them out over subsequent frames -- callers everywhere else just call
 // draw() once per action exactly as before and get the animation for free.
+// The loop mechanics themselves are shared with the star map's own
+// tracer-fade loop -- see core/effectLoop.js.
+const ensureEffectLoop = makeEffectLoop();
 export function draw(state) {
   renderFrame(state);
-  ensureEffectLoop(state);
-}
-let rafRunning = false;
-function ensureEffectLoop(state) {
-  if (rafRunning || !state.effects.length) return;
-  rafRunning = true;
-  const tick = () => {
-    state.effects = state.effects.filter(e => performance.now() - e.start < e.dur);
-    renderFrame(state);
-    if (state.effects.length) requestAnimationFrame(tick);
-    else rafRunning = false;
-  };
-  requestAnimationFrame(tick);
+  ensureEffectLoop({
+    pruneExpired: now => { state.effects = state.effects.filter(e => now - e.start < e.dur); },
+    hasEffects: () => state.effects.length > 0,
+    repaint: () => renderFrame(state),
+  });
 }
 
 function renderFrame(state) {

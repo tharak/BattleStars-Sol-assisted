@@ -1,6 +1,6 @@
 import {
   layoutOrbitalBoard, drawOrbitalBoard, hitTest,
-  layoutSystemWithMoons, worldToScreen, screenToWorld,
+  layoutSystemWithMoons, worldToScreen, screenToWorld, strokeFaintRing,
 } from "./orbitmap.js";
 import { createSystemScene } from "./scene3d.js";
 import { AU_KM, hashAngleDeg } from "./orbits.js";
@@ -15,6 +15,7 @@ import { BOARD_TINT, ACCENT } from "../battle/colors.js";
 import { LINE_WIDTH, LASER_DURATION, LASER_HALO_ALPHA } from "../battle/dimensions.js";
 import { MP_MAX, STATE_NAME } from "../battle/config.js";
 import * as SC from "../battle/core/shipRules.js";
+import { makeEffectLoop } from "../battle/core/effectLoop.js";
 
 const canvas = document.getElementById("starmapCv");
 const mapwrap = document.getElementById("mapwrap");
@@ -74,6 +75,12 @@ let travelArmed = false;
 // own laser effect, instead of a static line that only ever repaints when
 // something else happens to trigger a render.
 const effects = [];
+// The RAF-loop mechanics for fading `effects` out -- see render()'s use
+// of this below, and battle/core/effectLoop.js for why this is shared
+// with battle/render.js's own laser-fade loop instead of a second
+// hand-rolled copy of the same "keep repainting while anything's still
+// fading" bookkeeping.
+const ensureEffectLoop = makeEffectLoop();
 // The asteroid field's current hexes (a Set of "c,r" keys, see
 // battle/hexmath.js's key()) -- recomputed every render (updateBeltObstacles)
 // alongside the belt's own asteroid list. Passed into shipRules.js's
@@ -298,6 +305,19 @@ function handleShipOrDestinationClick(hit, worldPoint) {
     return true;
   }
   return false;
+}
+// Shared by both click handlers' fallthrough (once
+// handleShipOrDestinationClick has returned false): the star/moon/
+// asteroid/planet info-panel branches, identical in both the 3D and 2D
+// views since neither renderer has anything hit-kind-specific left to say
+// once a ship/travel click has been ruled out.
+function dispatchBodyClick(hit) {
+  if (hit?.kind === "star") { setHint(""); showBodyInfo(hit); return; }
+  if (hit?.kind === "moon") { setHint(`${hit.label} — a moon of ${hit.parentLabel}.`); showBodyInfo(hit); return; }
+  if (hit?.kind === "asteroid") { setHint(`Asteroid — costs ${MP_MAX} MP to push through, blocks line of sight.`); showBodyInfo(hit); return; }
+  if (hit?.kind === "planet") { setHint(""); showBodyInfo(hit); return; }
+  setHint("Empty space — nothing here.");
+  showBodyInfo(null);
 }
 function renderInfoPanel() {
   if (selectedShip != null && !SC.isAlive(world, selectedShip)) { selectedShip = null; activation = null; }
@@ -846,11 +866,7 @@ function warpedGridLines(wells) {
     const qMax = Math.ceil(qSpan - r / 2) + 1;
     for (let q = qMin; q <= qMax; q++) {
       const cx = size * Math.sqrt(3) * (q + r / 2);
-      const corners = [];
-      for (let k = 0; k < 6; k++) {
-        const a = (60 * k - 90) * Math.PI / 180;
-        corners.push(warp(cx + size * Math.cos(a), cz + size * Math.sin(a)));
-      }
+      const corners = hexCorners(cx, cz, size).map(([px, pz]) => warp(px, pz));
       for (let k = 0; k < 6; k++) segments.push(corners[k], corners[(k + 1) % 6]);
     }
   }
@@ -933,13 +949,7 @@ function renderSystem3D(entry, data) {
     if (sceneJustDragged) { sceneJustDragged = false; return; }
     const hit = scene.pick(ev.clientX, ev.clientY);
     if (handleShipOrDestinationClick(hit, scene.groundPoint(ev.clientX, ev.clientY))) return;
-
-    if (hit?.kind === "star") { setHint(""); showBodyInfo(hit); return; }
-    if (hit?.kind === "moon") { setHint(`${hit.label} — a moon of ${hit.parentLabel}.`); showBodyInfo(hit); return; }
-    if (hit?.kind === "asteroid") { setHint(`Asteroid — costs ${MP_MAX} MP to push through, blocks line of sight.`); showBodyInfo(hit); return; }
-    if (hit?.kind === "planet") { setHint(""); showBodyInfo(hit); return; }
-    setHint("Empty space — nothing here.");
-    showBodyInfo(null);
+    dispatchBodyClick(hit);
   };
 
   canvas3d.onmousemove = ev => {
@@ -1066,15 +1076,7 @@ function renderSystem2D(entry, data) {
     ctx.fill();
   }
 
-  const drawRing = (ringCx, ringCy, worldRadiusPx) => {
-    const r = worldRadiusPx * camera2d.zoom;
-    if (r < 1) return;
-    ctx.beginPath();
-    ctx.arc(ringCx, ringCy, r, 0, Math.PI * 2);
-    ctx.strokeStyle = "#1d243855";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  };
+  const drawRing = (ringCx, ringCy, worldRadiusPx) => strokeFaintRing(ctx, ringCx, ringCy, worldRadiusPx * camera2d.zoom);
   const drawDot = (body, selected) => {
     const [sx, sy] = worldToScreen(camera2d, body.x, body.y);
     const rPx = screenRadius(body);
@@ -1245,29 +1247,7 @@ function renderSystem2D(entry, data) {
     const x = (ev.clientX - rect.left) - cx, y = (ev.clientY - rect.top) - cy;
     const hit = hitAt(x, y);
     if (handleShipOrDestinationClick(hit, screenToWorld(camera2d, x, y))) return;
-
-    if (hit?.kind === "star") {
-      setHint("");
-      showBodyInfo(hit);
-      return;
-    }
-    if (hit?.kind === "moon") {
-      setHint(`${hit.label} — a moon of ${hit.parentLabel}.`);
-      showBodyInfo(hit);
-      return;
-    }
-    if (hit?.kind === "asteroid") {
-      setHint(`Asteroid — costs ${MP_MAX} MP to push through, blocks line of sight.`);
-      showBodyInfo(hit);
-      return;
-    }
-    if (hit?.kind === "planet") {
-      setHint("");
-      showBodyInfo(hit);
-      return;
-    }
-    setHint("Empty space — nothing here.");
-    showBodyInfo(null);
+    dispatchBodyClick(hit);
   };
 
   canvas.onmousemove = ev => {
@@ -1332,26 +1312,20 @@ function render() {
   infoPanel.style.display = entry.level === "system" ? "block" : "none";
   if (entry.level === "system") renderSystem(entry, data);
   else renderUniverse(entry, data);
-  ensureEffectLoop();
-}
-// Mirrors battle/render.js's own draw()/ensureEffectLoop split: render()
-// paints one frame (reading whatever's left in `effects`, each already
-// carrying its own alpha-implying start/dur), and whenever a laser is
-// still fading this also keeps a requestAnimationFrame loop alive to
-// repaint on subsequent frames, stopping itself once every effect has
-// expired -- callers everywhere else just call render() once per action,
-// same as always, and get the fade animation for free.
-let effectLoopRunning = false;
-function ensureEffectLoop() {
-  if (effectLoopRunning || !effects.length) return;
-  effectLoopRunning = true;
-  const tick = () => {
-    const now = performance.now();
-    for (let i = effects.length - 1; i >= 0; i--) if (now - effects[i].start >= effects[i].dur) effects.splice(i, 1);
-    if (effects.length) { render(); requestAnimationFrame(tick); }
-    else effectLoopRunning = false;
-  };
-  requestAnimationFrame(tick);
+  // Mirrors battle/render.js's own draw()/ensureEffectLoop split: render()
+  // paints one frame (reading whatever's left in `effects`, each already
+  // carrying its own alpha-implying start/dur), and whenever a laser is
+  // still fading this also keeps a requestAnimationFrame loop alive to
+  // repaint on subsequent frames, stopping itself once every effect has
+  // expired -- callers everywhere else just call render() once per action,
+  // same as always, and get the fade animation for free. The loop
+  // mechanics themselves are shared with battle/render.js's own laser-fade
+  // loop -- see battle/core/effectLoop.js.
+  ensureEffectLoop({
+    pruneExpired: now => { for (let i = effects.length - 1; i >= 0; i--) if (now - effects[i].start >= effects[i].dur) effects.splice(i, 1); },
+    hasEffects: () => effects.length > 0,
+    repaint: () => render(),
+  });
 }
 
 function zoomIn(enter, label) {

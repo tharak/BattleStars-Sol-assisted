@@ -36,16 +36,24 @@ export function pixelToKm(layout, x, y) {
   return [km * Math.cos(angle), km * Math.sin(angle)];
 }
 
-export function drawOrbitalBoard(ctx, layout, { colorsFor, isSelected, labelMinPx = 0 }) {
+// A faint orbit-path ring -- shared by drawOrbitalBoard's own per-body
+// loop below and map/main.js's drawRing (which also needs an arbitrary
+// center, for moon-around-planet rings, not just the board origin), so
+// the color/width and the "too small to bother drawing" cutoff can't
+// drift apart between the two.
+export function strokeFaintRing(ctx, cx, cy, r) {
+  if (r < 1) return;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.strokeStyle = "#1d243855";
   ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+export function drawOrbitalBoard(ctx, layout, { colorsFor, isSelected, labelMinPx = 0 }) {
   for (const b of layout.placed) {
     if (!b.orbit) continue;
-    const r = Math.hypot(b.x, b.y);
-    if (r < 1) continue;
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.stroke();
+    strokeFaintRing(ctx, 0, 0, Math.hypot(b.x, b.y));
   }
 
   const drawDot = b => {
