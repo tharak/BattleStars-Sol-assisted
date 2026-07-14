@@ -610,8 +610,8 @@ export function createSystemScene({
       raycaster.setFromCamera(ndcFromEvent(clientX, clientY), camera);
       const hits = raycaster.intersectObjects(pickables, true);
       if (!hits.length) return null;
-      const shipHit = hits.find(h => resolveHit(h.object)?.kind === "ship");
-      return resolveHit((shipHit || hits[0]).object);
+      const fleetHit = hits.find(h => resolveHit(h.object)?.kind === "fleet");
+      return resolveHit((fleetHit || hits[0]).object);
     },
     // Where the cursor's ray crosses the orbital (Y=0) plane, in the same
     // world x/z units everything else uses -- e.g. for fleet movement.

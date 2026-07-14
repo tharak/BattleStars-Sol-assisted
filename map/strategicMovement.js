@@ -28,7 +28,7 @@ export function resolveStrategicClick({
 }) {
   if (travelArmed && hasWorldPoint) return StrategicClickAction.SET_COURSE;
   if (groupMoveArmed && reachable) return StrategicClickAction.MOVE;
-  if (hitKind === "ship") return StrategicClickAction.SHIP;
+  if (hitKind === "fleet") return StrategicClickAction.SHIP;
   if (reachable) return StrategicClickAction.MOVE;
   return StrategicClickAction.NONE;
 }

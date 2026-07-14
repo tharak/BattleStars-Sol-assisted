@@ -181,10 +181,10 @@ function infoFor(hit) {
   if (hit.kind === "moon") return { name: hit.label, detail: `Moon of ${hit.parentLabel}.` };
   if (hit.kind === "planet") return { name: hit.label, detail: `Planet. Gravity current: ${gravitySpinDirection(hit.id) > 0 ? "clockwise" : "counter-clockwise"}.` };
   if (hit.kind === "asteroid") return { name: "Asteroid", detail: `Costs a full ${MP_MAX} MP to push through; still blocks line of sight.` };
-  if (hit.kind === "ship") {
+  if (hit.kind === "fleet") {
     return {
-      name: `${SC.labelOf(world, hit.id)}${hit.isFlag ? " ★" : ""}`,
-      detail: `${FACTIONS[hit.faction].label} — Str ${SC.strengthOf(world, hit.id)}, ${STATE_NAME[SC.moraleOf(world, hit.id)]}.`,
+      name: `Fleet ${SC.labelOf(world, hit.id)}${hit.isFlag ? " ★" : ""}`,
+      detail: `${FACTIONS[hit.faction].label} Armada — ${SC.strengthOf(world, hit.id)} Ships, ${STATE_NAME[SC.moraleOf(world, hit.id)]}.`,
     };
   }
   return null;
@@ -1847,7 +1847,7 @@ function renderSystem2D(entry, data) {
   function hitAt(x, y) {
     const within = b => {
       const [sx, sy] = worldToScreen(camera2d, b.x, b.y);
-      const tap = (b.kind === "ship" || b.kind === "asteroid") ? b.hitRPx : Math.max(screenRadius(b), 10);
+      const tap = (b.kind === "fleet" || b.kind === "asteroid") ? b.hitRPx : Math.max(screenRadius(b), 10);
       return Math.hypot(x - sx, y - sy) <= tap;
     };
     return ships.find(within)

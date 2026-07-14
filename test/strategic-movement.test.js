@@ -331,10 +331,10 @@ test("click-route execution applies advertised MP, position, facing, and fire re
 
 test("Set Course has priority over reachable movement and ship clicks while armed", () => {
   assert.equal(resolveStrategicClick({
-    travelArmed: true, hasWorldPoint: true, hitKind: "ship", reachable: true,
+    travelArmed: true, hasWorldPoint: true, hitKind: "fleet", reachable: true,
   }), StrategicClickAction.SET_COURSE);
   assert.equal(resolveStrategicClick({
-    travelArmed: false, hasWorldPoint: true, hitKind: "ship", reachable: true,
+    travelArmed: false, hasWorldPoint: true, hitKind: "fleet", reachable: true,
   }), StrategicClickAction.SHIP);
   assert.equal(resolveStrategicClick({
     travelArmed: false, hasWorldPoint: true, reachable: true,
@@ -343,9 +343,9 @@ test("Set Course has priority over reachable movement and ship clicks while arme
 
 test("armed command-group destinations take priority over ship tokens", () => {
   assert.equal(resolveStrategicClick({
-    groupMoveArmed: true, hasWorldPoint: true, hitKind: "ship", reachable: true,
+    groupMoveArmed: true, hasWorldPoint: true, hitKind: "fleet", reachable: true,
   }), StrategicClickAction.MOVE);
   assert.equal(resolveStrategicClick({
-    travelArmed: true, groupMoveArmed: true, hasWorldPoint: true, hitKind: "ship", reachable: true,
+    travelArmed: true, groupMoveArmed: true, hasWorldPoint: true, hitKind: "fleet", reachable: true,
   }), StrategicClickAction.SET_COURSE);
 });
