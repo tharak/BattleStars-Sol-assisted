@@ -562,7 +562,7 @@ function armTravel() {
 function toggleGroupMove() {
   const ships = commandGroupShips();
   if (!activation) return;
-  if (groupMoveArmed) {
+  if (groupMoveArmed || groupMovePreferences.has(activation.u)) {
     groupMoveArmed = false;
     groupMovePreferences.delete(activation.u);
   } else {
@@ -645,6 +645,8 @@ function renderInfoPanel() {
     infoDetail.textContent = `${FACTIONS[SC.factionOf(world, u)].label} — Str ${SC.strengthOf(world, u)}, ${STATE_NAME[SC.moraleOf(world, u)]}`;
     infoControls.style.display = "flex";
     const commandedShips = commandGroupShips();
+    const groupMoveSaved = SC.isFlagship(world, u) && groupMovePreferences.has(u);
+    const groupMoveEnabled = groupMoveArmed || groupMoveSaved;
     const groupForwardRoute = groupMoveArmed ? groupRouteTo(SC.forwardHex(world, u)) : null;
     const groupBackwardRoute = groupMoveArmed ? groupRouteTo(SC.backwardHex(world, u)) : null;
     infoShipStatus.innerHTML =
@@ -665,11 +667,11 @@ function renderInfoPanel() {
       : "1 hex astern, keeps facing — costs all remaining MP";
     infoFire.disabled = !SC.canFire(world, activation, beltObstacles);
     infoGroupMove.style.display = SC.isFlagship(world, u) ? "" : "none";
-    infoGroupMove.textContent = groupMoveArmed
+    infoGroupMove.textContent = groupMoveEnabled
       ? "Cancel group move"
       : `Move command group (${commandedShips.length})`;
-    infoGroupMove.disabled = !groupMoveArmed && (!SC.canMove(activation) || commandedShips.length < 2);
-    infoGroupMove.setAttribute("aria-pressed", String(groupMoveArmed));
+    infoGroupMove.disabled = !groupMoveEnabled && (!SC.canMove(activation) || commandedShips.length < 2);
+    infoGroupMove.setAttribute("aria-pressed", String(groupMoveEnabled));
     return;
   }
   const shown = hoverInfo || lastClickedInfo;

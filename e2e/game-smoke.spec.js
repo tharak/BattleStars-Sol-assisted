@@ -65,6 +65,11 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
     await turnLeft.click();
     await expect(page.locator("#infoShipStatus")).toContainText("MP 2/3");
     await expect(groupMove).toHaveAttribute("aria-pressed", "true");
+    await groupMove.click();
+    await expect(groupMove).toHaveAttribute("aria-pressed", "false");
+    await expect(groupMove).toContainText("Move command group");
+    await groupMove.click();
+    await expect(groupMove).toHaveAttribute("aria-pressed", "true");
     await turnLeft.click();
     await turnLeft.click();
     await expect(page.locator(".turnShip").first()).toContainText("Acted");
