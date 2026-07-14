@@ -19,8 +19,15 @@ export const StrategicClickAction = Object.freeze({
   NONE: "none",
 });
 
-export function resolveStrategicClick({ travelArmed = false, hasWorldPoint = false, hitKind = null, reachable = false }) {
+export function resolveStrategicClick({
+  travelArmed = false,
+  groupMoveArmed = false,
+  hasWorldPoint = false,
+  hitKind = null,
+  reachable = false,
+}) {
   if (travelArmed && hasWorldPoint) return StrategicClickAction.SET_COURSE;
+  if (groupMoveArmed && reachable) return StrategicClickAction.MOVE;
   if (hitKind === "ship") return StrategicClickAction.SHIP;
   if (reachable) return StrategicClickAction.MOVE;
   return StrategicClickAction.NONE;
@@ -174,6 +181,83 @@ export function findReachableDestinations({
   return destinations;
 }
 
+// Translate a formation member by the same axial-grid displacement as its
+// leader. Offset coordinates cannot be subtracted directly across odd rows;
+// converting to axial first keeps the member's relative hex offset intact.
+export function translateFormationHex(position, leaderStart, leaderDestination) {
+  const [memberQ, memberR] = toAxial(position[0], position[1]);
+  const [startQ, startR] = toAxial(leaderStart[0], leaderStart[1]);
+  const [destinationQ, destinationR] = toAxial(leaderDestination[0], leaderDestination[1]);
+  return fromAxial(memberQ + destinationQ - startQ, memberR + destinationR - startR);
+}
+
+export function membersWithinCommand(leaderId, friendlyMembers, commandRadius) {
+  const leader = friendlyMembers.find(member => member.id === leaderId);
+  if (!leader || commandRadius < 0) return [];
+  return friendlyMembers.filter(member => hexDist(leader.position, member.position) <= commandRadius);
+}
+
+/**
+ * Find leader destinations that every member can reach while preserving the
+ * formation's relative hex offsets. Each member gets its own strategic search,
+ * so facing, morale, terrain, and movement rules still apply independently.
+ * The formation command costs the most expensive member route.
+ */
+export function findGroupReachableDestinations({
+  leaderId,
+  members = [],
+  activation,
+  enemyPositions = [],
+  movementAllowance = MAX_MOVEMENT_POINTS,
+  movementCost = (_member, nextPosition) => forwardMovementCost(),
+  isBlocked = () => false,
+}) {
+  const destinations = new Map();
+  const leader = members.find(member => member.id === leaderId);
+  if (!leader || !activation || !canMoveDuringActivation(activation)) return destinations;
+
+  const routeMaps = new Map();
+  for (const member of members) {
+    routeMaps.set(member.id, findReachableDestinations({
+      position: member.position,
+      facing: member.facing,
+      activation: { ...activation, u: member.id, cmd: true },
+      moraleState: member.moraleState,
+      enemyPositions,
+      movementAllowance,
+      movementCost: nextPosition => movementCost(member, nextPosition),
+      isBlocked: nextPosition => isBlocked(member, nextPosition),
+    }));
+  }
+
+  const leaderRoutes = routeMaps.get(leaderId);
+  for (const [destinationKey, leaderRoute] of leaderRoutes) {
+    const memberRoutes = [];
+    let groupCost = 0;
+    let allReachable = true;
+    for (const member of members) {
+      const target = member.id === leaderId
+        ? leaderRoute.position
+        : translateFormationHex(member.position, leader.position, leaderRoute.position);
+      const route = member.id === leaderId ? leaderRoute : routeMaps.get(member.id).get(key(target[0], target[1]));
+      if (!route) {
+        allReachable = false;
+        break;
+      }
+      groupCost = Math.max(groupCost, route.cost);
+      memberRoutes.push({ memberId: member.id, route });
+    }
+    if (!allReachable || groupCost > activation.mp) continue;
+    destinations.set(destinationKey, {
+      ...leaderRoute,
+      cost: groupCost,
+      remainingMp: activation.mp - groupCost,
+      memberRoutes,
+    });
+  }
+  return destinations;
+}
+
 // The center plus rings one and two: 1 + 6 + 12 = 19 unique cells.
 export function hexPatch(center, radius = 2) {
   if (!center || radius < 0) return [];
@@ -206,6 +290,23 @@ export function executeStrategicRoute(route, {
   }
   if (activation) {
     activation.mp = route.remainingMp;
+    activation.moved = true;
+    activation.fireMode = false;
+  }
+  return { ok: true };
+}
+
+/** Execute every prevalidated member route, then commit activation once. */
+export function executeStrategicGroupRoute(groupRoute, { activation = null, actionsFor }) {
+  if (!groupRoute?.memberRoutes?.length) return { ok: false, reason: "missing_group_route" };
+  for (const { memberId, route } of groupRoute.memberRoutes) {
+    const actions = actionsFor(memberId);
+    if (!actions) return { ok: false, reason: "missing_member_actions", memberId };
+    const result = executeStrategicRoute(route, actions);
+    if (!result.ok) return { ...result, memberId };
+  }
+  if (activation) {
+    activation.mp = groupRoute.remainingMp;
     activation.moved = true;
     activation.fireMode = false;
   }

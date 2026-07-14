@@ -260,7 +260,7 @@ export function createSystemScene({
   // applied via a quaternion rather than an Euler angle so there's no
   // manual sign-guessing about which way "positive rotation" goes in this
   // scene's particular axis convention.
-  function addShip({ x, z, colorHex, data, selected, facingDeg, isFlag, isTarget, targetColor }) {
+  function addShip({ x, z, colorHex, data, selected, facingDeg, isFlag, isTarget, targetColor, isGroupMember }) {
     // Grounded at the plane, not lifted -- unlike the old ring-only
     // marker, this group now holds both the flat hex token (which
     // should visibly rest on the orbital plane, at SHIP_BASE_Y) and the raised
@@ -292,9 +292,9 @@ export function createSystemScene({
     // *attacker's* own color (targetColor, from map/main.js's
     // shipsSnapshot), not a fixed accent -- reads as "who can hit this"
     // and won't vanish against a same-colored hull.
-    if (selected || isTarget) {
+    if (selected || isTarget || isGroupMember) {
       const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
-        new THREE.LineBasicMaterial({ color: selected ? 0xffffff : targetColor }));
+        new THREE.LineBasicMaterial({ color: selected ? 0xffffff : (isTarget ? targetColor : ACCENT.flagshipArrow) }));
       edges.position.y = SHIP_HEIGHT_ABOVE_PLANE;
       edges.quaternion.copy(ship.quaternion);
       group.add(edges);
@@ -344,8 +344,8 @@ export function createSystemScene({
       const edgeGeo = new LineSegmentsGeometry();
       edgeGeo.setPositions(flat);
       const edgeMat = new LineMaterial({
-        color: selected ? 0xffffff : (isTarget ? targetColor : colorHex), linewidth: w,
-        resolution: new THREE.Vector2(sizePx, sizePx), transparent: true, opacity: selected || isTarget ? 1 : 0.9,
+        color: selected ? 0xffffff : (isTarget ? targetColor : (isGroupMember ? ACCENT.flagshipArrow : colorHex)), linewidth: w,
+        resolution: new THREE.Vector2(sizePx, sizePx), transparent: true, opacity: selected || isTarget || isGroupMember ? 1 : 0.9,
       });
       group.add(new LineSegments2(edgeGeo, edgeMat));
     }
@@ -506,8 +506,12 @@ export function createSystemScene({
 
   // Pointer movement only replaces this tiny group; bodies, textures,
   // gravity fields, asteroids, and ships stay in their retained groups.
-  function updateSparseOverlays({ hoverCells = [], reachableCells = [], hoveredKey = null, colorHex, hexSize }) {
+  function updateSparseOverlays({ commandCells = [], hoverCells = [], reachableCells = [], hoveredKey = null, colorHex, hexSize }) {
     clearGroup(transientOverlayGroup);
+    if (colorHex) {
+      addHexFills(commandCells, hexSize, { color: colorHex, opacity: 0.035 });
+      addHexLines(commandCells, hexSize, { color: colorHex, opacity: 0.2, linewidth: 1 });
+    }
     addHexLines(hoverCells, hexSize, { color: 0x8892ab, opacity: 0.55, linewidth: 1 });
     if (colorHex) {
       const hovered = reachableCells.filter(cell => cell.key === hoveredKey);

@@ -12,13 +12,14 @@ import { DIR_ANGLE, directionToward, hexCorners, key as hexKey } from "../battle
 import { formationLayout } from "../battle/formations.js";
 import { BOARD_TINT, ACCENT } from "../battle/colors.js";
 import { LINE_WIDTH, LASER_DURATION, LASER_HALO_ALPHA } from "../battle/dimensions.js";
-import { MP_MAX, STATE_NAME } from "../battle/config.js";
+import { CMD_R, MP_MAX, STATE_NAME } from "../battle/config.js";
 import * as SC from "../battle/core/shipRules.js";
 import { MathRandomSource } from "../battle/core/random.js";
 import { forwardMovementCost } from "../battle/domain/movementRules.js";
 import { makeEffectLoop } from "../battle/core/effectLoop.js";
 import {
-  executeStrategicRoute, findReachableDestinations, hexPatch, resolveStrategicClick, StrategicClickAction,
+  executeStrategicGroupRoute, executeStrategicRoute, findGroupReachableDestinations,
+  findReachableDestinations, hexPatch, membersWithinCommand, resolveStrategicClick, StrategicClickAction,
 } from "./strategicMovement.js";
 import { buildGravityFieldGroups, warpGravityPoint } from "./gravityField.js";
 
@@ -43,6 +44,7 @@ const infoForward = document.getElementById("infoForward");
 const infoBack = document.getElementById("infoBack");
 const infoFire = document.getElementById("infoFire");
 const infoTravel = document.getElementById("infoTravel");
+const infoGroupMove = document.getElementById("infoGroupMove");
 const infoEnd = document.getElementById("infoEnd");
 const mapArea = document.getElementById("mapArea");
 const urlParams = new URLSearchParams(window.location.search);
@@ -94,6 +96,7 @@ const random = new MathRandomSource();
 let selectedShip = null;
 let activation = null;
 let travelArmed = false;
+let groupMoveArmed = false;
 // Fire's own transient shot-line records, derived here from fire results
 // -- a parallel, map-local array to battle's own presentation effects (not
 // shared with it), each with a start timestamp/duration so ensureEffectLoop
@@ -195,6 +198,7 @@ function selectShip(e) {
   selectedShip = e;
   activation = { u: e, mp: MP_MAX, moved: false, fired: false, fireMode: false, cmd: SC.inCommand(world, e) };
   travelArmed = false;
+  groupMoveArmed = false;
   setHint(`${SC.labelOf(world, e)} selected.`);
   renderInfoPanel();
   render();
@@ -209,6 +213,7 @@ function clearSelection() {
   selectedShip = null;
   activation = null;
   travelArmed = false;
+  groupMoveArmed = false;
 }
 // Mirrors the tactical activation lifecycle, but with no proceed handoff
 // hand-off to another unit/side -- there's nothing to hand off to.
@@ -219,7 +224,7 @@ function endActivation() {
   render();
 }
 function doTurn(dir) {
-  if (!SC.canMove(activation)) return;
+  if (groupMoveArmed || !SC.canMove(activation)) return;
   SC.turn(world, activation.u, dir);
   activation.mp--; activation.moved = true; activation.fireMode = false;
   setHint("");
@@ -258,9 +263,38 @@ function hexMoveCost(hex) {
   });
 }
 
+function commandGroupShips() {
+  if (!activation || !SC.isAlive(world, activation.u) || !SC.isFlagship(world, activation.u)) return [];
+  const friendlyMembers = SC.shipsOfFaction(world, SC.factionOf(world, activation.u))
+    .map(id => ({ id, position: SC.posOf(world, id) }));
+  return membersWithinCommand(activation.u, friendlyMembers, CMD_R).map(member => member.id);
+}
+
+function commandGroupMembers() {
+  return commandGroupShips().map(id => ({
+    id,
+    position: SC.posOf(world, id),
+    facing: SC.facingOf(world, id),
+    moraleState: SC.moraleOf(world, id),
+  }));
+}
+
+function groupMoveText(route) {
+  return `${route.memberRoutes.length} ships move together · ${route.cost} MP`;
+}
+
 function recomputeReachableMoves() {
   if (!activation || !SC.isAlive(world, activation.u)) {
     reachableMoves = new Map();
+  } else if (groupMoveArmed) {
+    reachableMoves = findGroupReachableDestinations({
+      leaderId: activation.u,
+      members: commandGroupMembers(),
+      activation,
+      enemyPositions: SC.enemiesOf(world, SC.factionOf(world, activation.u)).map(e => SC.posOf(world, e)),
+      movementAllowance: MP_MAX,
+      movementCost: (_member, nextPosition) => hexMoveCost(nextPosition),
+    });
   } else {
     reachableMoves = findReachableDestinations({
       position: SC.posOf(world, activation.u),
@@ -273,19 +307,32 @@ function recomputeReachableMoves() {
     });
   }
   const hoveredRoute = pointerHex ? reachableMoves.get(hexKey(pointerHex[0], pointerHex[1])) : null;
-  hoverMoveHint = hoveredRoute ? `Move here · ${hoveredRoute.cost} MP` : null;
+  hoverMoveHint = hoveredRoute
+    ? (groupMoveArmed ? groupMoveText(hoveredRoute) : `Move here · ${hoveredRoute.cost} MP`)
+    : null;
   renderHint();
 }
 
 function executeReachableMove(route) {
   if (!activation || route.cost > activation.mp) return false;
-  const result = executeStrategicRoute(route, {
-    activation,
-    turnLeft: () => SC.turn(world, activation.u, 1),
-    turnRight: () => SC.turn(world, activation.u, -1),
-    moveForward: () => SC.moveForward(world, activation.u),
-    moveBackward: () => SC.moveBackward(world, activation.u),
-  });
+  const movingAsGroup = groupMoveArmed && route.memberRoutes;
+  const result = movingAsGroup
+    ? executeStrategicGroupRoute(route, {
+      activation,
+      actionsFor: ship => ({
+        turnLeft: () => SC.turn(world, ship, 1),
+        turnRight: () => SC.turn(world, ship, -1),
+        moveForward: () => SC.moveForward(world, ship),
+        moveBackward: () => SC.moveBackward(world, ship),
+      }),
+    })
+    : executeStrategicRoute(route, {
+      activation,
+      turnLeft: () => SC.turn(world, activation.u, 1),
+      turnRight: () => SC.turn(world, activation.u, -1),
+      moveForward: () => SC.moveForward(world, activation.u),
+      moveBackward: () => SC.moveBackward(world, activation.u),
+    });
   if (!result.ok) {
     moveResultHint(result);
     renderInfoPanel();
@@ -295,13 +342,16 @@ function executeReachableMove(route) {
   // The route's individual rule calls mutate only position/facing. The
   // activation bookkeeping is committed once after the complete route.
   hoverPatchCenter = null;
-  setHint(`${SC.labelOf(world, activation.u)} moved ${route.cost} MP.`);
+  if (movingAsGroup && activation.mp === 0) groupMoveArmed = false;
+  setHint(movingAsGroup
+    ? `${route.memberRoutes.length} ships moved together for ${route.cost} MP.`
+    : `${SC.labelOf(world, activation.u)} moved ${route.cost} MP.`);
   renderInfoPanel();
   render();
   return true;
 }
 function doForward() {
-  if (!SC.canMove(activation)) return;
+  if (groupMoveArmed || !SC.canMove(activation)) return;
   const cost = hexMoveCost(SC.forwardHex(world, activation.u));
   if (activation.mp < cost) { setHint(`Not enough MP -- that hex costs ${cost}.`); renderInfoPanel(); return; }
   const res = SC.moveForward(world, activation.u);
@@ -312,7 +362,7 @@ function doForward() {
   render();
 }
 function doBackward() {
-  if (!SC.canBack(activation)) return;
+  if (groupMoveArmed || !SC.canBack(activation)) return;
   const res = SC.moveBackward(world, activation.u);
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp = 0; activation.moved = true; activation.fireMode = false;
@@ -326,13 +376,15 @@ function doBackward() {
 // "pick a highlighted target" in the panel.
 function armFireMode() {
   if (!SC.canFire(world, activation, beltObstacles)) return;
+  groupMoveArmed = false;
   activation.fireMode = true;
-  renderInfoPanel();
+  render();
 }
 function doFireAt(tgt) {
   if (!SC.canFire(world, activation, beltObstacles)) return;
   if (!SC.legalTargets(world, activation.u, beltObstacles).includes(tgt)) return;
   const firer = activation.u;
+  groupMoveArmed = false;
   const result = SC.fire(world, firer, tgt, random);
   effects.push({
     from: result.from, to: result.to, hit: result.hits > 0, start: performance.now(),
@@ -352,9 +404,22 @@ function doFireAt(tgt) {
 // for real interplanetary distances the hex-by-hex MP budget can't cover.
 function armTravel() {
   if (!activation) return;
+  groupMoveArmed = false;
   travelArmed = true;
   setHint("Click a destination to set course.");
+  render();
+}
+function toggleGroupMove() {
+  const ships = commandGroupShips();
+  if (!activation || !SC.canMove(activation) || ships.length < 2) return;
+  groupMoveArmed = !groupMoveArmed;
+  travelArmed = false;
+  activation.fireMode = false;
+  setHint(groupMoveArmed
+    ? `Command-group move armed for ${ships.length} ships. Pick a highlighted destination.`
+    : "Command-group move cancelled.");
   renderInfoPanel();
+  render();
 }
 function setCourse(x, y) {
   const [c, r] = pixelToHexIndex(x, y);
@@ -376,6 +441,7 @@ function handleShipOrDestinationClick(hit, worldPoint) {
   const route = activation && destination ? reachableMoves.get(hexKey(destination[0], destination[1])) : null;
   const clickAction = resolveStrategicClick({
     travelArmed: !!(activation && travelArmed),
+    groupMoveArmed: !!(activation && groupMoveArmed),
     hasWorldPoint: !!worldPoint,
     hitKind: hit?.kind,
     reachable: !!route,
@@ -403,7 +469,11 @@ function dispatchBodyClick(hit) {
   showBodyInfo(null);
 }
 function renderInfoPanel() {
-  if (selectedShip != null && !SC.isAlive(world, selectedShip)) { selectedShip = null; activation = null; }
+  if (selectedShip != null && !SC.isAlive(world, selectedShip)) {
+    selectedShip = null;
+    activation = null;
+    groupMoveArmed = false;
+  }
   if (selectedShip != null) {
     const u = selectedShip;
     infoEmpty.style.display = "none";
@@ -411,14 +481,22 @@ function renderInfoPanel() {
     infoName.textContent = `${SC.labelOf(world, u)}${SC.isFlagship(world, u) ? " ★" : ""}`;
     infoDetail.textContent = `${FACTIONS[SC.factionOf(world, u)].label} — Str ${SC.strengthOf(world, u)}, ${STATE_NAME[SC.moraleOf(world, u)]}`;
     infoControls.style.display = "flex";
+    const commandedShips = commandGroupShips();
     infoShipStatus.innerHTML =
       `${activation.cmd ? "In command (move + fire)" : "Out of command (move OR fire)"}<br>` +
       `MP ${activation.mp}/${MP_MAX}${activation.fired ? " · has fired" : ""}` +
       (activation.fireMode ? `<br><span style="color:var(--red)">Pick a highlighted target.</span>` : "") +
-      (travelArmed ? `<br><span style="color:var(--red)">Click a destination.</span>` : "");
-    infoTurnL.disabled = infoTurnR.disabled = infoForward.disabled = !SC.canMove(activation);
-    infoBack.disabled = !SC.canBack(activation);
+      (travelArmed ? `<br><span style="color:var(--red)">Click a destination.</span>` : "") +
+      (groupMoveArmed ? `<br><span style="color:var(--gold)">${commandedShips.length} ships moving together. Pick a highlighted destination.</span>` : "");
+    infoTurnL.disabled = infoTurnR.disabled = infoForward.disabled = groupMoveArmed || !SC.canMove(activation);
+    infoBack.disabled = groupMoveArmed || !SC.canBack(activation);
     infoFire.disabled = !SC.canFire(world, activation, beltObstacles);
+    infoGroupMove.style.display = SC.isFlagship(world, u) ? "" : "none";
+    infoGroupMove.textContent = groupMoveArmed
+      ? "Cancel group move"
+      : `Move command group (${commandedShips.length})`;
+    infoGroupMove.disabled = !groupMoveArmed && (!SC.canMove(activation) || commandedShips.length < 2);
+    infoGroupMove.setAttribute("aria-pressed", String(groupMoveArmed));
     return;
   }
   const shown = hoverInfo || lastClickedInfo;
@@ -439,6 +517,7 @@ infoForward.onclick = doForward;
 infoBack.onclick = doBackward;
 infoFire.onclick = armFireMode;
 infoTravel.onclick = armTravel;
+infoGroupMove.onclick = toggleGroupMove;
 infoEnd.onclick = endActivation;
 
 function levelData(entry) {
@@ -653,7 +732,11 @@ function sparseOverlaySnapshot() {
     const [x, z] = shipHexOffset(c, r);
     return { c, r, x, z, key: hexKey(c, r) };
   };
+  const commandCenter = selectedShip != null && SC.isAlive(world, selectedShip) && SC.isFlagship(world, selectedShip)
+    ? SC.posOf(world, selectedShip)
+    : null;
   return {
+    commandCells: commandCenter ? hexPatch(commandCenter, CMD_R).map(toCell) : [],
     hoverCells: hoverPatchCenter ? hexPatch(hoverPatchCenter).map(toCell) : [],
     reachableCells: [...reachableMoves.values()].map(route => ({ ...toCell(route.position), cost: route.cost })),
     hoveredKey: pointerHex ? hexKey(pointerHex[0], pointerHex[1]) : null,
@@ -674,7 +757,9 @@ function updateSystemHover(hit, worldPoint, refreshOverlay) {
   pointerHex = nextPointer;
   hoverPatchCenter = nextPatch;
   const route = nextPointerKey ? reachableMoves.get(nextPointerKey) : null;
-  hoverMoveHint = route ? `Move here · ${route.cost} MP` : null;
+  hoverMoveHint = route
+    ? (groupMoveArmed ? groupMoveText(route) : `Move here · ${route.cost} MP`)
+    : null;
   renderHint();
   refreshOverlay();
 }
@@ -741,6 +826,7 @@ function shipsSnapshot() {
   // this" at a glance.
   const targets = activation && SC.canFire(world, activation, beltObstacles)
     ? new Set(SC.legalTargets(world, activation.u, beltObstacles)) : null;
+  const groupMembers = groupMoveArmed ? new Set(commandGroupShips()) : null;
   const targetColor = targets ? colorsFor({ faction: SC.factionOf(world, activation.u) }).fill : null;
   return SC.aliveShips(world).map(e => {
     const [c, r] = SC.posOf(world, e);
@@ -748,7 +834,7 @@ function shipsSnapshot() {
     return {
       id: e, kind: "ship", faction: SC.factionOf(world, e), isFlag: SC.isFlagship(world, e),
       label: SC.labelOf(world, e), facingDeg: DIR_ANGLE[SC.facingOf(world, e)],
-      isTarget: !!targets?.has(e), targetColor,
+      isTarget: !!targets?.has(e), targetColor, isGroupMember: !!groupMembers?.has(e),
       x, y,
     };
   });
@@ -989,7 +1075,7 @@ function renderSystem3D(entry, data) {
       addShip({
         x: s.x, z: s.y, colorHex: colorsFor(s).fill, data: s,
         selected: s.id === selectedShip, facingDeg: s.facingDeg, isFlag: s.isFlag,
-        isTarget: s.isTarget, targetColor: s.targetColor,
+        isTarget: s.isTarget, targetColor: s.targetColor, isGroupMember: s.isGroupMember,
       });
     }
     // A shot's tracer, fading over time -- see ensureEffectLoop, which owns
@@ -1151,6 +1237,9 @@ function renderSystem2D(entry, data) {
     ctx.stroke();
   };
   const sparseOverlay = sparseOverlaySnapshot();
+  for (const cell of sparseOverlay.commandCells) {
+    drawOverlayHex(cell, { fill: hexToRgba(sparseOverlay.colorHex, 0.035), stroke: hexToRgba(sparseOverlay.colorHex, 0.2) });
+  }
   for (const cell of sparseOverlay.hoverCells) {
     drawOverlayHex(cell, { stroke: "rgba(136,146,171,0.55)" });
   }
@@ -1212,8 +1301,8 @@ function renderSystem2D(entry, data) {
     ctx.closePath();
     ctx.fillStyle = hexToRgba(colors.fill, SHIP_FILL_ALPHA);
     ctx.fill();
-    ctx.lineWidth = selected ? 2 : 1;
-    ctx.strokeStyle = selected ? "#ffffff" : colors.stroke;
+    ctx.lineWidth = selected || ship.isGroupMember ? 2 : 1;
+    ctx.strokeStyle = selected ? "#ffffff" : (ship.isGroupMember ? ACCENT.flagshipArrow : colors.stroke);
     ctx.stroke();
 
     const [tip, base1, base2] = shipArrowPoints(sx, sy, s, ship.facingDeg);

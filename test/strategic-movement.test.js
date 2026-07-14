@@ -6,12 +6,16 @@ import { hexDist, key } from "../battle/hexmath.js";
 import * as SC from "../battle/core/shipRules.js";
 import {
   compareStrategicRoutes,
+  executeStrategicGroupRoute,
   executeStrategicRoute,
+  findGroupReachableDestinations,
   findReachableDestinations,
   hexPatch,
+  membersWithinCommand,
   resolveStrategicClick,
   StrategicClickAction,
   StrategicMoveAction,
+  translateFormationHex,
 } from "../map/strategicMovement.js";
 
 const activation = (overrides = {}) => ({
@@ -130,6 +134,93 @@ test("equal-cost route ties are deterministic and preserve final facing", () => 
   assert.equal(route.finalFacing, 2);
 });
 
+test("command-group search preserves axial formation offsets and charges the slowest member", () => {
+  const act = activation();
+  const members = [
+    { id: 1, position: [0, 0], facing: 0, moraleState: MoraleState.STEADY },
+    { id: 2, position: [0, 1], facing: 5, moraleState: MoraleState.STEADY },
+  ];
+  const routes = findGroupReachableDestinations({ leaderId: 1, members, activation: act });
+  const route = routes.get("1,0");
+
+  assert.ok(route);
+  assert.equal(route.cost, 2, "the wing ship must turn before translating one hex");
+  assert.equal(route.remainingMp, 1);
+  assert.deepEqual(translateFormationHex([0, 1], [0, 0], route.position), [1, 1]);
+  assert.deepEqual(route.memberRoutes.map(plan => [plan.memberId, plan.route.position]), [
+    [1, [1, 0]],
+    [2, [1, 1]],
+  ]);
+});
+
+test("command-group membership includes the radius boundary and excludes ships beyond it", () => {
+  const members = [
+    { id: 1, position: [0, 0] },
+    { id: 2, position: [4, 0] },
+    { id: 3, position: [4, 1] },
+  ];
+  assert.deepEqual(membersWithinCommand(1, members, 4).map(member => member.id), [1, 2]);
+});
+
+test("command-group destinations are the legal intersection for every member", () => {
+  const members = [
+    { id: 1, position: [0, 0], facing: 0, moraleState: MoraleState.STEADY },
+    { id: 2, position: [0, 1], facing: 0, moraleState: MoraleState.STEADY },
+  ];
+  const routes = findGroupReachableDestinations({
+    leaderId: 1,
+    members,
+    activation: activation(),
+    isBlocked: (member, next) => member.id === 2 && key(...next) === "1,1",
+  });
+
+  assert.equal(routes.has("1,0"), false, "a destination is hidden when one commanded ship cannot translate there");
+  assert.ok(routes.size > 0, "other legal formation translations remain available");
+});
+
+test("a Shaken command-group member vetoes translations toward its nearest enemy", () => {
+  const routes = findGroupReachableDestinations({
+    leaderId: 1,
+    members: [
+      { id: 1, position: [0, 0], facing: 0, moraleState: MoraleState.STEADY },
+      { id: 2, position: [0, 1], facing: 0, moraleState: MoraleState.SHAKEN },
+    ],
+    activation: activation(),
+    enemyPositions: [[2, 1]],
+  });
+
+  assert.equal(routes.has("1,0"), false);
+});
+
+test("command-group execution moves every member and commits activation once", () => {
+  const world = new SC.World();
+  const leader = SC.spawnShip(world, { faction: "blue", c: 0, r: 0, dir: 0, isFlagship: true, label: "Flag" });
+  const wing = SC.spawnShip(world, { faction: "blue", c: 0, r: 1, dir: 5, label: "Wing" });
+  const act = activation({ u: leader });
+  const members = [leader, wing].map(id => ({
+    id,
+    position: SC.posOf(world, id),
+    facing: SC.facingOf(world, id),
+    moraleState: SC.moraleOf(world, id),
+  }));
+  const route = findGroupReachableDestinations({ leaderId: leader, members, activation: act }).get("1,0");
+  const result = executeStrategicGroupRoute(route, {
+    activation: act,
+    actionsFor: id => ({
+      turnLeft: () => SC.turn(world, id, 1),
+      turnRight: () => SC.turn(world, id, -1),
+      moveForward: () => SC.moveForward(world, id),
+      moveBackward: () => SC.moveBackward(world, id),
+    }),
+  });
+
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(SC.posOf(world, leader), [1, 0]);
+  assert.deepEqual(SC.posOf(world, wing), [1, 1]);
+  assert.equal(act.mp, route.remainingMp);
+  assert.equal(act.moved, true);
+});
+
 function movementFixture({ inCommand }) {
   const world = new SC.World();
   if (!inCommand) SC.spawnShip(world, { faction: "blue", c: 20, r: 0, dir: 0, isFlagship: true, label: "Flag" });
@@ -177,4 +268,13 @@ test("Set Course has priority over reachable movement and ship clicks while arme
   assert.equal(resolveStrategicClick({
     travelArmed: false, hasWorldPoint: true, reachable: true,
   }), StrategicClickAction.MOVE);
+});
+
+test("armed command-group destinations take priority over ship tokens", () => {
+  assert.equal(resolveStrategicClick({
+    groupMoveArmed: true, hasWorldPoint: true, hitKind: "ship", reachable: true,
+  }), StrategicClickAction.MOVE);
+  assert.equal(resolveStrategicClick({
+    travelArmed: true, groupMoveArmed: true, hasWorldPoint: true, hitKind: "ship", reachable: true,
+  }), StrategicClickAction.SET_COURSE);
 });

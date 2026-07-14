@@ -47,7 +47,8 @@
   <kbd>S</kbd> back (costs all remaining MP), <kbd>F</kbd> arms fire mode (or just click a highlighted
   enemy in range/arc/LOS to fire directly), <kbd>Space</kbd> ends the activation. Set Course
   repositions the selected ship anywhere on the map in one instant jump, for real interplanetary
-  distances the hex-by-hex MP budget can't cover. The same rules engine also runs standalone as a
+  distances the hex-by-hex MP budget can't cover. Selecting a flagship also reveals its command area
+  and can move every friendly ship inside it as one formation. The same rules engine also runs standalone as a
   <a href="battle.html">battle rules test bench</a>, for trying scenarios/fleet sizes/control modes
   this view doesn't expose.</p>
 
@@ -74,6 +75,7 @@
             <button id="infoBack" title="1 hex astern, keeps facing — costs all remaining MP">▼ Back</button>
             <button id="infoFire" class="danger">Fire</button>
             <button id="infoTravel">Set Course</button>
+            <button id="infoGroupMove" style="display:none">Move command group</button>
           </div>
           <button id="infoEnd" class="primary">End activation</button>
         </div>
