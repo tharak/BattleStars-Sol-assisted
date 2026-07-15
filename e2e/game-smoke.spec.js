@@ -29,6 +29,9 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
 
   await page.goto("/map.html");
   await expect(page.locator("#breadcrumb")).toContainText("Sol");
+  const mapBounds = await page.locator("#mapArea").boundingBox();
+  expect(mapBounds).not.toBeNull();
+  expect(Math.abs(mapBounds.width - mapBounds.height)).toBeLessThan(1);
   await expect(page.locator("#infoPanel")).toBeHidden();
   await expect(page.locator("#turnPanel")).toBeVisible();
   await expect(page.locator("#turnHeading")).toContainText("Blue Armada turn");
