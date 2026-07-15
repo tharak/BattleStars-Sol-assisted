@@ -135,10 +135,11 @@ test("terrain costs admit affordable asteroids and gravity but reject unaffordab
   assert.equal(gravity.has("2,0"), false);
 });
 
-test("depleted MP and out-of-command firing suppress reachable movement", () => {
-  for (const act of [activation({ mp: 0 }), activation({ fired: true, cmd: false })]) {
-    assert.equal(findReachableDestinations({ position: [0, 0], facing: 0, activation: act }).size, 0);
-  }
+test("depleted MP suppresses movement, but firing does not", () => {
+  assert.equal(findReachableDestinations({ position: [0, 0], facing: 0, activation: activation({ mp: 0 }) }).size, 0);
+  assert.ok(findReachableDestinations({
+    position: [0, 0], facing: 0, activation: activation({ fired: true, cmd: false }),
+  }).size > 0);
   assert.ok(findReachableDestinations({
     position: [0, 0], facing: 0, activation: activation({ fired: true, cmd: true }),
   }).size > 0);
@@ -331,7 +332,7 @@ test("click-route execution applies advertised MP, position, facing, and fire re
     assert.equal(act.mp, route.remainingMp);
     assert.equal(MAX_MOVEMENT_POINTS - act.mp, route.cost);
     assert.equal(act.moved, true);
-    assert.equal(SC.canFire(world, act), inCommand);
+    assert.equal(SC.canFire(world, act), true);
   }
 });
 

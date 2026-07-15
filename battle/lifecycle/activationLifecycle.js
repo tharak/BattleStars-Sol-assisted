@@ -61,8 +61,7 @@ export function fireSelectedUnit(context, target) {
   fire(context, context.act.u, target);
   context.act.fired = true;
   context.act.fireMode = false;
-  const activationEnded = !context.act.cmd;
-  return { fired: true, activationEnded };
+  return { fired: true, activationEnded: false };
 }
 
 export function endSelectedActivation(context) {

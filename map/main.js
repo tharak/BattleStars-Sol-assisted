@@ -551,7 +551,6 @@ function doFireAt(tgt) {
   setHint(`${SC.labelOf(world, firer)} fires (${result.arc} arc, ${result.need}+): [${result.rolls.join(" ")}] → ` +
     `${result.hits} hit${result.hits === 1 ? "" : "s"}${result.destroyed ? " — destroyed!" : ""}` +
     (recovered.length ? ` ${recovered.length} friendly Fleet${recovered.length === 1 ? "" : "s"} recovered.` : ""));
-  if (!activation.cmd) { completeCurrentActivation({ preserveHint: true }); return; } // out of command: fire was the whole activation
   finishActionRender();
 }
 // Arms Set Course -- the next click anywhere (body, ship, or empty space)
@@ -661,7 +660,7 @@ function renderInfoPanel() {
     const groupForwardRoute = groupMoveArmed ? groupRouteTo(SC.forwardHex(world, u)) : null;
     const groupBackwardRoute = groupMoveArmed ? groupRouteTo(SC.backwardHex(world, u)) : null;
     infoShipStatus.innerHTML =
-      `${activation.cmd ? "In command (move + fire)" : "Out of command (move OR fire)"}<br>` +
+      `${activation.cmd ? "In command (+1 morale/rally)" : "Out of command"}<br>` +
       `MP ${activation.mp}/${MP_MAX}${activation.fired ? " · has fired" : ""}<br>` +
       `Formation: ${SC.fleetFormationOf(world, u)}` +
       (activation.fireMode ? `<br><span style="color:var(--red)">Pick a highlighted target.</span>` : "") +

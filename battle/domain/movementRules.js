@@ -4,8 +4,7 @@ import { hexDist } from "../hexmath.js";
 export const MOVE_BASE_COST = 1;
 
 export function canMoveDuringActivation(activation) {
-  return !!(activation && activation.u != null && activation.mp > 0
-    && (activation.cmd || !activation.fired));
+  return !!(activation && activation.u != null && activation.mp > 0);
 }
 
 export function canMoveBackwardDuringActivation(activation) {

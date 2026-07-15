@@ -62,7 +62,7 @@ export function updatePanels(state) {
   } else if (act && act.u != null) {
     const u = act.u;
     ai.innerHTML = `<b>${Q.labelOf(state, u)}${Q.isFlagship(state, u) ? " ★" : ""}</b> — str ${Q.strengthOf(state, u)}, ${STATE_NAME[Q.moraleOf(state, u)]}, ` +
-      `${act.cmd ? "in command (move + fire)" : "OUT of command (move OR fire)"}<br>` +
+      `${act.cmd ? "in command (+1 morale/rally)" : "OUT of command"}<br>` +
       `MP ${act.mp}/${MP_MAX}${act.fired ? " · has fired" : ""}` +
       (act.fireMode ? ` · <span style="color:var(--red)">pick a highlighted target</span>` : "") +
       (Q.canSwitchSelection(state) ? `<br><span style="color:var(--dim)">Changed your mind? Click another un-activated Fleet to switch — nothing's committed yet.</span>` : "");

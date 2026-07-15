@@ -130,7 +130,7 @@ export function canBack(act) {
   return canMoveBackwardDuringActivation(act);
 }
 export function canFire(world, act, extraObstacles) {
-  return !!(act && act.u != null && !act.fired && (act.cmd || !act.moved) && legalTargets(world, act.u, extraObstacles).length > 0);
+  return !!(act && act.u != null && !act.fired && legalTargets(world, act.u, extraObstacles).length > 0);
 }
 
 // --- movement --------------------------------------------------------------
