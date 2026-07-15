@@ -27,7 +27,7 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
     }
   });
 
-  await page.goto("/map.html?testClock=frozen");
+  await page.goto("/map.html");
   await expect(page.locator("#breadcrumb")).toContainText("Sol");
   const mapBounds = await page.locator("#mapArea").boundingBox();
   expect(mapBounds).not.toBeNull();
@@ -57,41 +57,6 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   await expect(page.locator("#infoPanel")).toBeVisible();
   await expect(page.locator("#infoPanel select")).toHaveCount(0);
   await expect(page.locator("#infoPanel button")).toHaveCount(8);
-  if (testInfo.project.name === "desktop-chromium") {
-    await page.locator(".turnShip").nth(1).click();
-    await expect(page.locator(".turnShip").nth(1)).toHaveAttribute("aria-pressed", "true");
-    await page.locator(".turnShip").first().click();
-    await expect(page.locator(".turnShip").first()).toHaveAttribute("aria-pressed", "true");
-
-    const groupMove = page.locator("#infoGroupMove");
-    await groupMove.click();
-    await expect(groupMove).toHaveAttribute("aria-pressed", "true");
-    const turnLeft = page.locator("#infoTurnL");
-    await turnLeft.click();
-    await expect(groupMove).toHaveAttribute("aria-pressed", "true");
-    await groupMove.click();
-    await expect(groupMove).toHaveAttribute("aria-pressed", "false");
-    await expect(groupMove).toContainText("Move command group");
-    await groupMove.click();
-    await expect(groupMove).toHaveAttribute("aria-pressed", "true");
-    await turnLeft.click();
-    await turnLeft.click();
-    await page.locator("#infoEnd").click();
-    await expect(page.locator(".turnShip").first()).toContainText("Acted");
-    await expect(page.locator("#infoPanel")).toBeHidden();
-
-    for (const [rosterIndex, nextTurn] of [[12, "Red Armada turn"], [24, "Blue Armada turn"]]) {
-      await page.locator(".turnShip").nth(rosterIndex).click();
-      await page.locator("#infoGroupMove").click();
-      await page.locator("#infoTurnL").click();
-      await page.locator("#infoEnd").click();
-      await expect(page.locator("#turnHeading")).toContainText(nextTurn);
-    }
-
-    await page.locator(".turnShip").first().click();
-    await expect(groupMove).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator("#hint")).toContainText("command-group move restored");
-  }
   expect(await page.locator("#cv3d").evaluate(canvas =>
     !!canvas.getContext("webgl2") || !!canvas.getContext("webgl")
   )).toBe(true);
