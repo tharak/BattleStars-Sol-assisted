@@ -105,6 +105,14 @@ export function fire(state, e, tgt) {
     onHit: () => state.world.add(tgt, C.HitSinceAct, true),
     onDestroyed: (v, wasFlag) => state.events.emit(BattleEvent.UNIT_DESTROYED,
       { unit: v, label: Q.labelOf(state, v), side: Q.sideOf(state, v), wasFlagship: wasFlag }),
+    onEnemyDestroyed: ({ attackerFaction }) => {
+      for (const recovery of SR.recoverMoraleAfterEnemyDestroyed(state.world, attackerFaction)) {
+        state.events.emit(BattleEvent.UNIT_RECOVERED, {
+          unit: recovery.fleet, label: Q.labelOf(state, recovery.fleet), side: attackerFaction,
+          from: recovery.from, to: recovery.to,
+        });
+      }
+    },
     moraleCheckOpts: { ...fleetMoraleOptions(state, tgtSide), ...moraleHooks(state) },
     onFlagshipLost: flagshipLostHook(state, tgt),
   });

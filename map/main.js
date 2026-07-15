@@ -539,14 +539,18 @@ function doFireAt(tgt) {
   if (!SC.legalTargets(world, activation.u, beltObstacles).includes(tgt)) return;
   const firer = activation.u;
   groupMoveArmed = false;
-  const result = SC.fire(world, firer, tgt, random);
+  let recovered = [];
+  const result = SC.fire(world, firer, tgt, random, {
+    onEnemyDestroyed: ({ attackerFaction }) => { recovered = SC.recoverMoraleAfterEnemyDestroyed(world, attackerFaction); },
+  });
   effects.push({
     from: result.from, to: result.to, hit: result.hits > 0, start: performance.now(),
     dur: result.hits > 0 ? LASER_DURATION.hit : LASER_DURATION.miss,
   });
   activation.fired = true; activation.fireMode = false;
   setHint(`${SC.labelOf(world, firer)} fires (${result.arc} arc, ${result.need}+): [${result.rolls.join(" ")}] → ` +
-    `${result.hits} hit${result.hits === 1 ? "" : "s"}${result.destroyed ? " — destroyed!" : ""}`);
+    `${result.hits} hit${result.hits === 1 ? "" : "s"}${result.destroyed ? " — destroyed!" : ""}` +
+    (recovered.length ? ` ${recovered.length} friendly Fleet${recovered.length === 1 ? "" : "s"} recovered.` : ""));
   if (!activation.cmd) { completeCurrentActivation({ preserveHint: true }); return; } // out of command: fire was the whole activation
   finishActionRender();
 }

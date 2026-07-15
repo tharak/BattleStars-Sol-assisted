@@ -11,6 +11,7 @@ export const BattleEvent = Object.freeze({
   MORALE_CHECKED: "battle.morale.checked",
   UNIT_ROUTED: "battle.unit.routed",
   UNIT_DESTROYED: "battle.unit.destroyed",
+  UNIT_RECOVERED: "battle.unit.recovered",
   FLAGSHIP_LOST: "battle.flagship.lost",
   SHOT_RESOLVED: "battle.shot.resolved",
   UNIT_FLED: "battle.unit.fled",

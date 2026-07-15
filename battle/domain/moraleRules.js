@@ -37,6 +37,14 @@ export function moraleStateAfterCheck({ currentState, passed }) {
   return currentState === MoraleState.STEADY ? MoraleState.SHAKEN : MoraleState.ROUTED;
 }
 
+// A destroyed enemy Fleet gives its victorious Armada a deterministic,
+// one-step morale recovery; Routed never skips directly to Steady.
+export function moraleStateAfterEnemyDestroyed(currentState) {
+  if (currentState === MoraleState.ROUTED) return MoraleState.SHAKEN;
+  if (currentState === MoraleState.SHAKEN) return MoraleState.STEADY;
+  return MoraleState.STEADY;
+}
+
 export function resolveRally({ inCommand = false } = {}, random) {
   if (!random?.d6) throw new TypeError("resolveRally requires a random source");
   const roll = random.d6();

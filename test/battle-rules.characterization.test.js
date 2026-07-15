@@ -6,7 +6,7 @@ import { SequenceRandomSource } from "../battle/core/random.js";
 import { BattleEvent, EventBus } from "../battle/core/events.js";
 import { MoraleState } from "../battle/config.js";
 import { spawnUnit } from "../battle/formations.js";
-import { contagion, destroy, moraleCheck } from "../battle/systems.js";
+import { contagion, destroy, fire, moraleCheck } from "../battle/systems.js";
 import * as C from "../battle/components.js";
 
 function battleWith(rolls) {
@@ -71,5 +71,30 @@ test("flagship destruction marks the fleet and checks every survivor", () => {
     BattleEvent.FLAGSHIP_LOST,
     BattleEvent.MORALE_CHECKED,
     BattleEvent.MORALE_CHECKED,
+  ]);
+});
+
+test("destroying an enemy Fleet recovers every friendly Routed and Shaken Fleet", () => {
+  const state = battleWith([6, 6, 6, 6]);
+  const attacker = spawnUnit(state, { side: 0, position: [10, 10], facing: 0 });
+  const routed = spawnUnit(state, { side: 0, position: [8, 10], facing: 0 });
+  const shaken = spawnUnit(state, { side: 0, position: [7, 10], facing: 0 });
+  const steady = spawnUnit(state, { side: 0, position: [6, 10], facing: 0 });
+  const target = spawnUnit(state, { side: 1, position: [11, 10], facing: 3 });
+  state.world.get(routed, C.Morale).state = MoraleState.ROUTED;
+  state.world.get(shaken, C.Morale).state = MoraleState.SHAKEN;
+  state.world.get(target, C.Strength).value = 1;
+  const events = [];
+  state.events.onAny(event => events.push(event));
+
+  fire(state, attacker, target);
+
+  assert.equal(state.world.has(target, C.Alive), false);
+  assert.equal(state.world.get(routed, C.Morale).state, MoraleState.SHAKEN);
+  assert.equal(state.world.get(shaken, C.Morale).state, MoraleState.STEADY);
+  assert.equal(state.world.get(steady, C.Morale).state, MoraleState.STEADY);
+  assert.deepEqual(events.filter(event => event.type === BattleEvent.UNIT_RECOVERED).map(event => [event.unit, event.from, event.to]), [
+    [routed, MoraleState.ROUTED, MoraleState.SHAKEN],
+    [shaken, MoraleState.SHAKEN, MoraleState.STEADY],
   ]);
 });

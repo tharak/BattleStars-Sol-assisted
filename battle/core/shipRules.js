@@ -16,7 +16,7 @@ import { RANGE, CMD_R, MP_MAX } from "../config.js";
 import { FLEET_FORMATION_NAMES } from "../fleetShips.js";
 import { FiringArc, MoraleState, SupplyState } from "../domain/constants.js";
 import { resolveCombat } from "../domain/combatRules.js";
-import { moraleStateAfterCheck, resolveMorale } from "../domain/moraleRules.js";
+import { moraleStateAfterCheck, moraleStateAfterEnemyDestroyed, resolveMorale } from "../domain/moraleRules.js";
 import {
   canMoveDuringActivation, canMoveBackwardDuringActivation, evaluateMovementStep,
 } from "../domain/movementRules.js";
@@ -76,6 +76,21 @@ export const flagshipOf = (world, faction) => fleetsOfFaction(world, faction).fi
 // Compatibility aliases for callers still using the old singular Ship model.
 export const aliveShips = aliveFleets;
 export const shipsOfFaction = fleetsOfFaction;
+
+// Returns only the living Fleets whose morale actually improved, so callers
+// can present the faction-wide reward without re-deriving state changes.
+export function recoverMoraleAfterEnemyDestroyed(world, faction) {
+  const recovered = [];
+  for (const fleet of fleetsOfFaction(world, faction)) {
+    const morale = world.get(fleet, C.Morale);
+    const from = morale.state;
+    const to = moraleStateAfterEnemyDestroyed(from);
+    if (to === from) continue;
+    morale.state = to;
+    recovered.push({ fleet, from, to });
+  }
+  return recovered;
+}
 
 export function inCommand(world, e) {
   const fl = flagshipOf(world, factionOf(world, e));
@@ -229,12 +244,14 @@ export function destroy(world, e, random, { onDestroyed, onFlagshipLost, moraleC
 // (battle marks C.HitSinceAct for its AI rally logic). `onDestroyed`/
 // `onFlagshipLost`/`moraleCheckOpts` thread straight through to the
 // moraleCheck/destroy this can trigger, so those events keep firing in
-// the same relative order as everything above them.
+// the same relative order as everything above them. `onEnemyDestroyed`
+// runs after the defender's destruction, contagion, and flagship effects.
 export function fire(world, e, tgt, random, {
   supplyState = SupplyState.NORMAL,
   onResolved,
   onHit,
   onDestroyed,
+  onEnemyDestroyed,
   moraleCheckOpts,
   onFlagshipLost,
 } = {}) {
@@ -253,7 +270,12 @@ export function fire(world, e, tgt, random, {
     onHit?.(tgt);
     const tgtStrength = world.get(tgt, C.Strength);
     tgtStrength.value = Math.max(0, tgtStrength.value - hits);
-    if (tgtStrength.value === 0) { destroy(world, tgt, random, { onDestroyed, onFlagshipLost, moraleCheckOpts }); destroyed = true; }
+    if (tgtStrength.value === 0) {
+      const destroyedFaction = factionOf(world, tgt);
+      destroy(world, tgt, random, { onDestroyed, onFlagshipLost, moraleCheckOpts });
+      destroyed = true;
+      onEnemyDestroyed?.({ attacker: e, destroyed: tgt, attackerFaction: factionOf(world, e), destroyedFaction });
+    }
     else moraleCheck(world, tgt, random, { ...moraleCheckOpts, fromFlankOrRear: arc !== FiringArc.FRONT });
   }
   return { hits, rolls, arc, need, destroyed, from, to };

@@ -7,7 +7,7 @@ import {
 } from "../battle/domain/constants.js";
 import { combatDice, resolveCombat, targetNumber } from "../battle/domain/combatRules.js";
 import {
-  moraleModifier, moraleStateAfterCheck, resolveMorale, resolveRally,
+  moraleModifier, moraleStateAfterCheck, moraleStateAfterEnemyDestroyed, resolveMorale, resolveRally,
 } from "../battle/domain/moraleRules.js";
 import {
   backwardMovementCost, evaluateMovementStep, forwardMovementCost,
@@ -54,6 +54,9 @@ test("morale rules calculate cumulative modifiers and state transitions", () => 
   assert.equal(moraleStateAfterCheck({ currentState: MoraleState.STEADY, passed: false }), MoraleState.SHAKEN);
   assert.equal(moraleStateAfterCheck({ currentState: MoraleState.SHAKEN, passed: false }), MoraleState.ROUTED);
   assert.equal(moraleStateAfterCheck({ currentState: MoraleState.SHAKEN, passed: true }), MoraleState.SHAKEN);
+  assert.equal(moraleStateAfterEnemyDestroyed(MoraleState.ROUTED), MoraleState.SHAKEN);
+  assert.equal(moraleStateAfterEnemyDestroyed(MoraleState.SHAKEN), MoraleState.STEADY);
+  assert.equal(moraleStateAfterEnemyDestroyed(MoraleState.STEADY), MoraleState.STEADY);
 });
 
 test("rally resolution is deterministic and applies command bonus", () => {

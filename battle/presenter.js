@@ -1,7 +1,7 @@
 // Browser observer for semantic domain events. Replacing this module with UE
 // delegate listeners leaves systems.js and all battle rules unchanged.
 import { BattleEvent } from "./core/events.js";
-import { sideCls, sideName, SupplyState, Side } from "./config.js";
+import { sideCls, sideName, SupplyState, Side, STATE_NAME } from "./config.js";
 import { LASER_DURATION } from "./dimensions.js";
 import { clearLog, log } from "./panels.js";
 import * as Q from "./queries.js";
@@ -43,6 +43,9 @@ function present(state, presentation, event) {
       break;
     case BattleEvent.UNIT_DESTROYED:
       log(`  ${event.label} is DESTROYED`, "bad");
+      break;
+    case BattleEvent.UNIT_RECOVERED:
+      log(`  ${event.label} recovers: ${STATE_NAME[event.from]} → ${STATE_NAME[event.to]}`, "good");
       break;
     case BattleEvent.FLAGSHIP_LOST:
       log(`  ${sideName(event.side)} FLAGSHIP LOST - fleet-wide morale check, command net down`, "bad");
