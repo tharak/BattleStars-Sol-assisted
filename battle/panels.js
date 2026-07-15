@@ -1,6 +1,6 @@
 // Log + side-panel text rendering. Reads state/queries only -- never
 // mutates game state.
-import { STATE_NAME, MAX_TURNS, MP_MAX, sideName } from "./config.js";
+import { STATE_NAME, MAX_TURNS, MP_MAX, MAX_TURNS_PER_ACTIVATION, sideName } from "./config.js";
 import * as Q from "./queries.js";
 
 const logEl = document.getElementById("log");
@@ -25,7 +25,7 @@ export function updateSetupPanels(state) {
   const ai = document.getElementById("actinfo");
   const sel = setup.selected;
   ai.innerHTML = sel
-    ? `Selected Fleet${sel === setup.flagShip ? " — <b>flagship</b>" : ""}. Turn it, set flagship, remove it, ` +
+    ? `Selected Fleet${sel === setup.flagShip ? " — <b>Main Fleet</b>" : ""}. Turn it, set Main Fleet, remove it, ` +
       `or click an empty zone hex to place another.`
     : (setup.placed.length < state.SIZE
         ? `Click an empty hex in your shaded zone to place your next Fleet (${state.SIZE - setup.placed.length} left).`
@@ -63,7 +63,7 @@ export function updatePanels(state) {
     const u = act.u;
     ai.innerHTML = `<b>${Q.labelOf(state, u)}${Q.isFlagship(state, u) ? " ★" : ""}</b> — str ${Q.strengthOf(state, u)}, ${STATE_NAME[Q.moraleOf(state, u)]}, ` +
       `${act.cmd ? "in command (+1 morale/rally)" : "OUT of command"}<br>` +
-      `MP ${act.mp}/${MP_MAX}${act.fired ? " · has fired" : ""}` +
+      `MP ${act.mp}/${MP_MAX} · turns ${act.turns || 0}/${MAX_TURNS_PER_ACTIVATION}${act.fired ? " · has fired" : ""}` +
       (act.fireMode ? ` · <span style="color:var(--red)">pick a highlighted target</span>` : "") +
       (Q.canSwitchSelection(state) ? `<br><span style="color:var(--dim)">Changed your mind? Click another un-activated Fleet to switch — nothing's committed yet.</span>` : "");
     btns.L.disabled = btns.R.disabled = btns.F.disabled = !Q.canMove(state);

@@ -1,6 +1,6 @@
-import { MAX_MOVEMENT_POINTS, MoraleState } from "../battle/domain/constants.js";
+import { MAX_MOVEMENT_POINTS, MAX_TURNS_PER_ACTIVATION, MoraleState } from "../battle/domain/constants.js";
 import {
-  canMoveDuringActivation,
+  canMoveDuringActivation, canTurnDuringActivation,
   forwardMovementCost,
 } from "../battle/domain/movementRules.js";
 import { fromAxial, hexDist, key, neighbor, toAxial } from "../battle/hexmath.js";
@@ -123,7 +123,7 @@ export function findReachableDestinations({
     cost: 0,
     actions: [],
     backwardSteps: 0,
-    turns: 0,
+    turns: activation.turns || 0,
   };
   const frontier = [start];
   const bestStates = new Map([[stateKey(start), start]]);
@@ -144,7 +144,7 @@ export function findReachableDestinations({
     const candidates = [];
     // Turning changes only facing, never movement points. Keep it in the
     // route search so every legal forward route can begin from any facing.
-    if (state.remainingMp >= 1) {
+    if (state.remainingMp >= 1 && state.turns < MAX_TURNS_PER_ACTIVATION) {
       for (const [action, delta] of [
         [StrategicMoveAction.TURN_LEFT, 1],
         [StrategicMoveAction.TURN_RIGHT, -1],
@@ -230,7 +230,7 @@ export function findGroupReachableDestinations({
     routeMaps.set(member.id, findReachableDestinations({
       position: member.position,
       facing: member.facing,
-      activation: { ...activation, u: member.id, cmd: true },
+      activation: { ...activation, u: member.id, cmd: true, turns: member.turns || 0 },
       moraleState: member.moraleState,
       enemyPositions,
       movementAllowance,
@@ -304,6 +304,8 @@ export function executeStrategicRoute(route, {
   }
   if (activation) {
     activation.mp = route.remainingMp;
+    activation.turns = route.turns;
+    if (activation.turnsByShip) activation.turnsByShip[activation.u] = route.turns;
     activation.moved = true;
     activation.fireMode = false;
   }
@@ -321,6 +323,9 @@ export function executeStrategicGroupRoute(groupRoute, { activation = null, acti
   }
   if (activation) {
     activation.mp = groupRoute.remainingMp;
+    activation.turnsByShip ||= {};
+    for (const { memberId, route } of groupRoute.memberRoutes) activation.turnsByShip[memberId] = route.turns;
+    activation.turns = activation.turnsByShip[activation.u] || 0;
     activation.moved = true;
     activation.fireMode = false;
   }
@@ -329,10 +334,16 @@ export function executeStrategicGroupRoute(groupRoute, { activation = null, acti
 
 /** Turn every commanded member in place without spending movement points. */
 export function executeStrategicGroupTurn(memberIds, { activation, turn }) {
-  if (!memberIds?.length || !canMoveDuringActivation(activation)) {
+  if (!memberIds?.length || !canTurnDuringActivation(activation)) {
     return { ok: false, reason: "group_cannot_turn" };
   }
+  if (memberIds.some(memberId => (activation.turnsByShip?.[memberId] || 0) >= MAX_TURNS_PER_ACTIVATION)) {
+    return { ok: false, reason: "group_turn_limit" };
+  }
   for (const memberId of memberIds) turn(memberId);
+  activation.turnsByShip ||= {};
+  for (const memberId of memberIds) activation.turnsByShip[memberId] = (activation.turnsByShip[memberId] || 0) + 1;
+  activation.turns = activation.turnsByShip[activation.u] ?? ((activation.turns || 0) + 1);
   activation.moved = true;
   activation.fireMode = false;
   return { ok: true };

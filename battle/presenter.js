@@ -48,7 +48,7 @@ function present(state, presentation, event) {
       log(`  ${event.label} recovers: ${STATE_NAME[event.from]} → ${STATE_NAME[event.to]}`, "good");
       break;
     case BattleEvent.FLAGSHIP_LOST:
-      log(`  ${sideName(event.side)} FLAGSHIP LOST - fleet-wide morale check, command net down`, "bad");
+      log(`  ${sideName(event.side)} MAIN FLEET LOST - Armada-wide morale check, command net down`, "bad");
       break;
     case BattleEvent.SHOT_RESOLVED:
       log(`${event.attackerLabel} fires at ${event.targetLabel} (${event.arc} arc, ${event.targetNumber}+): ` +

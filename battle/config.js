@@ -2,7 +2,7 @@
 // the board shape below is web-only -- the Python Monte-Carlo sim still
 // plays on its own rectangular grid, so its cited win rates are unaffected).
 import { hexDist } from "./hexmath.js";
-import { Side, SupplyState, MAX_MOVEMENT_POINTS } from "./domain/constants.js";
+import { Side, SupplyState, MAX_MOVEMENT_POINTS, MAX_TURNS_PER_ACTIVATION } from "./domain/constants.js";
 
 export {
   MoraleState, SupplyState, FiringArc, Side, SIDES, ControlMode,
@@ -10,6 +10,7 @@ export {
 } from "./domain/constants.js";
 
 export const RANGE = 3, CMD_R = 4, MP_MAX = MAX_MOVEMENT_POINTS, MAX_TURNS = 15;
+export { MAX_TURNS_PER_ACTIVATION };
 
 // The playable board is a hexagon (pointy left/right, flat top/bottom):
 // all hexes within BOARD_RADIUS of BOARD_CENTER. COLS/ROWS are just the
@@ -57,8 +58,8 @@ export const SCENARIOS = [
   n:"Travel order should be slaughtered. If Column ever wins, something is broken."},
  {t:"Low-supply mirror", a:"line", b:"line", supB:SupplyState.LOW,
   n:"Red is low on supply (v0.2: −1 morale only, guns unaffected). Sim: 66/34 — a clear but playable handicap. Can you win from behind?"},
- {t:"Flagship hunt (mirror)", a:"line", b:"line",
-  n:"Mirror match. Try decapitation: kill the enemy flagship — fleet-wide morale check, permanent −1, command radius gone."},
+ {t:"Main Fleet hunt (mirror)", a:"line", b:"line",
+  n:"Mirror match. Destroy the enemy Main Fleet — Armada-wide morale check, permanent −1, command radius gone."},
  {t:"Critical-supply mirror", a:"line", b:"line", supB:SupplyState.CRITICAL,
   n:"Red is at critical supply (−1 morale AND worse to-hit — the old v0.1 'low'). Sim: 96/3. Near-hopeless by design: never fight like this."},
 ];

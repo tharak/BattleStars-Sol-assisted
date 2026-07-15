@@ -7,7 +7,7 @@ import { SeededRandomSource, SequenceRandomSource } from "../battle/core/random.
 import { GameContext } from "../battle/gameContext.js";
 import { EventBus } from "../battle/core/events.js";
 import { deployFormation, spawnUnit } from "../battle/formations.js";
-import { aiActivate, fire, moveActivatedUnitForward } from "../battle/systems.js";
+import { aiActivate, fire, moveActivatedUnitForward, rotateActivatedUnit } from "../battle/systems.js";
 import { MoraleState, MP_MAX } from "../battle/config.js";
 import * as C from "../battle/components.js";
 import * as Q from "../battle/queries.js";
@@ -82,6 +82,18 @@ test("a shaken unit cannot use movement to approach the enemy", () => {
   assert.equal(moveActivatedUnitForward(state), false);
   assert.deepEqual([state.world.get(unit, C.Position).c, state.world.get(unit, C.Position).r], [10, 13]);
   assert.equal(events[0].type, BattleEvent.MOVE_REJECTED);
+});
+
+test("a Fleet can turn at most twice in one activation", () => {
+  const state = battleWith(new SeededRandomSource(1));
+  const unit = spawnUnit(state, { side: 0, position: [10, 13], facing: 0 });
+  state.act = { u: unit, mp: MP_MAX, turns: 0, moved: false, fired: false, fireMode: false, cmd: true };
+
+  assert.equal(rotateActivatedUnit(state, 1), true);
+  assert.equal(rotateActivatedUnit(state, 1), true);
+  assert.equal(rotateActivatedUnit(state, 1), false);
+  assert.equal(Q.facingOf(state, unit), 2);
+  assert.equal(state.act.turns, 2);
 });
 
 test("AI systems can finish a deterministic battle without a browser presenter", () => {

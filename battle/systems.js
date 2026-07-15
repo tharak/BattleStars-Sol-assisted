@@ -127,11 +127,11 @@ export function turnToward(state, e, d) {
 }
 
 export function rotateActivatedUnit(state, direction) {
-  if (!Q.canMove(state)) return false;
+  if (!Q.canTurn(state)) return false;
   SR.turn(state.world, state.act.u, direction);
-  // Facing changes are free; they still count as movement for the
-  // activation's move-or-fire restriction outside command range.
+  // Facing changes are free, but a Fleet may turn only twice per activation.
   state.act.moved = true;
+  state.act.turns = (state.act.turns || 0) + 1;
   state.act.fireMode = false;
   return true;
 }

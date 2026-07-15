@@ -1,10 +1,14 @@
-import { MAX_MOVEMENT_POINTS, MoraleState } from "./constants.js";
+import { MAX_MOVEMENT_POINTS, MAX_TURNS_PER_ACTIVATION, MoraleState } from "./constants.js";
 import { hexDist } from "../hexmath.js";
 
 export const MOVE_BASE_COST = 1;
 
 export function canMoveDuringActivation(activation) {
   return !!(activation && activation.u != null && activation.mp > 0);
+}
+
+export function canTurnDuringActivation(activation) {
+  return canMoveDuringActivation(activation) && (activation.turns || 0) < MAX_TURNS_PER_ACTIVATION;
 }
 
 export function canMoveBackwardDuringActivation(activation) {

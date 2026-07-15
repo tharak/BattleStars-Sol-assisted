@@ -9,6 +9,9 @@ export const FleetFormation = "FleetFormation"; // {name}          compact in-he
 export const Morale = "Morale";                // {state}          MoraleState.STEADY|SHAKEN|ROUTED
 export const Label = "Label";                  // {id}             display id, e.g. "B3"
 export const Flagship = "Flagship";            // tag, presence-only
+// Main Fleet is the player-facing name; Flagship remains the compatibility
+// component key for existing saves, scenarios, and headless callers.
+export const MainFleet = Flagship;
 export const Alive = "Alive";                  // tag, presence-only -- removed on destroy/flee-off-map
 export const Activated = "Activated";          // tag, presence-only -- has acted this turn
 export const HitSinceAct = "HitSinceAct";      // tag, presence-only -- gates the routed rally-check

@@ -51,3 +51,4 @@ export const MoraleState = Object.freeze({
 });
 
 export const MAX_MOVEMENT_POINTS = 3;
+export const MAX_TURNS_PER_ACTIVATION = 2;

@@ -18,7 +18,7 @@ import { FiringArc, MoraleState, SupplyState } from "../domain/constants.js";
 import { resolveCombat } from "../domain/combatRules.js";
 import { moraleStateAfterCheck, moraleStateAfterEnemyDestroyed, resolveMorale } from "../domain/moraleRules.js";
 import {
-  canMoveDuringActivation, canMoveBackwardDuringActivation, evaluateMovementStep,
+  canMoveDuringActivation, canTurnDuringActivation, canMoveBackwardDuringActivation, evaluateMovementStep,
 } from "../domain/movementRules.js";
 import { hexDist, neighbor, inFireArc, incomingArc, losClear, key, argmin } from "../hexmath.js";
 
@@ -40,6 +40,7 @@ export const setFleetFormation = (world, e, name) => {
 export const moraleOf = (world, e) => world.get(e, C.Morale).state;
 export const labelOf = (world, e) => world.get(e, C.Label).id;
 export const isFlagship = (world, e) => world.has(e, C.Flagship);
+export const isMainFleet = isFlagship;
 export const isAlive = (world, e) => world.has(e, C.Alive);
 const setPos = (world, e, pos) => { const p = world.get(e, C.Position); p.c = pos[0]; p.r = pos[1]; };
 
@@ -50,7 +51,7 @@ const setPos = (world, e, pos) => { const p = world.get(e, C.Position); p.c = po
 // than force map/main.js to reach into World internals itself.
 export function setPosition(world, e, c, r) { setPos(world, e, [c, r]); }
 
-export function spawnFleet(world, { faction, c, r, dir, isFlagship = false, label, formation = "sphere" }) {
+export function spawnFleet(world, { faction, c, r, dir, isFlagship = false, isMainFleet = isFlagship, label, formation = "sphere" }) {
   const e = world.createEntity();
   world.add(e, C.Position, { c, r });
   world.add(e, C.Facing, { dir });
@@ -60,7 +61,7 @@ export function spawnFleet(world, { faction, c, r, dir, isFlagship = false, labe
   world.add(e, C.Morale, { state: MoraleState.STEADY });
   world.add(e, C.Label, { id: label });
   world.add(e, C.Alive, true);
-  if (isFlagship) world.add(e, C.Flagship, true);
+  if (isMainFleet) world.add(e, C.Flagship, true);
   return e;
 }
 // Compatibility alias for headless callers while the game-wide Armada/Fleet
@@ -73,6 +74,7 @@ export const fleetsOfFaction = (world, faction) => aliveFleets(world).filter(e =
 export const enemiesOf = (world, faction) => aliveFleets(world).filter(e => factionOf(world, e) !== faction);
 export const friendsOf = (world, e) => fleetsOfFaction(world, factionOf(world, e)).filter(v => v !== e);
 export const flagshipOf = (world, faction) => fleetsOfFaction(world, faction).find(e => isFlagship(world, e)) ?? null;
+export const mainFleetOf = flagshipOf;
 // Compatibility aliases for callers still using the old singular Ship model.
 export const aliveShips = aliveFleets;
 export const shipsOfFaction = fleetsOfFaction;
@@ -125,6 +127,9 @@ export function legalTargets(world, e, extraObstacles) {
 // through.
 export function canMove(act) {
   return canMoveDuringActivation(act);
+}
+export function canTurn(act) {
+  return canTurnDuringActivation(act);
 }
 export function canBack(act) {
   return canMoveBackwardDuringActivation(act);

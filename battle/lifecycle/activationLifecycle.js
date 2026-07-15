@@ -20,7 +20,7 @@ export function selectUnit(context, entity) {
   context.world.remove(entity, C.HitSinceAct);
   Object.assign(activation, {
     u: entity,
-    mp: MP_MAX,
+    mp: MP_MAX, turns: 0,
     moved: false,
     fired: false,
     fireMode: false,

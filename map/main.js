@@ -12,7 +12,7 @@ import { DIR_ANGLE, directionToward, hexCorners, key as hexKey } from "../battle
 import { formationLayout } from "../battle/formations.js";
 import { BOARD_TINT, ACCENT } from "../battle/colors.js";
 import { LINE_WIDTH, LASER_DURATION, LASER_HALO_ALPHA } from "../battle/dimensions.js";
-import { CMD_R, MP_MAX, STATE_NAME } from "../battle/config.js";
+import { CMD_R, MP_MAX, MAX_TURNS_PER_ACTIVATION, STATE_NAME } from "../battle/config.js";
 import * as SC from "../battle/core/shipRules.js";
 import { fleetShipPositions } from "../battle/fleetShips.js";
 import { MathRandomSource } from "../battle/core/random.js";
@@ -255,7 +255,7 @@ function selectShip(e) {
   }
   selectedShip = e;
   activation = {
-    u: e, mp: MP_MAX, moved: false, fired: false, fireMode: false,
+    u: e, mp: MP_MAX, turns: 0, turnsByShip: { [e]: 0 }, moved: false, fired: false, fireMode: false,
     cmd: SC.inCommand(world, e), participantShipIds: [e],
   };
   travelArmed = false;
@@ -340,8 +340,10 @@ function doTurn(dir) {
     finishActionRender();
     return;
   }
-  if (!SC.canMove(activation)) return;
+  if (!SC.canTurn(activation)) return;
   SC.turn(world, activation.u, dir);
+  activation.turns += 1;
+  activation.turnsByShip[activation.u] = activation.turns;
   activation.moved = true; activation.fireMode = false;
   setHint("");
   finishActionRender();
@@ -393,6 +395,7 @@ function commandGroupMembers() {
     position: SC.posOf(world, id),
     facing: SC.facingOf(world, id),
     moraleState: SC.moraleOf(world, id),
+    turns: activation?.turnsByShip?.[id] || 0,
   }));
 }
 
@@ -661,15 +664,16 @@ function renderInfoPanel() {
     const groupBackwardRoute = groupMoveArmed ? groupRouteTo(SC.backwardHex(world, u)) : null;
     infoShipStatus.innerHTML =
       `${activation.cmd ? "In command (+1 morale/rally)" : "Out of command"}<br>` +
-      `MP ${activation.mp}/${MP_MAX}${activation.fired ? " · has fired" : ""}<br>` +
+      `MP ${activation.mp}/${MP_MAX} · Turns ${activation.turns || 0}/${MAX_TURNS_PER_ACTIVATION}${activation.fired ? " · has fired" : ""}<br>` +
       `Formation: ${SC.fleetFormationOf(world, u)}` +
       (activation.fireMode ? `<br><span style="color:var(--red)">Pick a highlighted target.</span>` : "") +
       (travelArmed ? `<br><span style="color:var(--red)">Click a destination.</span>` : "") +
       (groupMoveArmed ? `<br><span style="color:var(--gold)">${commandedShips.length} ships moving together. Use the movement controls or pick a destination.</span>` : "");
-    infoTurnL.disabled = infoTurnR.disabled = !SC.canMove(activation);
+    const groupCanTurn = !groupMoveArmed || commandedShips.every(ship => (activation.turnsByShip?.[ship] || 0) < MAX_TURNS_PER_ACTIVATION);
+    infoTurnL.disabled = infoTurnR.disabled = !SC.canTurn(activation) || !groupCanTurn;
     infoForward.disabled = groupMoveArmed ? !groupForwardRoute : !SC.canMove(activation);
     infoBack.disabled = groupMoveArmed ? !groupBackwardRoute : !SC.canBack(activation);
-    infoTurnL.title = infoTurnR.title = groupMoveArmed ? `Turn all ${commandedShips.length} Fleets` : "Turn (free)";
+    infoTurnL.title = infoTurnR.title = groupMoveArmed ? `Turn all ${commandedShips.length} Fleets (free, 2 maximum)` : "Turn (free, 2 maximum)";
     infoForward.title = groupMoveArmed && groupForwardRoute
       ? `Move all ${commandedShips.length} ships forward · ${groupForwardRoute.cost} MP`
       : "";

@@ -23,6 +23,7 @@ export const strengthOf = (state, e) => SR.strengthOf(state.world, e);
 export const moraleOf = (state, e) => SR.moraleOf(state.world, e);
 export const labelOf = (state, e) => SR.labelOf(state.world, e);
 export const isFlagship = (state, e) => SR.isFlagship(state.world, e);
+export const isMainFleet = (state, e) => SR.isMainFleet(state.world, e);
 export const isAlive = (state, e) => SR.isAlive(state.world, e);
 export const isActivated = (state, e) => state.world.has(e, C.Activated);
 export const hasHitSinceAct = (state, e) => state.world.has(e, C.HitSinceAct);
@@ -38,6 +39,7 @@ export const unactivatedOfSide = (state, side) => aliveOfSide(state, side).filte
 
 export const occupiedSet = state => SR.occupiedSet(state.world);
 export const flagshipOf = (state, side) => SR.flagshipOf(state.world, side);
+export const mainFleetOf = (state, side) => SR.mainFleetOf(state.world, side);
 export const inCommand = (state, e) => SR.inCommand(state.world, e);
 export const enemiesOf = (state, side) => SR.enemiesOf(state.world, side);
 export const friendsOf = (state, e) => SR.friendsOf(state.world, e);
@@ -61,5 +63,6 @@ export function canSwitchSelection(state) {
   return !!(state.act && state.act.u != null && !state.act.moved && !state.act.fired);
 }
 export const canMove = state => SR.canMove(state.act);
+export const canTurn = state => SR.canTurn(state.act);
 export const canBack = state => SR.canBack(state.act); // backward = the whole move
 export const canFire = state => SR.canFire(state.world, state.act);

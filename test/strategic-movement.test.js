@@ -99,24 +99,19 @@ test("route execution applies its advertised forced gravity step", () => {
   assert.deepEqual(applied, [[1, -1]]);
 });
 
-test("a backward hex is reachable cheaply after free turns", () => {
+test("a backward hex uses the full allowance once the two-turn cap applies", () => {
   const routes = findReachableDestinations({
     position: [0, 0], facing: 0, activation: activation(),
   });
   const route = routes.get("-1,0");
-  assert.equal(route.cost, 1);
-  assert.equal(route.remainingMp, MAX_MOVEMENT_POINTS - 1);
-  assert.deepEqual(route.actions, [
-    StrategicMoveAction.TURN_LEFT,
-    StrategicMoveAction.TURN_LEFT,
-    StrategicMoveAction.TURN_LEFT,
-    StrategicMoveAction.FORWARD,
-  ]);
+  assert.equal(route.cost, MAX_MOVEMENT_POINTS);
+  assert.equal(route.remainingMp, 0);
+  assert.deepEqual(route.actions, [StrategicMoveAction.BACKWARD]);
 
   const partlySpent = findReachableDestinations({
     position: [0, 0], facing: 0, activation: activation({ mp: MAX_MOVEMENT_POINTS - 1 }),
   });
-  assert.equal(partlySpent.has("-1,0"), true);
+  assert.equal(partlySpent.has("-1,0"), false);
 });
 
 test("terrain costs admit affordable asteroids and gravity but reject unaffordable cells", () => {
@@ -150,11 +145,10 @@ test("Shaken search recalculates the nearest enemy after each simulated step", (
     position: [0, 0], facing: 0, activation: activation({ mp: 4 }), moraleState: MoraleState.SHAKEN,
   };
   const fixedInitialEnemy = findReachableDestinations({ ...common, enemyPositions: [[2, 0]] });
-  const changingNearestEnemy = findReachableDestinations({ ...common, enemyPositions: [[2, 0], [-1, 2]] });
+  const changingNearestEnemy = findReachableDestinations({ ...common, enemyPositions: [[2, 0], [1, -2]] });
 
-  assert.ok(fixedInitialEnemy.has("-1,2"));
-  assert.equal(changingNearestEnemy.has("-1,2"), false);
-  assert.equal(changingNearestEnemy.has("1,0"), false, "Shaken ships cannot close on the initially-nearest enemy either");
+  assert.ok(fixedInitialEnemy.has("1,-2"));
+  assert.equal(changingNearestEnemy.has("1,-2"), false);
 });
 
 test("equal-cost route ties are deterministic and preserve final facing", () => {
@@ -172,14 +166,13 @@ test("equal-cost route ties are deterministic and preserve final facing", () => 
 
   const route = findReachableDestinations({
     position: [0, 0], facing: 0, activation: activation({ mp: 4 }),
-  }).get("0,-2");
+  }).get("1,-2");
   assert.deepEqual(route.actions, [
     StrategicMoveAction.TURN_LEFT,
     StrategicMoveAction.FORWARD,
-    StrategicMoveAction.TURN_LEFT,
     StrategicMoveAction.FORWARD,
   ]);
-  assert.equal(route.finalFacing, 2);
+  assert.equal(route.finalFacing, 1);
 });
 
 test("command-group search preserves axial formation offsets and charges the slowest member", () => {
@@ -284,7 +277,18 @@ test("command-group turns rotate every member without spending MP", () => {
   assert.equal(act.fireMode, false);
 });
 
-test("command-group backward hex is reachable after free turns", () => {
+test("a Fleet cannot turn more than twice in one activation", () => {
+  const act = activation({ turns: 2, turnsByShip: { 1: 2 } });
+  const routes = findReachableDestinations({ position: [0, 0], facing: 0, activation: act });
+  assert.ok([...routes.values()].every(route => !route.actions.some(action =>
+    action === StrategicMoveAction.TURN_LEFT || action === StrategicMoveAction.TURN_RIGHT,
+  )));
+  assert.deepEqual(executeStrategicGroupTurn([1], { activation: act, turn: () => assert.fail("must not turn") }), {
+    ok: false, reason: "group_cannot_turn",
+  });
+});
+
+test("command-group backward hex uses the full movement allowance", () => {
   const routes = findGroupReachableDestinations({
     leaderId: 1,
     members: [
@@ -295,8 +299,8 @@ test("command-group backward hex is reachable after free turns", () => {
   });
   const route = routes.get("-1,0");
 
-  assert.equal(route.cost, 1);
-  assert.ok(route.memberRoutes.every(plan => plan.route.actions.at(-1) === StrategicMoveAction.FORWARD));
+  assert.equal(route.cost, MAX_MOVEMENT_POINTS);
+  assert.ok(route.memberRoutes.every(plan => plan.route.actions[0] === StrategicMoveAction.BACKWARD));
 });
 
 function movementFixture({ inCommand }) {
