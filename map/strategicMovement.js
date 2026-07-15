@@ -153,16 +153,18 @@ export function findReachableDestinations({
         const nextFacing = (state.facing + delta + 6) % 6;
         candidates.push({ ...state, ...route, facing: nextFacing, finalFacing: nextFacing, position: [...state.position] });
       }
+    }
 
-      const forwardPosition = neighbor(state.position, state.facing);
-      const forwardCost = movementCost(forwardPosition);
-      if (Number.isFinite(forwardCost) && forwardCost > 0 && state.remainingMp >= forwardCost
-          && canTakeStep({ moraleState, position: state.position, nextPosition: forwardPosition, enemyPositions, isBlocked })) {
-        const route = makeRoute(state, StrategicMoveAction.FORWARD, forwardCost);
-        const drift = resolveForcedMovement(forwardPosition);
-        if (drift) (route.forcedSteps ||= []).push({ ...drift, actionIndex: route.actions.length - 1 });
-        candidates.push({ ...state, ...route, position: drift?.to || forwardPosition });
-      }
+    // Turning is free but capped. Reaching the cap must not suppress the
+    // remaining paid forward movement shown by the destination preview.
+    const forwardPosition = neighbor(state.position, state.facing);
+    const forwardCost = movementCost(forwardPosition);
+    if (Number.isFinite(forwardCost) && forwardCost > 0 && state.remainingMp >= forwardCost
+        && canTakeStep({ moraleState, position: state.position, nextPosition: forwardPosition, enemyPositions, isBlocked })) {
+      const route = makeRoute(state, StrategicMoveAction.FORWARD, forwardCost);
+      const drift = resolveForcedMovement(forwardPosition);
+      if (drift) (route.forcedSteps ||= []).push({ ...drift, actionIndex: route.actions.length - 1 });
+      candidates.push({ ...state, ...route, position: drift?.to || forwardPosition });
     }
 
     // Moving astern always consumes a full movement allowance, even when

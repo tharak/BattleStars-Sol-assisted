@@ -57,6 +57,12 @@ const turnClock = document.getElementById("turnClock");
 const turnFactions = document.getElementById("turnFactions");
 const urlParams = new URLSearchParams(window.location.search);
 const forcedRenderer = urlParams.get("renderer");
+// Browser interaction tests exercise several complete faction turns. Freeze
+// their clock explicitly so the real one-minute gameplay deadline cannot
+// race a slow CI worker. Normal games always use the live monotonic clock.
+const frozenTestClock = urlParams.get("testClock") === "frozen";
+const strategicClockStartedAtMs = performance.now();
+const strategicNow = () => frozenTestClock ? strategicClockStartedAtMs : performance.now();
 const requestedQuality = ["low", "high"].includes(urlParams.get("quality"))
   ? urlParams.get("quality")
   : "auto";
@@ -95,7 +101,7 @@ let path = [
 const world = new SC.World();
 const random = new MathRandomSource();
 const armadaRoster = new Map(Object.keys(FACTIONS).map(faction => [faction, []]));
-let strategicTurn = createStrategicTurnState({ startedAtMs: performance.now() });
+let strategicTurn = createStrategicTurnState({ startedAtMs: strategicNow() });
 let lastRenderedTimerSecond = null;
 let lastTurnRosterSignature = null;
 // Whichever single ship (an entity id, or null) is currently selected at
@@ -284,7 +290,7 @@ function completeCurrentActivation({ preserveHint = false } = {}) {
   strategicTurn = completeStrategicActivations(strategicTurn, {
     shipIds: activationParticipants(),
     livingShipIdsByFaction: livingShipIdsByFaction(),
-    nowMs: performance.now(),
+    nowMs: strategicNow(),
   });
   lastRenderedTimerSecond = null;
   clearSelection();
@@ -713,13 +719,13 @@ function selectShipFromRoster(ship) {
   renderTurnPanel();
 }
 
-function renderTurnClock(nowMs = performance.now()) {
+function renderTurnClock(nowMs = strategicNow()) {
   const remainingSeconds = Math.ceil(strategicTurnRemainingMs(strategicTurn, nowMs) / 1000);
   lastRenderedTimerSecond = remainingSeconds;
   turnClock.textContent = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")} remaining`;
 }
 
-function renderTurnPanel(nowMs = performance.now()) {
+function renderTurnPanel(nowMs = strategicNow()) {
   if (!shipsSpawned) return;
   const activeFaction = activeStrategicFaction(strategicTurn);
   turnHeading.textContent = `Round ${strategicTurn.round} · ${FACTIONS[activeFaction].label} Armada turn`;
@@ -779,7 +785,7 @@ function renderTurnPanel(nowMs = performance.now()) {
   }
 }
 
-function tickStrategicTurn(nowMs = performance.now()) {
+function tickStrategicTurn(nowMs = strategicNow()) {
   if (!shipsSpawned) return;
   const expiringFaction = activeStrategicFaction(strategicTurn);
   const result = expireStrategicTurn(strategicTurn, {

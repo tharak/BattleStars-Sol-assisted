@@ -283,6 +283,7 @@ test("a Fleet cannot turn more than twice in one activation", () => {
   assert.ok([...routes.values()].every(route => !route.actions.some(action =>
     action === StrategicMoveAction.TURN_LEFT || action === StrategicMoveAction.TURN_RIGHT,
   )));
+  assert.equal(routes.get("1,0")?.cost, 1, "spent free turns do not hide paid forward movement");
   assert.deepEqual(executeStrategicGroupTurn([1], { activation: act, turn: () => assert.fail("must not turn") }), {
     ok: false, reason: "group_cannot_turn",
   });

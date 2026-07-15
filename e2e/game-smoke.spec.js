@@ -27,7 +27,7 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
     }
   });
 
-  await page.goto("/map.html");
+  await page.goto("/map.html?testClock=frozen");
   await expect(page.locator("#breadcrumb")).toContainText("Sol");
   const mapBounds = await page.locator("#mapArea").boundingBox();
   expect(mapBounds).not.toBeNull();
