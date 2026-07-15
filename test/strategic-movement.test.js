@@ -62,12 +62,13 @@ test("occupied cells cannot be entered or crossed", () => {
   const blocked = new Set(["1,0"]);
   const routes = findReachableDestinations({
     position: [0, 0], facing: 0, activation: activation(),
-    isBlocked: next => blocked.has(key(...next)),
+    // All alternate exits are walls, so the only possible way to [2,0]
+    // would be through the occupied [1,0] cell.
+    isBlocked: next => blocked.has(key(...next)) || !new Set(["1,0", "2,0"]).has(key(...next)),
   });
 
   assert.equal(routes.has("1,0"), false, "an occupied destination is unavailable");
   assert.equal(routes.has("2,0"), false, "a route cannot pass through an occupied ship");
-  assert.ok(routes.has("0,-1"), "unblocked directions remain available");
 });
 
 test("a gravity drift becomes the advertised destination without extra MP", () => {
@@ -98,19 +99,24 @@ test("route execution applies its advertised forced gravity step", () => {
   assert.deepEqual(applied, [[1, -1]]);
 });
 
-test("backward movement consumes the full allowance", () => {
+test("a backward hex is reachable cheaply after free turns", () => {
   const routes = findReachableDestinations({
     position: [0, 0], facing: 0, activation: activation(),
   });
   const route = routes.get("-1,0");
-  assert.equal(route.cost, MAX_MOVEMENT_POINTS);
-  assert.equal(route.remainingMp, 0);
-  assert.deepEqual(route.actions, [StrategicMoveAction.BACKWARD]);
+  assert.equal(route.cost, 1);
+  assert.equal(route.remainingMp, MAX_MOVEMENT_POINTS - 1);
+  assert.deepEqual(route.actions, [
+    StrategicMoveAction.TURN_LEFT,
+    StrategicMoveAction.TURN_LEFT,
+    StrategicMoveAction.TURN_LEFT,
+    StrategicMoveAction.FORWARD,
+  ]);
 
   const partlySpent = findReachableDestinations({
     position: [0, 0], facing: 0, activation: activation({ mp: MAX_MOVEMENT_POINTS - 1 }),
   });
-  assert.equal(partlySpent.has("-1,0"), false);
+  assert.equal(partlySpent.has("-1,0"), true);
 });
 
 test("terrain costs admit affordable asteroids and gravity but reject unaffordable cells", () => {
@@ -185,8 +191,8 @@ test("command-group search preserves axial formation offsets and charges the slo
   const route = routes.get("1,0");
 
   assert.ok(route);
-  assert.equal(route.cost, 2, "the wing ship must turn before translating one hex");
-  assert.equal(route.remainingMp, 1);
+  assert.equal(route.cost, 1, "the wing ship turns freely before translating one hex");
+  assert.equal(route.remainingMp, 2);
   assert.deepEqual(translateFormationHex([0, 1], [0, 0], route.position), [1, 1]);
   assert.deepEqual(route.memberRoutes.map(plan => [plan.memberId, plan.route.position]), [
     [1, [1, 0]],
@@ -262,7 +268,7 @@ test("command-group execution moves every member and commits activation once", (
   assert.equal(act.moved, true);
 });
 
-test("command-group turns rotate every member and spend shared MP once", () => {
+test("command-group turns rotate every member without spending MP", () => {
   const act = activation({ fireMode: true });
   const turned = [];
   const result = executeStrategicGroupTurn([1, 2, 3], {
@@ -272,12 +278,12 @@ test("command-group turns rotate every member and spend shared MP once", () => {
 
   assert.deepEqual(result, { ok: true });
   assert.deepEqual(turned, [1, 2, 3]);
-  assert.equal(act.mp, MAX_MOVEMENT_POINTS - 1);
+  assert.equal(act.mp, MAX_MOVEMENT_POINTS);
   assert.equal(act.moved, true);
   assert.equal(act.fireMode, false);
 });
 
-test("command-group backward translation uses the full movement allowance", () => {
+test("command-group backward hex is reachable after free turns", () => {
   const routes = findGroupReachableDestinations({
     leaderId: 1,
     members: [
@@ -288,8 +294,8 @@ test("command-group backward translation uses the full movement allowance", () =
   });
   const route = routes.get("-1,0");
 
-  assert.equal(route.cost, MAX_MOVEMENT_POINTS);
-  assert.ok(route.memberRoutes.every(plan => plan.route.actions[0] === StrategicMoveAction.BACKWARD));
+  assert.equal(route.cost, 1);
+  assert.ok(route.memberRoutes.every(plan => plan.route.actions.at(-1) === StrategicMoveAction.FORWARD));
 });
 
 function movementFixture({ inCommand }) {

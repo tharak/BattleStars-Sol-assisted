@@ -64,7 +64,7 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
     await expect(groupMove).toHaveAttribute("aria-pressed", "true");
     const turnLeft = page.locator("#infoTurnL");
     await turnLeft.click();
-    await expect(page.locator("#infoShipStatus")).toContainText("MP 2/3");
+    await expect(page.locator("#infoShipStatus")).toContainText("MP 3/3");
     await expect(groupMove).toHaveAttribute("aria-pressed", "true");
     await groupMove.click();
     await expect(groupMove).toHaveAttribute("aria-pressed", "false");
@@ -73,6 +73,7 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
     await expect(groupMove).toHaveAttribute("aria-pressed", "true");
     await turnLeft.click();
     await turnLeft.click();
+    await page.locator("#infoEnd").click();
     await expect(page.locator(".turnShip").first()).toContainText("Acted");
     await expect(page.locator("#infoControls")).toBeHidden();
 

@@ -336,13 +336,13 @@ function doTurn(dir) {
     });
     if (!result.ok) return;
     recordActivationParticipants(ships);
-    setHint(`${ships.length} ships turned ${dir > 0 ? "left" : "right"} together for 1 MP.`);
+    setHint(`${ships.length} Fleets turned ${dir > 0 ? "left" : "right"}.`);
     finishActionRender();
     return;
   }
   if (!SC.canMove(activation)) return;
   SC.turn(world, activation.u, dir);
-  activation.mp--; activation.moved = true; activation.fireMode = false;
+  activation.moved = true; activation.fireMode = false;
   setHint("");
   finishActionRender();
 }
@@ -666,7 +666,7 @@ function renderInfoPanel() {
     infoTurnL.disabled = infoTurnR.disabled = !SC.canMove(activation);
     infoForward.disabled = groupMoveArmed ? !groupForwardRoute : !SC.canMove(activation);
     infoBack.disabled = groupMoveArmed ? !groupBackwardRoute : !SC.canBack(activation);
-    infoTurnL.title = infoTurnR.title = groupMoveArmed ? `Turn all ${commandedShips.length} ships · 1 MP` : "";
+    infoTurnL.title = infoTurnR.title = groupMoveArmed ? `Turn all ${commandedShips.length} Fleets` : "Turn (free)";
     infoForward.title = groupMoveArmed && groupForwardRoute
       ? `Move all ${commandedShips.length} ships forward · ${groupForwardRoute.cost} MP`
       : "";
@@ -1557,8 +1557,8 @@ let dragState = null;
 let justDragged = false;
 window.addEventListener("mousemove", ev => {
   if (!dragState) return;
-  const dx = ev.clientX - dragState.startClientX;
-  const dy = ev.clientY - dragState.startClientY;
+  const dx = (ev.clientX - dragState.startClientX) * dragState.scaleX;
+  const dy = (ev.clientY - dragState.startClientY) * dragState.scaleY;
   if (Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) dragState.moved = true;
   camera2d.x = dragState.startCameraX - dx / camera2d.zoom;
   camera2d.y = dragState.startCameraY - dy / camera2d.zoom;
@@ -1830,7 +1830,12 @@ function renderSystem2D(entry, data) {
 
   canvas.onmousedown = ev => {
     if (ev.button !== 2) return;
-    dragState = { startClientX: ev.clientX, startClientY: ev.clientY, startCameraX: camera2d.x, startCameraY: camera2d.y, moved: false };
+    const rect = canvas.getBoundingClientRect();
+    dragState = {
+      startClientX: ev.clientX, startClientY: ev.clientY,
+      startCameraX: camera2d.x, startCameraY: camera2d.y,
+      scaleX: CANVAS_PX / rect.width, scaleY: CANVAS_PX / rect.height, moved: false,
+    };
     canvas.style.cursor = "grabbing";
     clearSystemHover(() => render());
   };
@@ -1858,10 +1863,21 @@ function renderSystem2D(entry, data) {
       || null;
   }
 
+  // The map canvas is deliberately displayed as a responsive square while
+  // its drawing buffer remains at CANVAS_PX for visual fidelity. Convert
+  // pointer coordinates back into that buffer's coordinate space before
+  // hit testing, panning, or finding a movement hex.
+  const canvasPoint = ev => {
+    const rect = canvas.getBoundingClientRect();
+    return [
+      (ev.clientX - rect.left) * CANVAS_PX / rect.width - cx,
+      (ev.clientY - rect.top) * CANVAS_PX / rect.height - cy,
+    ];
+  };
+
   canvas.onclick = ev => {
     if (justDragged) { justDragged = false; return; }
-    const rect = canvas.getBoundingClientRect();
-    const x = (ev.clientX - rect.left) - cx, y = (ev.clientY - rect.top) - cy;
+    const [x, y] = canvasPoint(ev);
     const hit = hitAt(x, y);
     if (handleShipOrDestinationClick(hit, screenToWorld(camera2d, x, y))) return;
     dispatchBodyClick(hit);
@@ -1873,8 +1889,7 @@ function renderSystem2D(entry, data) {
     // both because the cursor isn't meaningfully "over" anything mid-pan
     // and to avoid doing a hit-test on every dragged pixel.
     if (dragState) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = (ev.clientX - rect.left) - cx, y = (ev.clientY - rect.top) - cy;
+    const [x, y] = canvasPoint(ev);
     const hit = hitAt(x, y);
     updateSystemHover(hit, screenToWorld(camera2d, x, y), () => render());
   };

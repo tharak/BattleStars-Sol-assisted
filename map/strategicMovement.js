@@ -142,12 +142,14 @@ export function findReachableDestinations({
     }
 
     const candidates = [];
+    // Turning changes only facing, never movement points. Keep it in the
+    // route search so every legal forward route can begin from any facing.
     if (state.remainingMp >= 1) {
       for (const [action, delta] of [
         [StrategicMoveAction.TURN_LEFT, 1],
         [StrategicMoveAction.TURN_RIGHT, -1],
       ]) {
-        const route = makeRoute(state, action, 1);
+        const route = makeRoute(state, action, 0);
         const nextFacing = (state.facing + delta + 6) % 6;
         candidates.push({ ...state, ...route, facing: nextFacing, finalFacing: nextFacing, position: [...state.position] });
       }
@@ -325,13 +327,12 @@ export function executeStrategicGroupRoute(groupRoute, { activation = null, acti
   return { ok: true };
 }
 
-/** Turn every commanded member in place, then spend the shared 1 MP once. */
+/** Turn every commanded member in place without spending movement points. */
 export function executeStrategicGroupTurn(memberIds, { activation, turn }) {
   if (!memberIds?.length || !canMoveDuringActivation(activation)) {
     return { ok: false, reason: "group_cannot_turn" };
   }
   for (const memberId of memberIds) turn(memberId);
-  activation.mp -= 1;
   activation.moved = true;
   activation.fireMode = false;
   return { ok: true };

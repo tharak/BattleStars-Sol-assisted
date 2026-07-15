@@ -121,7 +121,8 @@ export function turnToward(state, e, d) {
 export function rotateActivatedUnit(state, direction) {
   if (!Q.canMove(state)) return false;
   SR.turn(state.world, state.act.u, direction);
-  state.act.mp--;
+  // Facing changes are free; they still count as movement for the
+  // activation's move-or-fire restriction outside command range.
   state.act.moved = true;
   state.act.fireMode = false;
   return true;
