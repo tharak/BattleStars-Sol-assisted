@@ -42,13 +42,6 @@ const breadcrumb = document.getElementById("breadcrumb");
 const zoomOutBtn = document.getElementById("zoomOut");
 const hint = document.getElementById("hint");
 const infoPanel = document.getElementById("infoPanel");
-const infoEmpty = document.getElementById("infoEmpty");
-const infoBody = document.getElementById("infoBody");
-const infoName = document.getElementById("infoName");
-const infoDetail = document.getElementById("infoDetail");
-const infoControls = document.getElementById("infoControls");
-const infoShipStatus = document.getElementById("infoShipStatus");
-const infoFleetFormation = document.getElementById("infoFleetFormation");
 const infoTurnL = document.getElementById("infoTurnL");
 const infoTurnR = document.getElementById("infoTurnR");
 const infoForward = document.getElementById("infoForward");
@@ -651,24 +644,12 @@ function renderInfoPanel() {
   }
   if (selectedShip != null) {
     const u = selectedShip;
-    infoEmpty.style.display = "none";
-    infoBody.style.display = "block";
-    infoName.textContent = `Fleet ${SC.labelOf(world, u)}${SC.isFlagship(world, u) ? " ★" : ""}`;
-    infoDetail.textContent = `${FACTIONS[SC.factionOf(world, u)].label} Armada — ${SC.strengthOf(world, u)} Ships, ${STATE_NAME[SC.moraleOf(world, u)]}`;
-    infoControls.style.display = "flex";
-    infoFleetFormation.value = SC.fleetFormationOf(world, u);
+    infoPanel.style.display = "block";
     const commandedShips = commandGroupShips();
     const groupMoveSaved = SC.isFlagship(world, u) && groupMovePreferences.has(u);
     const groupMoveEnabled = groupMoveArmed || groupMoveSaved;
     const groupForwardRoute = groupMoveArmed ? groupRouteTo(SC.forwardHex(world, u)) : null;
     const groupBackwardRoute = groupMoveArmed ? groupRouteTo(SC.backwardHex(world, u)) : null;
-    infoShipStatus.innerHTML =
-      `${activation.cmd ? "In command (+1 morale/rally)" : "Out of command"}<br>` +
-      `MP ${activation.mp}/${MP_MAX} · Turns ${activation.turns || 0}/${MAX_TURNS_PER_ACTIVATION}${activation.fired ? " · has fired" : ""}<br>` +
-      `Formation: ${SC.fleetFormationOf(world, u)}` +
-      (activation.fireMode ? `<br><span style="color:var(--red)">Pick a highlighted target.</span>` : "") +
-      (travelArmed ? `<br><span style="color:var(--red)">Click a destination.</span>` : "") +
-      (groupMoveArmed ? `<br><span style="color:var(--gold)">${commandedShips.length} ships moving together. Use the movement controls or pick a destination.</span>` : "");
     const groupCanTurn = !groupMoveArmed || commandedShips.every(ship => (activation.turnsByShip?.[ship] || 0) < MAX_TURNS_PER_ACTIVATION);
     infoTurnL.disabled = infoTurnR.disabled = !SC.canTurn(activation) || !groupCanTurn;
     infoForward.disabled = groupMoveArmed ? !groupForwardRoute : !SC.canMove(activation);
@@ -689,17 +670,7 @@ function renderInfoPanel() {
     infoGroupMove.setAttribute("aria-pressed", String(groupMoveEnabled));
     return;
   }
-  const shown = hoverInfo || lastClickedInfo;
-  if (shown) {
-    infoEmpty.style.display = "none";
-    infoBody.style.display = "block";
-    infoName.textContent = shown.name;
-    infoDetail.textContent = shown.detail;
-    infoControls.style.display = "none";
-    return;
-  }
-  infoEmpty.style.display = "block";
-  infoBody.style.display = "none";
+  infoPanel.style.display = "none";
 }
 infoTurnL.onclick = () => doTurn(1);
 infoTurnR.onclick = () => doTurn(-1);
@@ -709,14 +680,6 @@ infoFire.onclick = armFireMode;
 infoTravel.onclick = armTravel;
 infoGroupMove.onclick = toggleGroupMove;
 infoEnd.onclick = endActivation;
-infoFleetFormation.onchange = () => {
-  if (selectedShip == null) return;
-  const formation = infoFleetFormation.value;
-  if (SC.setFleetFormation(world, selectedShip, formation)) {
-    setHint(`Fleet ${SC.labelOf(world, selectedShip)} formation set to ${formation}.`);
-    render();
-  }
-};
 
 function strategicShipDisplayState(ship, faction, participantSet) {
   if (!SC.isAlive(world, ship)) return { label: "Destroyed", className: "destroyed" };
@@ -1980,12 +1943,9 @@ function renderSystem(entry, data) {
 function render() {
   const entry = path[path.length - 1];
   const data = levelData(entry);
-  // The info panel only has anything to show at the System level (bodies
-  // and ships) -- Universe reuses the same #mapwrap canvas underneath it,
-  // so it has to be hidden explicitly rather than just left empty, or
-  // it'd sit there showing stale System-level info over an unrelated
-  // screen.
-  infoPanel.style.display = entry.level === "system" ? "block" : "none";
+  // Fleet controls belong to the System level only. renderInfoPanel()
+  // decides whether they are visible for the currently selected Fleet.
+  if (entry.level !== "system") infoPanel.style.display = "none";
   turnPanel.style.display = entry.level === "system" ? "block" : "none";
   if (entry.level === "system") {
     renderSystem(entry, data);

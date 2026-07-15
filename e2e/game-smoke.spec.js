@@ -29,7 +29,7 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
 
   await page.goto("/map.html");
   await expect(page.locator("#breadcrumb")).toContainText("Sol");
-  await expect(page.locator("#infoPanel")).toBeVisible();
+  await expect(page.locator("#infoPanel")).toBeHidden();
   await expect(page.locator("#turnPanel")).toBeVisible();
   await expect(page.locator("#turnHeading")).toContainText("Blue Armada turn");
   await expect(page.locator(".turnShip")).toHaveCount(36);
@@ -51,20 +51,20 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
     await firstRosterShip.click();
   }
   await expect(page.locator(".turnShip").first()).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#infoName")).toContainText("B1");
-  await expect(page.locator("#infoFleetFormation")).toHaveValue("sphere");
+  await expect(page.locator("#infoPanel")).toBeVisible();
+  await expect(page.locator("#infoPanel select")).toHaveCount(0);
+  await expect(page.locator("#infoPanel button")).toHaveCount(8);
   if (testInfo.project.name === "desktop-chromium") {
     await page.locator(".turnShip").nth(1).click();
-    await expect(page.locator("#infoName")).toContainText("B2");
+    await expect(page.locator(".turnShip").nth(1)).toHaveAttribute("aria-pressed", "true");
     await page.locator(".turnShip").first().click();
-    await expect(page.locator("#infoName")).toContainText("B1");
+    await expect(page.locator(".turnShip").first()).toHaveAttribute("aria-pressed", "true");
 
     const groupMove = page.locator("#infoGroupMove");
     await groupMove.click();
     await expect(groupMove).toHaveAttribute("aria-pressed", "true");
     const turnLeft = page.locator("#infoTurnL");
     await turnLeft.click();
-    await expect(page.locator("#infoShipStatus")).toContainText("MP 3/3");
     await expect(groupMove).toHaveAttribute("aria-pressed", "true");
     await groupMove.click();
     await expect(groupMove).toHaveAttribute("aria-pressed", "false");
@@ -75,7 +75,7 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
     await turnLeft.click();
     await page.locator("#infoEnd").click();
     await expect(page.locator(".turnShip").first()).toContainText("Acted");
-    await expect(page.locator("#infoControls")).toBeHidden();
+    await expect(page.locator("#infoPanel")).toBeHidden();
 
     for (const [rosterIndex, nextTurn] of [[12, "Red Armada turn"], [24, "Blue Armada turn"]]) {
       await page.locator(".turnShip").nth(rosterIndex).click();
@@ -86,7 +86,6 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
     }
 
     await page.locator(".turnShip").first().click();
-    await expect(page.locator("#infoName")).toContainText("B1");
     await expect(groupMove).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#hint")).toContainText("command-group move restored");
   }

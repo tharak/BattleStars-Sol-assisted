@@ -33,23 +33,15 @@
   .turnShip.ready{border-color:var(--gold)}
   .turnShip.acting{border-color:#fff;color:#fff}
   .turnShip.spent,.turnShip.destroyed{opacity:.55}
-  #infoPanel{position:absolute;top:12px;right:12px;width:200px;max-width:calc(100% - 24px);max-height:calc(100% - 24px);overflow:auto;
-    background:#111624e8;border:1px solid var(--line);border-radius:8px;
-    padding:10px 12px;font-size:13px;z-index:5}
-  #infoPanel .empty{color:var(--dim)}
-  #infoName{font-weight:bold;font-size:14px;margin-bottom:2px}
-  #infoDetail{color:var(--dim)}
-  #infoControls{display:none;flex-direction:column;gap:6px;margin-top:10px}
+  #infoPanel{display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+  #infoControls{display:flex;flex-direction:column;gap:6px}
   #infoControls>button{width:100%}
-  #infoShipStatus{font-size:12px;color:var(--dim);margin:2px 0 4px;line-height:1.4}
-  #infoFleetFormation{width:100%;padding:4px 6px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:4px}
   #infoShipButtons{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0}
   #infoShipButtons button{flex:1 0 40%;padding:4px 6px;font-size:12px}
   #infoGroupMove[aria-pressed="true"]{border-color:var(--gold);color:var(--gold);background:#3b3422}
   @media(max-width:640px){
     #turnPanel{top:8px;left:8px;width:calc(50% - 14px);max-height:42%;padding:7px}
     .turnShips{grid-template-columns:1fr}
-    #infoPanel{top:auto;right:8px;bottom:8px;width:calc(58% - 12px);max-height:58%;padding:8px;font-size:12px}
     #infoShipButtons button{padding:5px 4px;font-size:11px}
     #hint{bottom:4px;max-width:45%;font-size:10px}
   }
@@ -70,22 +62,8 @@
       <div id="turnHeading"></div>
       <div id="turnClock" role="timer"></div>
       <div id="turnFactions"></div>
-    </aside>
-    <div id="infoPanel">
-        <div id="infoEmpty" class="empty">Click a body or Fleet for details.</div>
-      <div id="infoBody" style="display:none">
-        <div id="infoName"></div>
-        <div id="infoDetail"></div>
+      <div id="infoPanel" aria-label="Fleet controls">
           <div id="infoControls">
-            <div id="infoShipStatus"></div>
-            <label>Fleet formation
-              <select id="infoFleetFormation" aria-label="Fleet formation">
-                <option value="line">Line</option>
-                <option value="wedge">Wedge</option>
-                <option value="echelon">Echelon</option>
-                <option value="sphere">Sphere</option>
-              </select>
-            </label>
           <div id="infoShipButtons">
             <button id="infoTurnL">◄ Turn</button>
             <button id="infoTurnR">► Turn</button>
@@ -98,7 +76,7 @@
           <button id="infoEnd" class="primary">End activation</button>
         </div>
       </div>
-    </div>
+    </aside>
   </div>
 </div>
 
