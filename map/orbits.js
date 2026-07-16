@@ -18,13 +18,6 @@
 
 export const AU_KM = 149597870.7;
 
-// Real bounds of the asteroid main belt, AU -- used to populate the belt
-// with real individual "1-hex asteroid" obstacles (see beltAsteroidHexes
-// in map/main.js) across its real distance range, instead of drawing it
-// as one synthetic point body.
-export const BELT_INNER_AU = 2.1;
-export const BELT_OUTER_AU = 3.3;
-
 // Mean physical radius, km.
 export const BODY_RADIUS_KM = {
   sun: 696000,
@@ -103,4 +96,3 @@ export function makeSizeScale(maxRadiusKm, { min = 3, max = 34 } = {}) {
   const scale = Math.sqrt(maxRadiusKm);
   return r => Math.max(min, Math.min(max, (Math.sqrt(Math.max(0, r)) / scale) * max));
 }
-

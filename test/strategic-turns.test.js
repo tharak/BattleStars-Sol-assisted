@@ -86,3 +86,11 @@ test("turn advancement skips a faction with no living ships", () => {
   });
   assert.equal(activeStrategicFaction(state), "red");
 });
+
+test("a faction with production remains in turn order without living ships", () => {
+  const state = completeStrategicActivations(createStrategicTurnState(), {
+    shipIds: [1], livingShipIdsByFaction: { blue: [1], green: [], red: [3] },
+    eligibleFactionIds: ["green"], nowMs: 1,
+  });
+  assert.equal(activeStrategicFaction(state), "green");
+});

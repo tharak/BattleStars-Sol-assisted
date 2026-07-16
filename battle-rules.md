@@ -2,8 +2,8 @@
 
 **Changelog v0.2 → v0.2.1:**
 
-- **Backward move.** A squadron may move one hex straight astern for its **entire MP
-  allowance** (3 MP), keeping its facing — back away without showing your rear arc.
+- **Backward move.** A squadron may move one hex straight astern for its **entire AP
+  allowance** (3 AP), keeping its facing — back away without showing your rear arc.
 
 **Changelog v0.1 → v0.2** (from playtest verdict, §10):
 
@@ -57,10 +57,10 @@ turn.
 
 ## 3. Movement
 
-- **3 movement points (MP)** per activation.
-- 1 MP: move one hex straight ahead (through the faced hexside).
-- 1 MP: turn 60° (one hexside) in place.
-- 3 MP (all of them, so it must be the squadron's whole move): move one hex straight
+- **3 action points (AP)** per activation.
+- 1 AP: move one hex straight ahead (through the faced hexside).
+- 1 AP: turn 60° (one hexside) in place.
+- 3 AP (all of them, so it must be the squadron's whole move): move one hex straight
   **backward** (through the hexside astern), keeping facing. Guns stay on the enemy and
   the rear arc stays hidden — but it's slow, a fighting withdrawal, not an escape.
 - No entering occupied hexes. Leaving the map = squadron is gone (routed off / withdrawn).
@@ -128,7 +128,7 @@ meter:
 
 - **Shaken:** rolls half dice (round up); may turn and fire but **may not end a move
   closer to the nearest enemy**.
-- **Routed:** immediately faces its own map edge. Each activation it must spend all MP
+- **Routed:** immediately faces its own map edge. Each activation it must spend all AP
   fleeing toward that edge and may not fire. Off the map = eliminated. Note that a
   fleeing squadron shows its **rear arc** (hit on 3+) — routs are contagious *and*
   bloody, per GDD §5.5.

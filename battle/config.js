@@ -9,7 +9,7 @@ export {
   ActivationOrder, DeploymentMode, opposingSide,
 } from "./domain/constants.js";
 
-export const RANGE = 3, CMD_R = 4, MP_MAX = MAX_MOVEMENT_POINTS, MAX_TURNS = 15;
+export const RANGE = 3, CMD_R = 4, AP_MAX = MAX_MOVEMENT_POINTS, MP_MAX = AP_MAX, MAX_TURNS = 15;
 export { MAX_TURNS_PER_ACTIVATION };
 
 // The playable board is a hexagon (pointy left/right, flat top/bottom):

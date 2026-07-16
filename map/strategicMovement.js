@@ -48,7 +48,7 @@ function compareActionSequences(a, b) {
   return a.length - b.length;
 }
 
-// Lower is better. At the same MP cost, a route that avoids moving astern
+// Lower is better. At the same AP cost, a route that avoids moving astern
 // wins, followed by one that spends fewer actions turning. The remaining
 // exact tie is stable and favors left before right.
 export function compareStrategicRoutes(a, b) {
@@ -57,6 +57,22 @@ export function compareStrategicRoutes(a, b) {
     || (a.turns - b.turns)
     || compareActionSequences(a.actions, b.actions)
     || (a.finalFacing - b.finalFacing);
+}
+
+export function chooseCourseRoute(routes, currentPosition, targetPosition) {
+  if (!routes || !currentPosition || !targetPosition) return null;
+  const currentDistance = hexDist(currentPosition, targetPosition);
+  let best = null;
+  let bestDistance = currentDistance;
+  for (const route of routes.values()) {
+    const distance = hexDist(route.position, targetPosition);
+    if (distance > bestDistance) continue;
+    if (distance < bestDistance || !best || compareStrategicRoutes(route, best) < 0) {
+      best = route;
+      bestDistance = distance;
+    }
+  }
+  return bestDistance < currentDistance ? best : null;
 }
 
 function nearestEnemyPosition(position, enemyPositions) {
@@ -96,10 +112,10 @@ function stateKey(state) {
 }
 
 /**
- * Explore every position/facing/remaining-MP state without mutating the
+ * Explore every position/facing/remaining-AP state without mutating the
  * supplied activation or any ECS components. `movementCost` receives the
- * destination hex of a forward step; asteroid and gravity pricing can be
- * supplied by the caller while open space defaults to the normal 1 MP.
+ * destination hex of a forward step; variable terrain pricing can be
+ * supplied by the caller while open space defaults to the normal 1 AP.
  */
 export function findReachableDestinations({
   position,
@@ -168,7 +184,7 @@ export function findReachableDestinations({
     }
 
     // Moving astern always consumes a full movement allowance, even when
-    // the activation happens to have a larger custom MP pool.
+    // the activation happens to have a larger custom AP pool.
     if (state.remainingMp >= movementAllowance) {
       const backwardPosition = neighbor(state.position, (state.facing + 3) % 6);
       if (canTakeStep({ moraleState, position: state.position, nextPosition: backwardPosition, enemyPositions, isBlocked })) {

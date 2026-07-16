@@ -13,21 +13,17 @@
 import {
   AU_KM, BODY_RADIUS_KM, MAJOR_MOON_RADIUS_KM, PARENT_GM_KM3S2,
   keplerPeriodDays, angleAtDeg, J2000_MS, hashAngleDeg,
-  BELT_INNER_AU, BELT_OUTER_AU,
 } from "./orbits.js";
 
 // ---------------------------------------------------------------------
 // Real solar-system data
 // ---------------------------------------------------------------------
 
-// Semi-major axis, AU, for the Sun's 8 planets -- and a representative
-// distance for the asteroid belt, which isn't a single real body so it
-// doesn't get a "real" orbit the way a planet or moon does.
+// Semi-major axis, AU, for the Sun's 8 planets.
 const PLANET_AXIS_AU = {
   mercury: 0.387, venus: 0.723, earth: 1.000, mars: 1.524,
   jupiter: 5.203, saturn: 9.537, uranus: 19.191, neptune: 30.069,
 };
-const BELT_AXIS_AU = 2.7;
 
 // Mean longitude at the J2000.0 epoch (degrees) and each planet's real
 // orbital period (days) -- the standard "Keplerian elements for
@@ -55,7 +51,6 @@ const SYSTEMS_DEF = {
       { id: "venus",   label: "Venus" },
       { id: "earth",   label: "Earth" },
       { id: "mars",    label: "Mars" },
-      { id: "belt",    label: "Asteroid Belt", kind: "belt" },
       { id: "jupiter", label: "Jupiter" },
       { id: "saturn",  label: "Saturn" },
       { id: "uranus",  label: "Uranus" },
@@ -85,27 +80,11 @@ export function universeLevel() {
 // layoutSystemWithMoons for how a moon's position nests inside its planet's).
 export function systemLevel(systemId) {
   const def = SYSTEMS_DEF[systemId];
-  const bodies = def.planets.map(p => {
-    if (p.kind === "belt") {
-      return {
-        id: p.id, label: p.label, kind: "belt", radiusKm: 0,
-        distanceKm: BELT_AXIS_AU * AU_KM,
-        orbit: { refAngleDeg: hashAngleDeg(p.id), refEpochMs: J2000_MS, periodDays: 365.25636 * BELT_AXIS_AU ** 1.5 },
-        // Real bounds of the actual main belt -- see beltAsteroidHexes in
-        // map/main.js, which populates this range with real individual
-        // "1-hex asteroid" obstacles instead of drawing the belt as the
-        // single point above (that point is now only a distanceKm/orbit
-        // anchor for the asteroid field's own math, not a click target).
-        beltInnerAU: BELT_INNER_AU, beltOuterAU: BELT_OUTER_AU,
-        moons: [],
-      };
-    }
-    return {
+  const bodies = def.planets.map(p => ({
       id: p.id, label: p.label, kind: "planet", radiusKm: BODY_RADIUS_KM[p.id],
       distanceKm: PLANET_AXIS_AU[p.id] * AU_KM, orbit: planetOrbit(p.id),
       moons: moonsOf(p.id),
-    };
-  });
+    }));
   return { title: def.title, center: { ...def.star, radiusKm: BODY_RADIUS_KM[def.star.id] }, bodies };
 }
 

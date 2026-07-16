@@ -34,7 +34,7 @@ import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { hexEdgeWidths, hexCorners } from "../battle/hexmath.js";
-import { fleetShipPositions } from "../battle/fleetShips.js";
+import { layeredFleetShipPositions } from "../battle/fleetShips.js";
 import { ACCENT } from "../battle/colors.js";
 import { chooseGraphicsQuality, GraphicsQuality } from "./renderQuality.js";
 
@@ -61,7 +61,8 @@ const ORBIT_RING_Y = 0.4;
 const SPARSE_OVERLAY_Y = 0.65;
 const SHIP_BASE_Y = 0.8;
 const SHIP_BASE_EDGE_Y = 0.85;
-const SHIP_HEIGHT_ABOVE_PLANE = 3;
+const SHIP_FIRST_LAYER_HEIGHT = 1.3;
+const SHIP_LAYER_SPACING = 1;
 const SHIP_FILL_ALPHA = 0.5;
 
 export function createSystemScene({
@@ -182,8 +183,8 @@ export function createSystemScene({
 
   // Real photo textures (solarsystemscope.com, CC BY 4.0 -- see
   // map/textures/) for the bodies that have one (the Sun, the 8 planets,
-  // Earth's own Moon -- see BODY_TEXTURES in map/main.js); everything else
-  // (every other moon, the belt) keeps its flat tinted-sphere look, same
+  // Earth's own Moon -- see BODY_TEXTURES in map/main.js); every other moon
+  // keeps its flat tinted-sphere look, same
   // as before textures existed. Loaded once per URL and cached here for
   // this scene's whole life so context restoration or a future static-scene
   // rebuild never refetches/re-decodes the same image. TextureLoader.load returns
@@ -218,7 +219,7 @@ export function createSystemScene({
   // of a flat color. `y` (default 0, the shared orbital plane) is only
   // ever nonzero for a major moon with real inclination -- see
   // layoutSystemWithMoons in orbitmap.js.
-  function addBody({ x, y = 0, z, radius, color, data, emissive, textureUrl, spinDirection = 1 }) {
+  function addBody({ x, y = 0, z, radius, color, data, emissive, textureUrl, spinDirection = 1, ownerColorHex = null }) {
     const r = Math.max(radius, 0.5);
     const geo = new THREE.SphereGeometry(r, bodyWidthSegments, bodyHeightSegments);
     const tex = getTexture(textureUrl);
@@ -233,6 +234,15 @@ export function createSystemScene({
     mesh.userData = data;
     buildGroup.add(mesh);
     buildPickables.push(mesh);
+    if (ownerColorHex) {
+      const halo = new THREE.Mesh(
+        new THREE.RingGeometry(r * 1.3, r * 1.55, 32),
+        new THREE.MeshBasicMaterial({ color: ownerColorHex, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+      );
+      halo.position.set(x, ORBIT_RING_Y, z);
+      halo.rotation.x = -Math.PI / 2;
+      buildGroup.add(halo);
+    }
     if (data?.kind === "star" || data?.kind === "planet") spinningBodies.push({ mesh, spinDirection });
     return mesh;
   }
@@ -257,7 +267,7 @@ export function createSystemScene({
   // A Fleet is one strategic entity and one selectable hex token. Its
   // Strength is rendered as a compact formation of smaller Ship cones
   // inside that token, so a loss immediately removes one visible Ship.
-  function addShip({ x, z, colorHex, data, selected, facingDeg, strength = 4, formation = "sphere", isFlag, isTarget, targetColor, isGroupMember, hasActed }) {
+  function addShip({ x, z, colorHex, data, selected, facingDeg, strength = 4, formation = "sphere", isFlag, isTarget, targetColor, isGroupMember, hasActed, memberSlots = null, showBase = true }) {
     // Grounded at the plane, not lifted -- unlike the old ring-only
     // marker, this group now holds both the flat hex token (which
     // should visibly rest on the orbital plane, at SHIP_BASE_Y) and the raised
@@ -267,21 +277,28 @@ export function createSystemScene({
     const group = new THREE.Group();
     group.position.set(x, 0, z);
 
-    const s = 3;
+    const s = 2;
     const geo = new THREE.ConeGeometry(s * 0.22, s * 0.7, 3);
     const rad = facingDeg * Math.PI / 180;
-    const shipPositions = fleetShipPositions({
-      x: 0, y: 0, facingDeg, formation, strength, spacing: s * 0.95,
+    const allShipPositions = layeredFleetShipPositions({
+      x: 0, z: 0, strength: memberSlots ? 57 : strength, spacing: 1.7,
+      firstLayerHeight: SHIP_FIRST_LAYER_HEIGHT,
+      layerSpacing: SHIP_LAYER_SPACING,
     });
+    const slots = memberSlots || allShipPositions.map((_, slotIndex) => ({ slotIndex, member: null }));
     let leadShip = null;
-    for (let i = 0; i < shipPositions.length; i++) {
-      const [shipX, shipZ] = shipPositions[i];
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      const [shipX, shipY, shipZ] = allShipPositions[slot.slotIndex];
+      const memberColor = slot.member?.isOriginalFlagship ? ACCENT.flagshipArrow
+        : slot.member?.state === "routed" ? "#ff3355"
+          : slot.member?.state === "shaken" ? "#ffd166" : colorHex;
       const mat = new THREE.MeshStandardMaterial({
-        color: isFlag && i === 0 && !hasActed ? ACCENT.flagshipArrow : colorHex,
+        color: memberColor,
         roughness: 0.6,
       });
       const ship = new THREE.Mesh(geo, mat);
-      ship.position.set(shipX, SHIP_HEIGHT_ABOVE_PLANE, shipZ);
+      ship.position.set(shipX, shipY, shipZ);
       ship.quaternion.setFromUnitVectors(
         new THREE.Vector3(0, 1, 0),
         new THREE.Vector3(Math.cos(rad), 0, Math.sin(rad)),
@@ -315,6 +332,11 @@ export function createSystemScene({
     // the sparse overlays and orbit rings below it (see the Y-height comment
     // near SHIP_BASE_Y above) so it reads as a token resting on the
     // orbital plane, not floating at the cone's own height.
+    if (!showBase) {
+      group.userData = data;
+      buildGroup.add(group);
+      return group;
+    }
     const tapRadius = Math.max(s * 1.8, 3);
     const corners = hexCorners(0, 0, tapRadius);
     const fanPositions = [];
@@ -359,34 +381,6 @@ export function createSystemScene({
     return group;
   }
 
-  // A single "1-hex asteroid" -- a real, individually-clickable obstacle
-  // occupying exactly one hex cell (matches "each ship occupies 1 hex" --
-  // see shipHexOffset in map/main.js), not a decorative particle. An
-  // irregular low-poly rock (an icosahedron with each vertex nudged by a
-  // small amount, deterministically seeded from its own world position so
-  // the same asteroid looks the same on every static rebuild) rather than a
-  // perfect gem, colored by the caller (map/main.js's FILL.belt) same as
-  // every other body here.
-  function addAsteroid({ x, z, radius, colorHex, data }) {
-    const geo = new THREE.IcosahedronGeometry(radius, 0);
-    let seed = Math.abs(Math.round(x * 131 + z * 977)) || 1;
-    const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-    const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const jitter = 1 + (rand() - 0.5) * 0.4;
-      pos.setXYZ(i, pos.getX(i) * jitter, pos.getY(i) * jitter, pos.getZ(i) * jitter);
-    }
-    geo.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 1, flatShading: true });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, SHIP_BASE_Y + radius * 0.6, z);
-    mesh.rotation.set(rand() * Math.PI * 2, rand() * Math.PI * 2, rand() * Math.PI * 2);
-    mesh.userData = data;
-    buildGroup.add(mesh);
-    buildPickables.push(mesh);
-    return mesh;
-  }
-
   // A shot's tracer: one straight line between firer and target, added
   // fresh to the dynamic group. That group is replaced each effect frame,
   // so a tracer simply not being re-added IS it disappearing; no separate
@@ -395,12 +389,12 @@ export function createSystemScene({
   // the actual fade -- map/main.js's ensureEffectLoop is what keeps calling
   // rebuilding the dynamic group with a shrinking alpha until the
   // effect expires, same as battle/render.js's own laser fade.
-  function addTracer({ from, to, hit, alpha = 1 }) {
+  function addTracer({ from, to, hit, colorHex = "#ffffff", alpha = 1 }) {
     const geo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(from[0], SHIP_BASE_Y + 0.1, from[1]),
       new THREE.Vector3(to[0], SHIP_BASE_Y + 0.1, to[1]),
     ]);
-    const mat = new THREE.LineBasicMaterial({ color: hit ? 0xff3355 : 0x8899aa, transparent: true, opacity: 0.9 * alpha });
+    const mat = new THREE.LineBasicMaterial({ color: colorHex, transparent: true, opacity: (hit ? 0.9 : 0.65) * alpha });
     buildGroup.add(new THREE.Line(geo, mat));
     if (hit) {
       // A wider, dimmer halo line underneath -- same "glow" idea as
@@ -410,11 +404,50 @@ export function createSystemScene({
       const haloGeo = new LineSegmentsGeometry();
       haloGeo.setPositions([from[0], SHIP_BASE_Y + 0.1, from[1], to[0], SHIP_BASE_Y + 0.1, to[1]]);
       const haloMat = new LineMaterial({
-        color: 0xff3355, linewidth: 6, resolution: new THREE.Vector2(sizePx, sizePx),
+        color: colorHex, linewidth: 6, resolution: new THREE.Vector2(sizePx, sizePx),
         transparent: true, opacity: 0.5 * alpha,
       });
       buildGroup.add(new LineSegments2(haloGeo, haloMat));
     }
+  }
+
+  // Presentation-only member-Ship death burst. The caller supplies a
+  // normalized progress value, so this never feeds time back into rules.
+  function addExplosion({ x, z, slotIndex = 0, progress = 0, seed = 0 }) {
+    const p = Math.max(0, Math.min(1, progress));
+    const fade = 1 - p;
+    const [burstX, burstY, burstZ] = layeredFleetShipPositions({
+      x, z, strength: 57, spacing: 1.7,
+      firstLayerHeight: SHIP_FIRST_LAYER_HEIGHT,
+      layerSpacing: SHIP_LAYER_SPACING,
+    })[slotIndex % 57];
+    const coreRadius = 0.25 + Math.sin(Math.PI * p) * 0.9;
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(coreRadius, 8, 6),
+      new THREE.MeshBasicMaterial({ color: p < 0.45 ? 0xfff1a8 : 0xff6b22, transparent: true, opacity: fade * 0.9 }),
+    );
+    core.position.set(burstX, burstY, burstZ);
+    buildGroup.add(core);
+
+    const rays = [];
+    const rayCount = 7;
+    for (let index = 0; index < rayCount; index++) {
+      const angle = ((seed * 0.61803398875 + index / rayCount) % 1) * Math.PI * 2;
+      const inner = 0.3 + p * 0.8;
+      const outer = inner + 0.7 + p * 1.8;
+      const rise = ((index % 3) - 1) * 0.25;
+      rays.push(
+        burstX + Math.cos(angle) * inner, burstY + rise * p, burstZ + Math.sin(angle) * inner,
+        burstX + Math.cos(angle) * outer, burstY + rise * p, burstZ + Math.sin(angle) * outer,
+      );
+    }
+    const rayGeo = new LineSegmentsGeometry();
+    rayGeo.setPositions(rays);
+    const rayMat = new LineMaterial({
+      color: 0xffb02e, linewidth: 2.5, resolution: new THREE.Vector2(sizePx, sizePx),
+      transparent: true, opacity: fade,
+    });
+    buildGroup.add(new LineSegments2(rayGeo, rayMat));
   }
 
   // One merged flat mesh covering every hex a single body's gravity
@@ -520,15 +553,33 @@ export function createSystemScene({
     transientOverlayGroup.add(new THREE.Mesh(geometry, material));
   }
 
+  function addCourseLines(lines, projectPoint = (x, z) => [x, z]) {
+    for (const line of lines) {
+      const [fromX, fromZ] = projectPoint(line.from.x, line.from.z);
+      const [toX, toZ] = projectPoint(line.to.x, line.to.z);
+      const geometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(fromX, SPARSE_OVERLAY_Y, fromZ),
+        new THREE.Vector3(toX, SPARSE_OVERLAY_Y, toZ),
+      ]);
+      transientOverlayGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({
+        color: line.colorHex, transparent: true, opacity: 0.8,
+      })));
+    }
+  }
+
   // Pointer movement only replaces this tiny group; bodies, textures,
-  // gravity fields, asteroids, and ships stay in their retained groups.
-  function updateSparseOverlays({ commandCells = [], hoverCells = [], reachableCells = [], hoveredKey = null, colorHex, hexSize, projectPoint }) {
+  // gravity fields, and ships stay in their retained groups.
+  function updateSparseOverlays({ boardCells = [], commandCells = [], hoverCells = [], reachableCells = [], courseCells = [], courseLines = [], hoveredKey = null, colorHex, hexSize, projectPoint }) {
     clearGroup(transientOverlayGroup);
+    addHexLines(boardCells, hexSize, { color: 0x53617c, opacity: 0.34, linewidth: 1, projectPoint });
+    addCourseLines(courseLines, projectPoint);
     if (colorHex) {
       addHexFills(commandCells, hexSize, { color: colorHex, opacity: 0.035, projectPoint });
       addHexLines(commandCells, hexSize, { color: colorHex, opacity: 0.2, linewidth: 1, projectPoint });
     }
     addHexLines(hoverCells, hexSize, { color: 0x8892ab, opacity: 0.55, linewidth: 1, projectPoint });
+    addHexFills(courseCells, hexSize, { color: ACCENT.flagshipArrow, opacity: 0.2, projectPoint });
+    addHexLines(courseCells, hexSize, { color: ACCENT.flagshipArrow, opacity: 1, linewidth: 3, projectPoint });
     if (colorHex) {
       const hovered = reachableCells.filter(cell => cell.key === hoveredKey);
       const normal = reachableCells.filter(cell => cell.key !== hoveredKey);
@@ -555,14 +606,14 @@ export function createSystemScene({
     spinningBodies.length = 0;
     rebuildGroup(
       staticGroup, staticPickables, fn,
-      { addBody, addRing, addAsteroid, addGravityField },
+      { addBody, addRing, addGravityField },
     );
     canvas.dataset.staticBuilds = String(++staticBuildCount);
   }
   function rebuildDynamic(fn) {
     rebuildGroup(
       dynamicGroup, dynamicPickables, fn,
-      { addShip, addTracer },
+      { addShip, addTracer, addExplosion },
     );
     canvas.dataset.dynamicBuilds = String(++dynamicBuildCount);
   }
@@ -597,15 +648,8 @@ export function createSystemScene({
     },
     updateSparseOverlays,
     clearSparseOverlays,
-    // Whatever real body/fleet is under the cursor, or null. A ship always
-    // wins over anything else the ray also hit -- chiefly the asteroid
-    // belt's own invisible hit-torus, which spans a full ring around the
-    // Sun at Y=0 and can end up spatially coincident with a ship that's
-    // been moved into that radius band (via Set Course, say). Plain
-    // nearest-surface order has no notion of "which pickable matters
-    // more here", so without this a ship sitting on/near the belt was
-    // unclickable -- the belt's own invisible ring, being the nearer
-    // surface along that particular ray, ate the click first.
+    // Whatever real body/fleet is under the cursor, or null. Prefer a ship
+    // when multiple retained objects overlap the same ray.
     pick(clientX, clientY) {
       raycaster.setFromCamera(ndcFromEvent(clientX, clientY), camera);
       const hits = raycaster.intersectObjects(pickables, true);

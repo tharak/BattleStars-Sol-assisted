@@ -15,6 +15,33 @@ test("each Fleet formation has one visible Ship per Strength", () => {
   }
 });
 
+test("large strategic Fleets render every Ship in a compact formation", () => {
+  for (const formation of FleetShips.FLEET_FORMATION_NAMES) {
+    const offsets = FleetShips.fleetShipOffsets(formation, 40);
+    assert.equal(offsets.length, 40);
+    assert.ok(offsets.every(([forward, lateral]) => Math.abs(forward) <= 1 && Math.abs(lateral) <= 1));
+  }
+});
+
+test("3D Fleets stack 57 Ships as three collision-free layers of 19", () => {
+  const positions = FleetShips.layeredFleetShipPositions({
+    x: 0, z: 0, strength: 57,
+    spacing: 1.7, firstLayerHeight: 1.3, layerSpacing: 1,
+  });
+  assert.equal(positions.length, 57);
+  assert.deepEqual([...new Set(positions.map(([, y]) => y))], [1.3, 2.3, 3.3]);
+  assert.ok(positions.some(([x, y, z]) => y === 1.3 && Math.abs(x) < 1e-9 && Math.abs(z - 3.4) < 1e-9));
+  for (const height of [1.3, 2.3, 3.3]) {
+    const layer = positions.filter(([, y]) => y === height);
+    assert.equal(layer.length, 19);
+    for (let i = 0; i < layer.length; i++) {
+      for (let j = i + 1; j < layer.length; j++) {
+        assert.ok(Math.hypot(layer[i][0] - layer[j][0], layer[i][2] - layer[j][2]) >= 1.7 - 1e-9);
+      }
+    }
+  }
+});
+
 test("Fleet Ship formations rotate with the Fleet facing", () => {
   const east = FleetShips.fleetShipPositions({
     x: 10, y: 20, facingDeg: 0, formation: "line", strength: 2, spacing: 10,
@@ -34,4 +61,17 @@ test("Fleet formation state defaults to sphere and only accepts supported format
   assert.equal(world.get(fleet, C.FleetFormation).name, "wedge");
   assert.equal(ShipRules.setFleetFormation(world, fleet, "spiral"), false);
   assert.equal(ShipRules.fleetFormationOf(world, fleet), "wedge");
+});
+
+test("Fleet flagship counts retain merged command ships and legacy tags", () => {
+  const world = new World();
+  const fleet = ShipRules.spawnFleet(world, {
+    faction: "blue", c: 0, r: 0, dir: 0, label: "B1", flagshipCount: 3,
+  });
+  assert.equal(ShipRules.flagshipCountOf(world, fleet), 3);
+  assert.equal(ShipRules.isFlagship(world, fleet), true);
+  assert.equal(ShipRules.setFlagshipCount(world, fleet, 0), 0);
+  assert.equal(ShipRules.isFlagship(world, fleet), false);
+  world.add(fleet, C.Flagship, true);
+  assert.equal(ShipRules.flagshipCountOf(world, fleet), 1);
 });

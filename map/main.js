@@ -2,24 +2,25 @@ import {
   layoutOrbitalBoard, drawOrbitalBoard, hitTest,
   layoutSystemWithMoons, worldToScreen, screenToWorld, strokeFaintRing,
 } from "./orbitmap.js";
-import { AU_KM, hashAngleDeg } from "./orbits.js";
 import {
   universeLevel, systemLevel,
   ARMADA_DEPLOYMENT_FORMATIONS, FACTIONS, FLEETS_PER_ARMADA,
   FLEET_POSITIONS, initFleetPositions,
 } from "./levels.js";
-import { DIR_ANGLE, directionToward, hexCorners, key as hexKey } from "../battle/hexmath.js";
+import { DIR_ANGLE, directionToward, hexCorners, hexDist, incomingArc, key as hexKey, neighbor } from "../battle/hexmath.js";
 import { formationLayout } from "../battle/formations.js";
 import { BOARD_TINT, ACCENT } from "../battle/colors.js";
 import { LINE_WIDTH, LASER_DURATION, LASER_HALO_ALPHA } from "../battle/dimensions.js";
-import { CMD_R, MP_MAX, MAX_TURNS_PER_ACTIVATION, STATE_NAME } from "../battle/config.js";
+import { CMD_R, MP_MAX, MAX_TURNS_PER_ACTIVATION } from "../battle/config.js";
 import * as SC from "../battle/core/shipRules.js";
 import { fleetShipPositions } from "../battle/fleetShips.js";
 import { MathRandomSource } from "../battle/core/random.js";
+import { resolveMorale, resolveRally } from "../battle/domain/moraleRules.js";
+import { FiringArc } from "../battle/domain/constants.js";
 import { forwardMovementCost } from "../battle/domain/movementRules.js";
 import { makeEffectLoop } from "../battle/core/effectLoop.js";
 import {
-  executeStrategicGroupRoute, executeStrategicGroupTurn, executeStrategicRoute, findGroupReachableDestinations,
+  chooseCourseRoute, executeStrategicGroupRoute, executeStrategicGroupTurn, executeStrategicRoute, findGroupReachableDestinations,
   findReachableDestinations, hexPatch, membersWithinCommand, resolveStrategicClick, StrategicClickAction,
 } from "./strategicMovement.js";
 import {
@@ -30,8 +31,27 @@ import {
 import { buildGravityFieldGroups, warpGravityPoint } from "./gravityField.js";
 import { gravitySpinDirection, resolveGravityDrift } from "./gravityDynamics.js";
 import {
-  scaledStrategicShipIconRadius, strategicShipColor, STRATEGIC_FACTION_COLORS,
+  scaledStrategicShipIconRadius, strategicFleetTone, strategicLaserColor, STRATEGIC_FACTION_COLORS,
 } from "./shipAppearance.js";
+import {
+  GRAVITY_INFLUENCE_RADIUS_FACTOR, INITIAL_FLEET_STRENGTH,
+  MAX_FLEET_STRENGTH, MAX_SHIPS_PER_HEX, PRODUCTION_FLEETS_PER_TURN, STRATEGIC_DAMAGE_PER_HIT,
+} from "./strategicBalance.js";
+import {
+  bodyResourceValue, canConquerPlanet, conquestCompletionRound,
+  conquestDurationTurns, spawnPointTowardSun,
+} from "./strategicEconomy.js";
+import { blocksFleetMovement, mergeSurvivorId } from "./strategicFleetActions.js";
+import {
+  StrategicShipState, allocateCollisionLosses, applyDirectionalDamage,
+  assignMixedFleetSlots, createStrategicMembers, fleetEffectiveStrength,
+  resolveHexVolley, splitStrategicMembers,
+} from "./strategicShipMembers.js";
+import {
+  createPlayableTutorialMap, nextPlayableTutorialStep,
+  PLAYABLE_TUTORIAL_STEPS, STRATEGIC_TUTORIAL_GROUPS, tutorialMechanicCount,
+} from "./tutorials.js";
+import { normalizeStrategicSetup, strategicFactionSetup, strategicTurnUsesTimer } from "./strategicGameSetup.js";
 
 const canvas = document.getElementById("starmapCv");
 const mapwrap = document.getElementById("mapwrap");
@@ -49,12 +69,38 @@ const infoBack = document.getElementById("infoBack");
 const infoFire = document.getElementById("infoFire");
 const infoTravel = document.getElementById("infoTravel");
 const infoGroupMove = document.getElementById("infoGroupMove");
+const infoMerge = document.getElementById("infoMerge");
+const infoSplit = document.getElementById("infoSplit");
+const infoConquer = document.getElementById("infoConquer");
 const infoEnd = document.getElementById("infoEnd");
 const mapArea = document.getElementById("mapArea");
 const turnPanel = document.getElementById("turnPanel");
 const turnHeading = document.getElementById("turnHeading");
+const turnPanelToggle = document.getElementById("turnPanelToggle");
 const turnClock = document.getElementById("turnClock");
 const turnFactions = document.getElementById("turnFactions");
+const startOverlay = document.getElementById("startOverlay");
+const startMenu = document.getElementById("startMenu");
+const newGameBtn = document.getElementById("newGameBtn");
+const tutorialBtn = document.getElementById("tutorialBtn");
+const tutorialMenu = document.getElementById("tutorialMenu");
+const tutorialBackBtn = document.getElementById("tutorialBackBtn");
+const tutorialGroups = document.getElementById("tutorialGroups");
+const tutorialDetail = document.getElementById("tutorialDetail");
+const tutorialListBtn = document.getElementById("tutorialListBtn");
+const tutorialGroupTitle = document.getElementById("tutorialGroupTitle");
+const tutorialLessonTitle = document.getElementById("tutorialLessonTitle");
+const tutorialMechanics = document.getElementById("tutorialMechanics");
+const playerCountSelect = document.getElementById("playerCount");
+const npcCountSelect = document.getElementById("npcCount");
+const setupSummary = document.getElementById("setupSummary");
+const tutorialGuide = document.getElementById("tutorialGuide");
+const tutorialLibraryBtn = document.getElementById("tutorialLibraryBtn");
+const tutorialExitBtn = document.getElementById("tutorialExitBtn");
+const tutorialLibraryExitBtn = document.getElementById("tutorialLibraryExitBtn");
+const tutorialStep = document.getElementById("tutorialStep");
+const tutorialActionTitle = document.getElementById("tutorialActionTitle");
+const tutorialActionMessage = document.getElementById("tutorialActionMessage");
 const urlParams = new URLSearchParams(window.location.search);
 const forcedRenderer = urlParams.get("renderer");
 const requestedQuality = ["low", "high"].includes(urlParams.get("quality"))
@@ -95,6 +141,19 @@ let path = [
 const world = new SC.World();
 const random = new MathRandomSource();
 const armadaRoster = new Map(Object.keys(FACTIONS).map(faction => [faction, []]));
+const strategicMembers = new Map();
+const originalFlagshipByFaction = new Map();
+let nextStrategicMemberId = 1;
+// The title-state map is deliberately neutral. New Game assigns the three
+// established starting planets immediately before spawning the Armadas.
+const planetEconomy = new Map();
+const configuredFactions = [];
+const factionControllers = new Map();
+let npcTurnTimer = null;
+let tutorialMode = false;
+let tutorialMap = null;
+let tutorialLibraryReturnToGame = false;
+let tutorialStepIndex = 0;
 let strategicTurn = createStrategicTurnState({ startedAtMs: performance.now() });
 let lastRenderedTimerSecond = null;
 let lastTurnRosterSignature = null;
@@ -110,6 +169,9 @@ let activation = null;
 let travelArmed = false;
 let groupMoveArmed = false;
 const groupMovePreferences = new Set();
+const shipCourses = new Map();
+const shipTurnMp = new Map();
+const shipTurnTurns = new Map();
 // Fire's own transient shot-line records, derived here from fire results
 // -- a parallel, map-local array to battle's own presentation effects (not
 // shared with it), each with a start timestamp/duration so ensureEffectLoop
@@ -117,26 +179,18 @@ const groupMovePreferences = new Set();
 // own laser effect, instead of a static line that only ever repaints when
 // something else happens to trigger a render.
 const effects = [];
+const STRATEGIC_EXPLOSION_DURATION = 720;
 // The RAF-loop mechanics for fading `effects` out -- see render()'s use
 // of this below, and battle/core/effectLoop.js for why this is shared
 // with battle/render.js's own laser-fade loop instead of a second
 // hand-rolled copy of the same "keep repainting while anything's still
 // fading" bookkeeping.
 const ensureEffectLoop = makeEffectLoop();
-// The asteroid field's current hexes (a Set of "c,r" keys, see
-// battle/hexmath.js's key()) -- refreshed from the retained system-layout
-// cache whenever the System renderer paints. Passed into shipRules.js's
-// legalTargets/canFire as extraObstacles (asteroids still block line of
-// sight); movement cost is this file's own concern (see hexMoveCost), not
-// shipRules.js's. Read by the command functions below (doForward,
-// doFireAt, ...), which live outside any single render, hence
-// module-level rather than a render-local const.
-let beltObstacles = new Set();
 // Every hex under a body's gravity (a Map of "c,r" -> {cost,colorHex,x,y},
 // see gravityHexes). `cost` now expresses visual/current strength only;
-// gravity moves ships automatically but no longer consumes extra MP.
+// gravity moves ships automatically but no longer consumes extra AP.
 let gravityHexCosts = new Map();
-// The last body (star/planet/moon/belt) clicked at the System level, for
+// The last body (star/planet/moon) clicked at the System level, for
 // the info panel -- see infoFor/renderInfoPanel. Superseded by
 // selectedShip whenever a ship is selected (checked first in
 // renderInfoPanel), so this only ever matters while nothing's selected.
@@ -160,7 +214,173 @@ let reachableMoves = new Map();
 let hoverMoveHint = null;
 let persistentHint = "";
 
+const membersOf = fleet => strategicMembers.get(fleet) || [];
+const memberCount = fleet => membersOf(fleet).length;
+const fleetStrength = fleet => fleetEffectiveStrength(membersOf(fleet));
+const isRoutedFleet = fleet => memberCount(fleet) > 0
+  && membersOf(fleet).every(member => member.state === StrategicShipState.ROUTED);
+function syncStrategicFleet(fleet) {
+  const members = membersOf(fleet);
+  // The shared ECS uses Strength > 0 as its alive marker. Routed members
+  // contribute zero effective Strength but remain physical targets on the
+  // strategic map, so retain a tiny adapter sentinel until the last member
+  // is actually removed.
+  SC.setStrength(world, fleet, members.length ? Math.max(0.001, fleetEffectiveStrength(members)) : 0);
+  SC.setFlagshipCount(world, fleet, members.filter(member => member.isOriginalFlagship).length);
+  if (!members.length) {
+    shipCourses.delete(fleet);
+    shipTurnMp.delete(fleet);
+    shipTurnTurns.delete(fleet);
+    groupMovePreferences.delete(fleet);
+  }
+}
+function attachFreshMembers(fleet, count, flagshipCount = 0) {
+  const members = createStrategicMembers(count, {
+    nextId: () => nextStrategicMemberId++, flagshipCount,
+  });
+  strategicMembers.set(fleet, members);
+  const faction = SC.factionOf(world, fleet);
+  const original = members.find(member => member.isOriginalFlagship);
+  if (original && !originalFlagshipByFaction.has(faction)) originalFlagshipByFaction.set(faction, original.id);
+  syncStrategicFleet(fleet);
+  return members;
+}
+function stateCounts(fleet) {
+  const counts = { ready: 0, shaken: 0, routed: 0 };
+  for (const member of membersOf(fleet)) counts[member.state]++;
+  return counts;
+}
+
+function queueShipExplosion(position, slotIndex, memberId) {
+  effects.push({
+    kind: "explosion",
+    position: [...position],
+    slotIndex: Math.max(0, slotIndex) % MAX_SHIPS_PER_HEX,
+    seed: memberId,
+    start: performance.now(),
+    dur: STRATEGIC_EXPLOSION_DURATION,
+  });
+}
+
 initFleetPositions();
+
+function showStartMenu() {
+  startMenu.hidden = false;
+  tutorialMenu.hidden = true;
+  tutorialDetail.hidden = true;
+}
+
+function closeTutorialLibrary() {
+  if (!tutorialLibraryReturnToGame) {
+    showStartMenu();
+    return;
+  }
+  startOverlay.hidden = true;
+  tutorialLibraryReturnToGame = false;
+  tutorialGuide.hidden = false;
+}
+
+function exitPlayableTutorial() {
+  if (!tutorialMode) return;
+  window.location.reload();
+}
+
+function showTutorialMenu() {
+  startMenu.hidden = true;
+  tutorialMenu.hidden = false;
+  tutorialDetail.hidden = true;
+}
+
+function showTutorial(group, tutorial) {
+  startMenu.hidden = true;
+  tutorialMenu.hidden = true;
+  tutorialDetail.hidden = false;
+  tutorialGroupTitle.textContent = group.title;
+  tutorialLessonTitle.textContent = tutorial.title;
+  tutorialMechanics.replaceChildren(...tutorial.mechanics.map(mechanic => {
+    const item = document.createElement("li");
+    item.textContent = mechanic;
+    return item;
+  }));
+}
+
+function buildTutorialMenu() {
+  tutorialBtn.title = `${tutorialMechanicCount()} mechanics in ${STRATEGIC_TUTORIAL_GROUPS.length} groups`;
+  tutorialGroups.replaceChildren(...STRATEGIC_TUTORIAL_GROUPS.map(group => {
+    const section = document.createElement("section");
+    section.className = "tutorialGroup";
+    const heading = document.createElement("h3");
+    heading.textContent = group.title;
+    const description = document.createElement("p");
+    description.textContent = group.description;
+    const lessons = document.createElement("div");
+    lessons.className = "tutorialLessons";
+    for (const tutorial of group.tutorials) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = tutorial.title;
+      button.onclick = () => showTutorial(group, tutorial);
+      lessons.appendChild(button);
+    }
+    section.append(heading, description, lessons);
+    return section;
+  }));
+}
+
+function renderPlayableTutorialStep() {
+  const current = PLAYABLE_TUTORIAL_STEPS[tutorialStepIndex];
+  if (!current) {
+    tutorialStep.textContent = "Complete";
+    tutorialActionTitle.textContent = "Flight school complete";
+    tutorialActionMessage.textContent = "Continue commanding the Fleet.";
+    return;
+  }
+  tutorialStep.textContent = `Step ${tutorialStepIndex + 1} of ${PLAYABLE_TUTORIAL_STEPS.length}`;
+  tutorialActionTitle.textContent = current.title;
+  tutorialActionMessage.textContent = current.message;
+}
+
+function advancePlayableTutorial(event) {
+  if (!tutorialMode) return;
+  const nextIndex = nextPlayableTutorialStep(PLAYABLE_TUTORIAL_STEPS, tutorialStepIndex, event);
+  if (nextIndex === tutorialStepIndex) return;
+  tutorialStepIndex = nextIndex;
+  renderPlayableTutorialStep();
+}
+
+function updateSetupCounts(changed = null) {
+  const { players, npcs, total, valid } = normalizeStrategicSetup({
+    playerCount: playerCountSelect.value,
+    npcCount: npcCountSelect.value,
+    maxFactions: Object.keys(FACTIONS).length,
+    changed: changed === playerCountSelect ? "players" : "npcs",
+  });
+  playerCountSelect.value = String(players);
+  npcCountSelect.value = String(npcs);
+  newGameBtn.disabled = !valid;
+  setupSummary.classList.toggle("invalid", !valid);
+  setupSummary.textContent = valid
+    ? `${players} local player${players === 1 ? "" : "s"} · ${npcs} NPC commander${npcs === 1 ? "" : "s"} · ${total} Armada${total === 1 ? "" : "s"}`
+    : "Choose at least one local player or NPC commander.";
+}
+
+buildTutorialMenu();
+updateSetupCounts();
+playerCountSelect.onchange = () => updateSetupCounts(playerCountSelect);
+npcCountSelect.onchange = () => updateSetupCounts(npcCountSelect);
+tutorialBtn.onclick = startPlayableTutorial;
+tutorialBackBtn.onclick = closeTutorialLibrary;
+tutorialListBtn.onclick = showTutorialMenu;
+newGameBtn.onclick = startNewGame;
+tutorialLibraryBtn.onclick = () => {
+  tutorialLibraryReturnToGame = true;
+  tutorialGuide.hidden = true;
+  tutorialLibraryExitBtn.hidden = false;
+  startOverlay.hidden = false;
+  showTutorialMenu();
+};
+tutorialExitBtn.onclick = exitPlayableTutorial;
+tutorialLibraryExitBtn.onclick = exitPlayableTutorial;
 
 // Nothing on the map carries a floating label anymore (see addBody/
 // addShip in scene3d.js and drawDot/drawShip below) -- this panel is
@@ -172,18 +392,30 @@ function infoFor(hit) {
   if (!hit) return null;
   if (hit.kind === "star") return { name: hit.label, detail: `The star this system orbits. Gravity current: ${gravitySpinDirection(hit.id) > 0 ? "clockwise" : "counter-clockwise"}.` };
   if (hit.kind === "moon") return { name: hit.label, detail: `Moon of ${hit.parentLabel}.` };
-  if (hit.kind === "planet") return { name: hit.label, detail: `Planet. Gravity current: ${gravitySpinDirection(hit.id) > 0 ? "clockwise" : "counter-clockwise"}.` };
-  if (hit.kind === "asteroid") return { name: "Asteroid", detail: `Costs a full ${MP_MAX} MP to push through; still blocks line of sight.` };
-  if (hit.kind === "fleet") {
+  if (hit.kind === "planet") {
+    const economy = planetEconomy.get(hit.id);
+    const owner = economy?.owner ? `${FACTIONS[economy.owner].label} controlled` : "Uncontrolled";
+    const conquest = economy?.conquest
+      ? ` Conquest by ${FACTIONS[economy.conquest.faction].label} completes in round ${economy.conquest.completesRound}.`
+      : "";
     return {
-      name: `Fleet ${SC.labelOf(world, hit.id)}${hit.isFlag ? " ★" : ""}`,
-      detail: `${FACTIONS[hit.faction].label} Armada — ${SC.strengthOf(world, hit.id)} Ships, ${STATE_NAME[SC.moraleOf(world, hit.id)]}.`,
+      name: hit.label,
+      detail: `${owner}; produces one Strength-${hit.resourceValue || 1} Fleet each owner turn.${conquest}`,
+    };
+  }
+  if (hit.kind === "fleet" || hit.kind === "fleet-stack") {
+    const course = shipCourses.get(hit.id);
+    const flagshipCount = SC.flagshipCountOf(world, hit.id);
+    const states = stateCounts(hit.id);
+    return {
+      name: `Fleet ${SC.labelOf(world, hit.id)}${flagshipCount ? ` ★${flagshipCount > 1 ? `×${flagshipCount}` : ""}` : ""}`,
+      detail: `${FACTIONS[hit.faction].label} Armada — ${memberCount(hit.id)} Ships, Strength ${fleetStrength(hit.id).toFixed(1)} (${states.ready} Ready, ${states.shaken} Shaken, ${states.routed} Routed).${course ? ` Course: ${course.join(",")}.` : ""}`,
     };
   }
   return null;
 }
 // Puts whatever was just clicked into the info panel. Shared by both the
-// 3D and 2D click handlers' star/moon/planet/belt branches -- each still
+// 3D and 2D click handlers' star/moon/planet branches -- each still
 // owns its own setHint(...) wording (that genuinely differs per render
 // path), but the panel update itself doesn't.
 function showBodyInfo(hit) {
@@ -210,7 +442,15 @@ function livingShipIdsByFaction() {
   ]));
 }
 
+function economicallyEligibleFactions() {
+  return [...new Set([...planetEconomy.values()].map(economy => economy.owner).filter(Boolean))];
+}
+
+const controllerOfFaction = faction => factionControllers.get(faction) || "player";
+const isNpcFaction = faction => controllerOfFaction(faction) === "npc";
+
 function shipCanActThisTurn(ship) {
+  if (isRoutedFleet(ship)) return false;
   return canStrategicShipAct(strategicTurn, {
     shipId: ship,
     faction: SC.factionOf(world, ship),
@@ -234,8 +474,13 @@ function activationCommitted() {
 // Selecting a ship resets its activation fresh (mirrors
 // battle/lifecycle/activationLifecycle.js:selectUnit). Strategic turns add
 // the active-faction and already-acted gates around the shared ship rules.
-function selectShip(e) {
-  if (!SC.isAlive(world, e) || !shipCanActThisTurn(e)) {
+function selectShip(e, { npc = false } = {}) {
+  const shipFaction = SC.factionOf(world, e);
+  if (isNpcFaction(shipFaction) && !npc) {
+    setHint(`${FACTIONS[shipFaction].label} Armada is controlled by an NPC commander.`);
+    return false;
+  }
+  if (!SC.isAlive(world, e) || isRoutedFleet(e) || !shipCanActThisTurn(e)) {
     const faction = FACTIONS[activeStrategicFaction(strategicTurn)].label;
     setHint(`${SC.labelOf(world, e)} cannot act now — it is ${faction}'s turn or this ship has already acted.`);
     renderTurnPanel();
@@ -247,8 +492,9 @@ function selectShip(e) {
     return false;
   }
   selectedShip = e;
+  const turns = shipTurnTurns.get(e) ?? 0;
   activation = {
-    u: e, mp: MP_MAX, turns: 0, turnsByShip: { [e]: 0 }, moved: false, fired: false, fireMode: false,
+    u: e, mp: shipTurnMp.get(e) ?? MP_MAX, turns, turnsByShip: { [e]: turns }, moved: false, fired: false, fireMode: false,
     cmd: SC.inCommand(world, e), participantShipIds: [e],
   };
   travelArmed = false;
@@ -257,7 +503,8 @@ function selectShip(e) {
     && commandGroupShips().length >= 2;
   setHint(groupMoveArmed
     ? `${SC.labelOf(world, e)} selected — command-group move restored.`
-    : `${SC.labelOf(world, e)} selected.`);
+    : `${SC.labelOf(world, e)} selected.${shipCourses.has(e) ? ` Course target: ${shipCourses.get(e).join(",")}.` : ""}`);
+  advancePlayableTutorial("fleet-selected");
   renderInfoPanel();
   render();
   return true;
@@ -281,30 +528,37 @@ function completeCurrentActivation({ preserveHint = false } = {}) {
   const resultHint = persistentHint;
   const previousFaction = activeStrategicFaction(strategicTurn);
   const previousRound = strategicTurn.round;
+  const previousTurn = strategicTurn;
   strategicTurn = completeStrategicActivations(strategicTurn, {
     shipIds: activationParticipants(),
     livingShipIdsByFaction: livingShipIdsByFaction(),
     nowMs: performance.now(),
+    eligibleFactionIds: economicallyEligibleFactions(),
   });
+  const economyHint = processStrategicTurnTransition(previousTurn, strategicTurn);
   lastRenderedTimerSecond = null;
   clearSelection();
   if (strategicTurn.round !== previousRound || activeStrategicFaction(strategicTurn) !== previousFaction) {
     const nextTurn = `${FACTIONS[activeStrategicFaction(strategicTurn)].label} turn begins.`;
-    setHint(preserveHint ? `${resultHint} ${nextTurn}` : nextTurn);
+    const transitionHint = economyHint ? `${nextTurn} ${economyHint}.` : nextTurn;
+    setHint(preserveHint ? `${resultHint} ${transitionHint}` : transitionHint);
   } else if (!preserveHint) {
     setHint("");
   }
   renderInfoPanel();
   render();
+  scheduleNpcTurn();
 }
 function endActivation() {
+  if (!activation) return;
+  advancePlayableTutorial("ended");
   completeCurrentActivation();
 }
 
 function completeExhaustedActivation() {
   if (!activation || !isStrategicActivationExhausted({
     canMove: SC.canMove(activation),
-    canFire: SC.canFire(world, activation, beltObstacles),
+    canFire: SC.canFire(world, activation),
   })) return false;
   const label = SC.labelOf(world, activation.u);
   setHint(persistentHint
@@ -320,6 +574,40 @@ function finishActionRender() {
   render();
 }
 
+function scheduleNpcTurn() {
+  if (npcTurnTimer != null) window.clearTimeout(npcTurnTimer);
+  npcTurnTimer = null;
+  if (!shipsSpawned || !isNpcFaction(activeStrategicFaction(strategicTurn))) return;
+  npcTurnTimer = window.setTimeout(runNpcActivation, 320);
+}
+
+function runNpcActivation() {
+  npcTurnTimer = null;
+  const faction = activeStrategicFaction(strategicTurn);
+  if (!shipsSpawned || !isNpcFaction(faction)) return;
+  const fleet = SC.shipsOfFaction(world, faction).find(ship => shipCanActThisTurn(ship));
+  if (!fleet || !selectShip(fleet, { npc: true })) return;
+  const target = SC.legalTargets(world, fleet)
+    .sort((a, b) => hexDist(SC.posOf(world, fleet), SC.posOf(world, a))
+      - hexDist(SC.posOf(world, fleet), SC.posOf(world, b)))[0];
+  if (target != null) {
+    doFireAt(target);
+  } else {
+    const enemy = SC.enemiesOf(world, faction)
+      .sort((a, b) => hexDist(SC.posOf(world, fleet), SC.posOf(world, a))
+        - hexDist(SC.posOf(world, fleet), SC.posOf(world, b)))[0];
+    if (enemy != null) {
+      shipCourses.set(fleet, [...SC.posOf(world, enemy)]);
+      activation.courseSet = true;
+      setHint(`${FACTIONS[faction].label} NPC sets ${SC.labelOf(world, fleet)} on an intercept course.`);
+    } else {
+      setHint(`${FACTIONS[faction].label} NPC completes ${SC.labelOf(world, fleet)}'s activation.`);
+    }
+  }
+  if (activation) completeCurrentActivation({ preserveHint: true });
+  else scheduleNpcTurn();
+}
+
 function doTurn(dir) {
   if (groupMoveArmed) {
     const ships = commandGroupShips();
@@ -329,7 +617,9 @@ function doTurn(dir) {
     });
     if (!result.ok) return;
     recordActivationParticipants(ships);
+    rememberActivationMp(ships);
     setHint(`${ships.length} Fleets turned ${dir > 0 ? "left" : "right"}.`);
+    advancePlayableTutorial("turned");
     finishActionRender();
     return;
   }
@@ -338,46 +628,499 @@ function doTurn(dir) {
   activation.turns += 1;
   activation.turnsByShip[activation.u] = activation.turns;
   activation.moved = true; activation.fireMode = false;
+  rememberActivationMp();
   setHint("");
+  advancePlayableTutorial("turned");
   finishActionRender();
 }
 function moveResultHint(res) {
   if (res.reason === "shaken") setHint("Shaken — refuses to close the distance.");
   else if (res.reason === "blocked") setHint("Another ship blocks that hex.");
 }
-// A plain, terrain-free hex step's own MP price -- the baseline every
-// ship pays before any obstacle is factored in. Kept as its own named
+// A forward hex step's own AP price. Kept as its own named
 // constant (rather than a bare 1 sprinkled through the cost math below)
 // so a future per-ship move cost (e.g. a heavier hull that costs more
-// than 1 MP/hex even in open space) is a one-line swap to a lookup here,
-// with hexExtraCost's terrain math untouched either way.
-// Asteroids are the only strategic terrain that changes MP cost: crossing
-// one consumes the full allowance. Gravity is now a positional hazard
-// instead; its visible arrows and automatic drift carry the whole effect,
-// so entering any gravity hex costs the normal forward 1 MP. Backward still
-// consumes the full allowance under the unchanged tactical rule.
-function hexMoveCost(hex) {
-  const k = hexKey(hex[0], hex[1]);
-  return forwardMovementCost({
-    hasAsteroid: beltObstacles.has(k),
-  });
-}
+// than 1 AP/hex even in open space) is a one-line swap to a lookup here.
+// Gravity is a positional hazard whose automatic drift does not add AP cost.
+function hexMoveCost() { return forwardMovementCost(); }
 
 function movementBlocker(movingShips) {
   const moving = new Set(movingShips);
+  const movingFactions = new Set(movingShips.map(ship => SC.factionOf(world, ship)));
   const occupied = new Set();
   for (const ship of SC.aliveShips(world)) {
     if (moving.has(ship)) continue;
+    if ([...movingFactions].some(faction => !blocksFleetMovement(faction, SC.factionOf(world, ship)))) continue;
     const [c, r] = SC.posOf(world, ship);
     occupied.add(hexKey(c, r));
   }
-  return nextPosition => occupied.has(hexKey(nextPosition[0], nextPosition[1]));
+  return nextPosition => (tutorialMap && !tutorialMap.contains(nextPosition))
+    || occupied.has(hexKey(nextPosition[0], nextPosition[1]));
+}
+
+function rememberActivationMp(ships = activationParticipants()) {
+  if (!activation) return;
+  for (const ship of ships) {
+    shipTurnMp.set(ship, activation.mp);
+    shipTurnTurns.set(ship, activation.turnsByShip?.[ship] ?? (ship === activation.u ? activation.turns : 0));
+  }
+}
+
+function fleetContainingMember(memberId) {
+  return SC.aliveFleets(world).find(fleet => membersOf(fleet).some(member => member.id === memberId)) ?? null;
+}
+
+function originalFlagshipFleet(faction) {
+  const memberId = originalFlagshipByFaction.get(faction);
+  return memberId == null ? null : fleetContainingMember(memberId);
+}
+
+function inOriginalFlagshipCommand(fleet) {
+  const flagship = originalFlagshipFleet(SC.factionOf(world, fleet));
+  return flagship != null && hexDist(SC.posOf(world, fleet), SC.posOf(world, flagship)) <= CMD_R;
+}
+
+function spawnMemberFleet(sourceFleet, members, { state = null } = {}) {
+  if (!members.length) return null;
+  const faction = SC.factionOf(world, sourceFleet);
+  const roster = armadaRoster.get(faction);
+  const [c, r] = SC.posOf(world, sourceFleet);
+  const fleet = SC.spawnFleet(world, {
+    faction, c, r, dir: SC.facingOf(world, sourceFleet),
+    label: `${faction[0].toUpperCase()}${roster.length + 1}`,
+    formation: SC.fleetFormationOf(world, sourceFleet),
+    strength: 1,
+  });
+  if (state) for (const member of members) member.state = state;
+  strategicMembers.set(fleet, members);
+  roster.push(fleet);
+  shipTurnMp.set(fleet, 0);
+  shipTurnTurns.set(fleet, 0);
+  syncStrategicFleet(fleet);
+  return fleet;
+}
+
+function extractRoutedMembers(fleet) {
+  const members = membersOf(fleet);
+  const routed = members.filter(member => member.state === StrategicShipState.ROUTED);
+  if (!routed.length || routed.length === members.length) {
+    syncStrategicFleet(fleet);
+    return routed.length ? fleet : null;
+  }
+  strategicMembers.set(fleet, members.filter(member => member.state !== StrategicShipState.ROUTED));
+  syncStrategicFleet(fleet);
+  return spawnMemberFleet(fleet, routed);
+}
+
+function moraleCheckMember(fleet, member, { fromFlankOrRear = false } = {}) {
+  if (!member || member.state === StrategicShipState.ROUTED) return false;
+  const friendlySupport = SC.shipsOfFaction(world, SC.factionOf(world, fleet)).some(other => (
+    other !== fleet && hexDist(SC.posOf(world, fleet), SC.posOf(world, other)) <= 1
+    && membersOf(other).some(ship => ship.state === StrategicShipState.READY)
+  ));
+  const result = resolveMorale({
+    steadyFriendAdjacent: friendlySupport,
+    inCommand: inOriginalFlagshipCommand(fleet),
+    fromFlankOrRear,
+  }, random);
+  if (!result.passed) member.state = member.state === StrategicShipState.READY
+    ? StrategicShipState.SHAKEN : StrategicShipState.ROUTED;
+  return !result.passed;
+}
+
+function applyMoraleAndContagion(fleet, memberIds, options = {}) {
+  let failures = 0;
+  for (const id of new Set(memberIds)) {
+    const member = membersOf(fleet).find(candidate => candidate.id === id);
+    if (moraleCheckMember(fleet, member, options)) failures++;
+  }
+  syncStrategicFleet(fleet);
+  extractRoutedMembers(fleet);
+  if (!failures) return;
+  for (const nearby of SC.shipsOfFaction(world, SC.factionOf(world, fleet))) {
+    if (nearby === fleet || hexDist(SC.posOf(world, fleet), SC.posOf(world, nearby)) > 2) continue;
+    const candidates = membersOf(nearby).filter(member => member.state !== StrategicShipState.ROUTED);
+    if (!candidates.length) continue;
+    const member = candidates[Math.floor(random.next() * candidates.length)];
+    moraleCheckMember(nearby, member);
+    syncStrategicFleet(nearby);
+    extractRoutedMembers(nearby);
+  }
+}
+
+function resolveHexCollisionAt(position, movingFleetIds = []) {
+  const fleets = SC.aliveFleets(world).filter(fleet => hexKey(...SC.posOf(world, fleet)) === hexKey(...position));
+  const total = fleets.reduce((sum, fleet) => sum + memberCount(fleet), 0);
+  if (total <= MAX_SHIPS_PER_HEX) return 0;
+  const result = allocateCollisionLosses({
+    fleets: fleets.map(fleet => ({ fleetId: fleet, members: membersOf(fleet) })),
+    movingFleetIds, maxShips: MAX_SHIPS_PER_HEX, random,
+  });
+  const visibleAssignments = assignMixedFleetSlots(
+    fleets.map(fleet => ({ fleetId: fleet, members: membersOf(fleet) })),
+    total,
+  );
+  const slotByMember = new Map(visibleAssignments.map(assignment => [assignment.member.id, assignment.slotIndex]));
+  for (const losses of result.losses.values()) {
+    for (const member of losses) queueShipExplosion(position, slotByMember.get(member.id) ?? member.id, member.id);
+  }
+  for (const entry of result.fleets) {
+    strategicMembers.set(entry.fleetId, entry.members);
+    syncStrategicFleet(entry.fleetId);
+  }
+  for (const [fleet, losses] of result.losses) {
+    const survivors = membersOf(fleet);
+    if (survivors.length) {
+      const shaken = survivors[Math.floor(random.next() * survivors.length)];
+      applyMoraleAndContagion(fleet, [shaken.id]);
+    }
+    if (losses.length) shipCourses.delete(fleet);
+  }
+  return total - MAX_SHIPS_PER_HEX;
+}
+
+function processMemberTurnStart(faction) {
+  let rallied = 0, retreated = 0;
+  const fleets = [...SC.shipsOfFaction(world, faction)];
+  for (const fleet of fleets) {
+    if (!SC.isAlive(world, fleet)) continue;
+    if (!isRoutedFleet(fleet)) {
+      for (const member of membersOf(fleet)) {
+        if (member.state !== StrategicShipState.SHAKEN) continue;
+        if (resolveRally({ inCommand: inOriginalFlagshipCommand(fleet) }, random).passed) {
+          member.state = StrategicShipState.READY;
+          rallied++;
+        }
+      }
+      syncStrategicFleet(fleet);
+      continue;
+    }
+    const flagship = originalFlagshipFleet(faction);
+    const successes = [], failures = [];
+    for (const member of membersOf(fleet)) {
+      if (inOriginalFlagshipCommand(fleet) && resolveRally({ inCommand: true }, random).passed) successes.push(member);
+      else failures.push(member);
+    }
+    if (successes.length) {
+      for (const member of successes) member.state = StrategicShipState.SHAKEN;
+      const receiver = flagship && flagship !== fleet ? flagship : null;
+      const receiverHexCount = receiver ? SC.aliveFleets(world)
+        .filter(other => hexKey(...SC.posOf(world, other)) === hexKey(...SC.posOf(world, receiver)))
+        .reduce((sum, other) => sum + memberCount(other), 0) : MAX_SHIPS_PER_HEX;
+      const receiverRoom = receiver ? Math.max(0, Math.min(
+        MAX_FLEET_STRENGTH - memberCount(receiver),
+        MAX_SHIPS_PER_HEX - receiverHexCount,
+      )) : 0;
+      const joined = successes.slice(0, receiverRoom);
+      if (joined.length) {
+        strategicMembers.set(receiver, [...membersOf(receiver), ...joined]);
+        syncStrategicFleet(receiver);
+      }
+      const recovered = successes.slice(joined.length);
+      if (recovered.length) spawnMemberFleet(fleet, recovered, { state: StrategicShipState.SHAKEN });
+      rallied += successes.length;
+    }
+    strategicMembers.set(fleet, failures);
+    syncStrategicFleet(fleet);
+    if (!failures.length) continue;
+    const target = SC.backwardHex(world, fleet);
+    if (!movementBlocker([fleet])(target)) {
+      SC.setPosition(world, fleet, ...target);
+      const drift = gravityDrift(SC.posOf(world, fleet));
+      if (drift) SC.setPosition(world, fleet, ...drift.to);
+      resolveHexCollisionAt(SC.posOf(world, fleet), [fleet]);
+      retreated++;
+    }
+    shipTurnMp.set(fleet, 0);
+    strategicTurn.actedShipIds = [...new Set([...strategicTurn.actedShipIds, fleet])];
+  }
+  return { rallied, retreated };
+}
+
+function advanceFactionCourses(faction) {
+  const living = SC.shipsOfFaction(world, faction);
+  for (const ship of living) {
+    if (isRoutedFleet(ship)) continue;
+    shipTurnMp.set(ship, MP_MAX);
+    shipTurnTurns.set(ship, 0);
+  }
+  let moved = 0;
+  let arrived = 0;
+  for (const ship of living) {
+    const target = shipCourses.get(ship);
+    if (!target) continue;
+    const position = SC.posOf(world, ship);
+    if (hexKey(position[0], position[1]) === hexKey(target[0], target[1])) {
+      shipCourses.delete(ship);
+      arrived++;
+      continue;
+    }
+    const courseActivation = { u: ship, mp: MP_MAX, turns: 0, moved: false, fired: false, cmd: SC.inCommand(world, ship) };
+    const routes = findReachableDestinations({
+      position,
+      facing: SC.facingOf(world, ship),
+      activation: courseActivation,
+      moraleState: SC.moraleOf(world, ship),
+      enemyPositions: SC.enemiesOf(world, faction).map(enemy => SC.posOf(world, enemy)),
+      movementAllowance: MP_MAX,
+      movementCost: hexMoveCost,
+      isBlocked: movementBlocker([ship]),
+      resolveForcedMovement: gravityDrift,
+    });
+    const route = chooseCourseRoute(routes, position, target);
+    if (!route) continue;
+    const result = executeStrategicRoute(route, {
+      activation: courseActivation,
+      turnLeft: () => SC.turn(world, ship, 1),
+      turnRight: () => SC.turn(world, ship, -1),
+      moveForward: () => SC.moveForward(world, ship, { isBlocked: movementBlocker([ship]) }),
+      moveBackward: () => SC.moveBackward(world, ship, { isBlocked: movementBlocker([ship]) }),
+      applyForcedStep: drift => SC.setPosition(world, ship, ...drift.to),
+    });
+    if (!result.ok) continue;
+    shipTurnMp.set(ship, courseActivation.mp);
+    shipTurnTurns.set(ship, courseActivation.turns);
+    moved++;
+    resolveHexCollisionAt(SC.posOf(world, ship), [ship]);
+    const nextPosition = SC.posOf(world, ship);
+    if (hexKey(nextPosition[0], nextPosition[1]) === hexKey(target[0], target[1])) {
+      shipCourses.delete(ship);
+      arrived++;
+    }
+  }
+  return { moved, arrived };
+}
+
+function syncPlanetEconomy(layout) {
+  for (const planet of layout.planets) {
+    if (!planetEconomy.has(planet.id)) {
+      planetEconomy.set(planet.id, { owner: null, conquest: null, lastProducedTurn: null });
+    }
+    planet.resourceValue = bodyResourceValue({ radiusPx: planet.rPx, hexSizePx: GRID_HEX_SIZE_PX });
+    planet.ownerFaction = planetEconomy.get(planet.id).owner;
+  }
+}
+
+function planetHex(planet) {
+  return pixelToHexIndex(planet.x, planet.y);
+}
+
+function mergeCandidates(ship = activation?.u) {
+  if (ship == null || !SC.isAlive(world, ship)) return [];
+  const faction = SC.factionOf(world, ship);
+  const positionKey = hexKey(...SC.posOf(world, ship));
+  const coLocated = SC.shipsOfFaction(world, faction).filter(other => (
+    other !== ship
+    && SC.isAlive(world, other)
+    && memberCount(other) > 0
+    && hexKey(...SC.posOf(world, other)) === positionKey
+  ));
+  let combinedStrength = memberCount(ship);
+  return coLocated.filter(other => {
+    if (isRoutedFleet(other)) return false;
+    const nextStrength = combinedStrength + memberCount(other);
+    if (nextStrength > MAX_FLEET_STRENGTH) return false;
+    combinedStrength = nextStrength;
+    return true;
+  });
+}
+
+function mergeFleets() {
+  if (!activation || !SC.canMove(activation)) return;
+  const candidates = mergeCandidates();
+  if (!candidates.length) return;
+  const mergingFleets = [activation.u, ...candidates];
+  const survivor = mergeSurvivorId(mergingFleets.map(fleet => ({
+    id: fleet, flagshipCount: SC.flagshipCountOf(world, fleet),
+  })));
+  const absorbed = mergingFleets.filter(fleet => fleet !== survivor);
+  const mergedMembers = mergingFleets.flatMap(fleet => membersOf(fleet));
+  if (mergedMembers.length > MAX_FLEET_STRENGTH) return;
+
+  recordActivationParticipants(mergingFleets);
+  strategicMembers.set(survivor, mergedMembers);
+  syncStrategicFleet(survivor);
+  for (const fleet of absorbed) {
+    strategicMembers.set(fleet, []);
+    syncStrategicFleet(fleet);
+    shipCourses.delete(fleet);
+    shipTurnMp.delete(fleet);
+    shipTurnTurns.delete(fleet);
+    groupMovePreferences.delete(fleet);
+  }
+  activation.mp = 0;
+  activation.u = survivor;
+  activation.moved = true;
+  activation.fireMode = false;
+  activation.cmd = SC.inCommand(world, survivor);
+  selectedShip = survivor;
+  groupMoveArmed = false;
+  rememberActivationMp([survivor]);
+  setHint(`${SC.labelOf(world, survivor)} absorbed ${absorbed.length} Fleet${absorbed.length === 1 ? "" : "s"} and now has ${mergedMembers.length} Ships. All AP spent.`);
+  advancePlayableTutorial("merged");
+  finishActionRender();
+}
+
+function splitFleet() {
+  if (!activation || !SC.canMove(activation)) return;
+  const source = activation.u;
+  const split = splitStrategicMembers(membersOf(source));
+  if (!split) return;
+  const faction = SC.factionOf(world, source);
+  const roster = armadaRoster.get(faction);
+  const [c, r] = SC.posOf(world, source);
+  strategicMembers.set(source, split.retained);
+  syncStrategicFleet(source);
+  const detached = SC.spawnFleet(world, {
+    faction, c, r, dir: SC.facingOf(world, source),
+    flagshipCount: split.detached.filter(member => member.isOriginalFlagship).length,
+    label: `${faction[0].toUpperCase()}${roster.length + 1}`,
+    formation: SC.fleetFormationOf(world, source),
+    strength: fleetEffectiveStrength(split.detached),
+  });
+  strategicMembers.set(detached, split.detached);
+  syncStrategicFleet(detached);
+  roster.push(detached);
+  shipTurnMp.set(source, 0);
+  shipTurnMp.set(detached, 0);
+  shipTurnTurns.set(detached, 0);
+  activation.mp = 0;
+  activation.turnsByShip[detached] = 0;
+  activation.moved = true;
+  activation.fireMode = false;
+  recordActivationParticipants([detached]);
+  setHint(`${SC.labelOf(world, source)} split into ${split.retained.length}- and ${split.detached.length}-Ship Fleets. All AP spent.`);
+  advancePlayableTutorial("split");
+  finishActionRender();
+}
+
+function adjacentConquestTarget(ship = activation?.u) {
+  const layout = systemStaticCache?.layout;
+  if (!layout || ship == null || !SC.isAlive(world, ship)) return null;
+  const faction = SC.factionOf(world, ship);
+  return layout.planets.find(planet => {
+    const economy = planetEconomy.get(planet.id);
+    return economy?.owner !== faction && !economy?.conquest && canConquerPlanet({
+      fleetPosition: SC.posOf(world, ship),
+      planetPosition: planetHex(planet),
+      fleetStrength: memberCount(ship),
+      resourceValue: planet.resourceValue,
+    });
+  }) || null;
+}
+
+function beginConquest() {
+  const planet = adjacentConquestTarget();
+  if (!planet || !activation) return;
+  const faction = SC.factionOf(world, activation.u);
+  const economy = planetEconomy.get(planet.id);
+  const sourceMembers = membersOf(activation.u);
+  if (sourceMembers.length < planet.resourceValue) return;
+  const committed = [...sourceMembers].sort((a, b) => (
+    Number(a.isOriginalFlagship) - Number(b.isOriginalFlagship)
+    || fleetEffectiveStrength([a]) - fleetEffectiveStrength([b])
+    || a.id - b.id
+  )).slice(0, planet.resourceValue);
+  const committedIds = new Set(committed.map(member => member.id));
+  strategicMembers.set(activation.u, sourceMembers.filter(member => !committedIds.has(member.id)));
+  syncStrategicFleet(activation.u);
+  economy.conquest = {
+    faction,
+    startedRound: strategicTurn.round,
+    completesRound: conquestCompletionRound(strategicTurn.round, planet.resourceValue),
+  };
+  activation.mp = 0;
+  rememberActivationMp();
+  activation.fired = true;
+  activation.moved = true;
+  setHint(`${FACTIONS[faction].label} begins conquering ${planet.label}: ${planet.resourceValue} Ships committed; control transfers in ${conquestDurationTurns(planet.resourceValue)} rounds.`);
+  advancePlayableTutorial("conquered");
+  completeCurrentActivation({ preserveHint: true });
+}
+
+function openProductionHex(planet) {
+  const gravityRadiusPx = planet.rPx * GRAVITY_INFLUENCE_RADIUS_FACTOR;
+  const desiredPoint = spawnPointTowardSun({
+    planetX: planet.x, planetY: planet.y, gravityRadiusPx, hexSizePx: GRID_HEX_SIZE_PX,
+  });
+  const desired = pixelToHexIndex(...desiredPoint);
+  const occupied = SC.occupiedSet(world);
+  const candidates = hexPatch(desired, 4).sort((a, b) => {
+    const [ax, ay] = shipHexOffset(a[0], a[1]);
+    const [bx, by] = shipHexOffset(b[0], b[1]);
+    return Math.hypot(ax - desiredPoint[0], ay - desiredPoint[1])
+      - Math.hypot(bx - desiredPoint[0], by - desiredPoint[1]);
+  });
+  return candidates.find(hex => {
+    if (occupied.has(hexKey(hex[0], hex[1]))) return false;
+    const [x, y] = shipHexOffset(hex[0], hex[1]);
+    return Math.hypot(x - planet.x, y - planet.y) > gravityRadiusPx;
+  }) || null;
+}
+
+function produceFleet(planet, faction) {
+  const position = openProductionHex(planet);
+  if (!position) return null;
+  const roster = armadaRoster.get(faction);
+  const ship = SC.spawnFleet(world, {
+    faction, c: position[0], r: position[1], dir: directionToward(position, [0, 0]),
+    label: `${faction[0].toUpperCase()}${roster.length + 1}`,
+    strength: planet.resourceValue,
+  });
+  roster.push(ship);
+  attachFreshMembers(ship, planet.resourceValue);
+  shipTurnMp.set(ship, MP_MAX);
+  shipTurnTurns.set(ship, 0);
+  return ship;
+}
+
+function startFactionEconomyTurn(layout, faction, round) {
+  syncPlanetEconomy(layout);
+  const morale = processMemberTurnStart(faction);
+  const completed = [];
+  for (const planet of layout.planets) {
+    const economy = planetEconomy.get(planet.id);
+    if (economy.conquest && round >= economy.conquest.completesRound) {
+      economy.owner = economy.conquest.faction;
+      economy.conquest = null;
+      planet.ownerFaction = economy.owner;
+      completed.push(`${planet.label} joins ${FACTIONS[economy.owner].label}`);
+      scene3dStaticSource = null;
+    }
+  }
+
+  let produced = 0;
+  for (const planet of layout.planets) {
+    const economy = planetEconomy.get(planet.id);
+    const turnKey = `${round}:${faction}`;
+    if (economy.owner !== faction || economy.lastProducedTurn === turnKey) continue;
+    for (let index = 0; index < PRODUCTION_FLEETS_PER_TURN; index++) {
+      if (produceFleet(planet, faction) != null) produced++;
+    }
+    economy.lastProducedTurn = turnKey;
+  }
+  const courses = advanceFactionCourses(faction);
+  return [
+    ...completed,
+    morale.rallied ? `${morale.rallied} Ship${morale.rallied === 1 ? "" : "s"} rallied` : "",
+    morale.retreated ? `${morale.retreated} routed Fleet${morale.retreated === 1 ? "" : "s"} retreated` : "",
+    produced ? `${FACTIONS[faction].label} produces ${produced} Fleet${produced === 1 ? "" : "s"}` : "",
+    courses.moved ? `${courses.moved} Fleet${courses.moved === 1 ? "" : "s"} advance on course${courses.arrived ? `; ${courses.arrived} arrived` : ""}` : "",
+  ]
+    .filter(Boolean).join(". ");
+}
+
+function processStrategicTurnTransition(previousTurn, nextTurn) {
+  if (previousTurn.round === nextTurn.round
+      && activeStrategicFaction(previousTurn) === activeStrategicFaction(nextTurn)) return "";
+  const layout = systemStaticCache?.layout;
+  return layout ? startFactionEconomyTurn(layout, activeStrategicFaction(nextTurn), nextTurn.round) : "";
 }
 
 function commandGroupShips() {
   if (!activation || !SC.isAlive(world, activation.u) || !SC.isFlagship(world, activation.u)) return [];
   const friendlyMembers = SC.shipsOfFaction(world, SC.factionOf(world, activation.u))
-    .filter(ship => shipCanActThisTurn(ship))
+    .filter(ship => shipCanActThisTurn(ship) && !isRoutedFleet(ship))
     .map(id => ({ id, position: SC.posOf(world, id) }));
   return membersWithinCommand(activation.u, friendlyMembers, CMD_R).map(member => member.id);
 }
@@ -393,7 +1136,7 @@ function commandGroupMembers() {
 }
 
 function groupMoveText(route) {
-  return `${route.memberRoutes.length} ships move together · ${route.cost} MP`;
+  return `${route.memberRoutes.length} ships move together · ${route.cost} AP`;
 }
 
 function groupRouteTo(destination) {
@@ -431,7 +1174,7 @@ function recomputeReachableMoves() {
   }
   const hoveredRoute = pointerHex ? reachableMoves.get(hexKey(pointerHex[0], pointerHex[1])) : null;
   hoverMoveHint = hoveredRoute
-    ? (groupMoveArmed ? groupMoveText(hoveredRoute) : `Move here · ${hoveredRoute.cost} MP`)
+    ? (groupMoveArmed ? groupMoveText(hoveredRoute) : `Move here · ${hoveredRoute.cost} AP`)
     : null;
   renderHint();
 }
@@ -469,12 +1212,14 @@ function executeReachableMove(route) {
     return false;
   }
   if (movingAsGroup) recordActivationParticipants(route.memberRoutes.map(plan => plan.memberId));
+  for (const ship of movingShips) resolveHexCollisionAt(SC.posOf(world, ship), movingShips);
+  rememberActivationMp(movingShips);
   // The route's individual rule calls mutate only position/facing. The
   // activation bookkeeping is committed once after the complete route.
   hoverPatchCenter = null;
   setHint(movingAsGroup
-    ? `${route.memberRoutes.length} ships moved together for ${route.cost} MP; gravity may have separated the formation.`
-    : `${SC.labelOf(world, activation.u)} moved ${route.cost} MP${route.forcedSteps?.length ? " and drifted with the current" : ""}.`);
+    ? `${route.memberRoutes.length} ships moved together for ${route.cost} AP; gravity may have separated the formation.`
+    : `${SC.labelOf(world, activation.u)} moved ${route.cost} AP${route.forcedSteps?.length ? " and drifted with the current" : ""}.`);
   finishActionRender();
   return true;
 }
@@ -491,13 +1236,16 @@ function doForward() {
   }
   if (!SC.canMove(activation)) return;
   const cost = hexMoveCost(SC.forwardHex(world, activation.u));
-  if (activation.mp < cost) { setHint(`Not enough MP -- that hex costs ${cost}.`); renderInfoPanel(); return; }
+  if (activation.mp < cost) { setHint(`Not enough AP — that hex costs ${cost}.`); renderInfoPanel(); return; }
   const res = SC.moveForward(world, activation.u, { isBlocked: movementBlocker([activation.u]) });
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp -= cost; activation.moved = true; activation.fireMode = false;
+  rememberActivationMp();
   const drift = gravityDrift(SC.posOf(world, activation.u));
   if (drift) SC.setPosition(world, activation.u, ...drift.to);
-  setHint(drift ? `Gravity current pulls ${SC.labelOf(world, activation.u)} one hex ${drift.wellId === "sun" ? "around the Sun" : `around ${drift.wellId}`}.` : "");
+  const collisions = resolveHexCollisionAt(SC.posOf(world, activation.u), [activation.u]);
+  setHint(`${drift ? `Gravity current pulls ${SC.labelOf(world, activation.u)} one hex ${drift.wellId === "sun" ? "around the Sun" : `around ${drift.wellId}`}.` : ""}${collisions ? ` Collision destroys ${collisions} Ship${collisions === 1 ? "" : "s"}.` : ""}`.trim());
+  advancePlayableTutorial("forward");
   finishActionRender();
 }
 function doBackward() {
@@ -515,9 +1263,12 @@ function doBackward() {
   const res = SC.moveBackward(world, activation.u, { isBlocked: movementBlocker([activation.u]) });
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp = 0; activation.moved = true; activation.fireMode = false;
+  rememberActivationMp();
   const drift = gravityDrift(SC.posOf(world, activation.u));
   if (drift) SC.setPosition(world, activation.u, ...drift.to);
-  setHint(drift ? `Gravity current pulls ${SC.labelOf(world, activation.u)} one hex.` : "");
+  const collisions = resolveHexCollisionAt(SC.posOf(world, activation.u), [activation.u]);
+  setHint(`${drift ? `Gravity current pulls ${SC.labelOf(world, activation.u)} one hex.` : ""}${collisions ? ` Collision destroys ${collisions} Ship${collisions === 1 ? "" : "s"}.` : ""}`.trim());
+  advancePlayableTutorial("back");
   finishActionRender();
 }
 // Arms the cosmetic "fire mode" hint -- exactly like battle, clicking a
@@ -525,41 +1276,93 @@ function doBackward() {
 // handleShipOrDestinationClick), so this only exists to show
 // "pick a highlighted target" in the panel.
 function armFireMode() {
-  if (!SC.canFire(world, activation, beltObstacles)) return;
+  if (!SC.canFire(world, activation)) return;
   groupMoveArmed = false;
   activation.fireMode = true;
   render();
 }
 function doFireAt(tgt) {
-  if (!SC.canFire(world, activation, beltObstacles)) return;
-  if (!SC.legalTargets(world, activation.u, beltObstacles).includes(tgt)) return;
+  if (!SC.canFire(world, activation)) return;
+  if (!SC.legalTargets(world, activation.u).includes(tgt)) return;
   const firer = activation.u;
+  const targetPosition = SC.posOf(world, tgt);
+  const targetKey = hexKey(...targetPosition);
+  const targetFaction = SC.factionOf(world, tgt);
+  const targetFleets = SC.shipsOfFaction(world, targetFaction).filter(fleet => (
+    hexKey(...SC.posOf(world, fleet)) === targetKey && memberCount(fleet) > 0
+  ));
   groupMoveArmed = false;
-  let recovered = [];
-  const result = SC.fire(world, firer, tgt, random, {
-    onEnemyDestroyed: ({ attackerFaction }) => { recovered = SC.recoverMoraleAfterEnemyDestroyed(world, attackerFaction); },
+  const volley = resolveHexVolley({
+    attackerStrength: fleetStrength(firer),
+    targets: targetFleets.map(fleet => ({
+      fleetId: fleet,
+      members: membersOf(fleet),
+      arc: incomingArc(SC.posOf(world, fleet), SC.facingOf(world, fleet), SC.posOf(world, firer)),
+    })),
+    random,
   });
+  const slotAssignments = assignMixedFleetSlots(targetFleets.map(fleet => ({ fleetId: fleet, members: membersOf(fleet) })));
+  const slotPositions = fleetShipPositions({
+    x: 0, y: 0, facingDeg: 0, formation: "sphere",
+    strength: slotAssignments.length, spacing: 1,
+  });
+  const positionsByMemberId = new Map(slotAssignments.map((slot, index) => [slot.member.id, slotPositions[index] || [0, 0]]));
+  const towardFirer = directionToward(targetPosition, SC.posOf(world, firer));
+  const incomingAngle = DIR_ANGLE[towardFirer] * Math.PI / 180;
+  let damage = 0, destroyed = 0;
+  for (const fleet of targetFleets) {
+    const hits = volley.hitsByFleet.get(fleet) || 0;
+    if (!hits) continue;
+    const arc = incomingArc(SC.posOf(world, fleet), SC.facingOf(world, fleet), SC.posOf(world, firer));
+    const outcome = applyDirectionalDamage({
+      members: membersOf(fleet), positionsByMemberId,
+      incomingVector: [Math.cos(incomingAngle), Math.sin(incomingAngle)],
+      damage: hits * STRATEGIC_DAMAGE_PER_HIT, random,
+    });
+    strategicMembers.set(fleet, outcome.members);
+    syncStrategicFleet(fleet);
+    damage += hits * STRATEGIC_DAMAGE_PER_HIT;
+    destroyed += outcome.destroyedIds.length;
+    for (const memberId of outcome.destroyedIds) {
+      const slot = slotAssignments.find(assignment => assignment.member.id === memberId);
+      queueShipExplosion(targetPosition, slot?.slotIndex ?? memberId, memberId);
+    }
+    applyMoraleAndContagion(fleet, outcome.damagedIds, { fromFlankOrRear: arc !== FiringArc.FRONT });
+  }
   effects.push({
-    from: result.from, to: result.to, hit: result.hits > 0, start: performance.now(),
-    dur: result.hits > 0 ? LASER_DURATION.hit : LASER_DURATION.miss,
+    kind: "tracer",
+    from: SC.posOf(world, firer), to: targetPosition, hit: damage > 0, start: performance.now(),
+    colorHex: strategicLaserColor(SC.factionOf(world, firer)),
+    dur: damage > 0 ? LASER_DURATION.hit : LASER_DURATION.miss,
   });
   activation.fired = true; activation.fireMode = false;
-  setHint(`${SC.labelOf(world, firer)} fires (${result.arc} arc, ${result.need}+): [${result.rolls.join(" ")}] → ` +
-    `${result.hits} hit${result.hits === 1 ? "" : "s"}${result.destroyed ? " — destroyed!" : ""}` +
-    (recovered.length ? ` ${recovered.length} friendly Fleet${recovered.length === 1 ? "" : "s"} recovered.` : ""));
+  const hits = [...volley.hitsByFleet.values()].reduce((sum, value) => sum + value, 0);
+  setHint(`${SC.labelOf(world, firer)} fires ${volley.dice} dice at the stack: [${volley.rolls.map(result => result.roll).join(" ")}] → `
+    + `${hits} hit${hits === 1 ? "" : "s"} · ${damage.toFixed(1)} damage${destroyed ? ` · ${destroyed} Ship${destroyed === 1 ? "" : "s"} destroyed` : ""}.`);
   finishActionRender();
 }
-// Arms Set Course -- the next click anywhere (body, ship, or empty space)
-// becomes the selected ship's new position, an instant reposition with
-// none of moveForward/moveBackward's neighbor/Shaken rules. Its endpoint
-// still cannot overlap another ship.
-// (matching the old whole-fleet moveFleet's own instant-move semantics),
-// for real interplanetary distances the hex-by-hex MP budget can't cover.
+// Arms Set Course -- the next click stores a persistent destination. At the
+// start of each owner turn the Fleet spends its real AP following the best
+// legal route toward that hex; it never teleports.
 function armTravel() {
   if (!activation) return;
   groupMoveArmed = false;
   travelArmed = true;
   setHint("Click a destination to set course.");
+  advancePlayableTutorial("course-armed");
+  render();
+}
+function toggleCourse() {
+  if (!activation) return;
+  if (!shipCourses.has(activation.u)) {
+    armTravel();
+    return;
+  }
+  shipCourses.delete(activation.u);
+  travelArmed = false;
+  activation.courseSet = true;
+  setHint(`${SC.labelOf(world, activation.u)} course cancelled.`);
+  renderInfoPanel();
   render();
 }
 function toggleGroupMove() {
@@ -578,23 +1381,18 @@ function toggleGroupMove() {
   setHint(groupMoveArmed
     ? `Command-group move armed for ${ships.length} ships. Use Turn/Forward/Back or pick a highlighted destination.`
     : "Command-group move cancelled.");
+  if (groupMoveArmed) advancePlayableTutorial("group-armed");
   renderInfoPanel();
   render();
 }
 function setCourse(x, y) {
   const [c, r] = pixelToHexIndex(x, y);
-  if (movementBlocker([activation.u])([c, r])) {
-    setHint("Another ship already occupies that destination.");
-    renderInfoPanel();
-    return;
-  }
-  SC.setPosition(world, activation.u, c, r);
-  const drift = gravityDrift([c, r]);
-  if (drift) SC.setPosition(world, activation.u, ...drift.to);
+  shipCourses.set(activation.u, [c, r]);
   activation.courseSet = true;
-  setHint(`${SC.labelOf(world, activation.u)} course set${drift ? " — captured by the gravity current" : ""}.`);
+  setHint(`${SC.labelOf(world, activation.u)} course set for hex ${c},${r}. Movement begins at the start of its next turn.`);
   travelArmed = false;
   hoverPatchCenter = null;
+  advancePlayableTutorial("course-set");
   renderInfoPanel();
   render();
 }
@@ -602,7 +1400,7 @@ function setCourse(x, y) {
 // depends on a ship being selected (firing at a legal target, switching
 // selection to a different ship, selecting a fresh one, or consuming an
 // armed Set Course) before either handler falls through to its own
-// star/moon/planet/belt info-panel branches. Returns true if the click
+// star/moon/planet info-panel branches. Returns true if the click
 // was fully handled here.
 function handleShipOrDestinationClick(hit, worldPoint) {
   const destination = worldPoint ? pixelToHexIndex(worldPoint[0], worldPoint[1]) : null;
@@ -615,8 +1413,21 @@ function handleShipOrDestinationClick(hit, worldPoint) {
     reachable: !!route,
   });
   if (clickAction === StrategicClickAction.SET_COURSE) { setCourse(worldPoint[0], worldPoint[1]); return true; }
+  if (hit?.kind === "fleet-stack") {
+    const fleets = hit.fleetIds.filter(fleet => SC.isAlive(world, fleet));
+    if (activation) {
+      const target = fleets.find(fleet => SC.legalTargets(world, activation.u).includes(fleet));
+      if (target) { doFireAt(target); return true; }
+    }
+    const selectable = fleets.filter(fleet => shipCanActThisTurn(fleet));
+    if (selectable.length) {
+      const current = selectable.indexOf(selectedShip);
+      selectShip(selectable[(current + 1) % selectable.length]);
+    }
+    return true;
+  }
   if (clickAction === StrategicClickAction.SHIP) {
-    if (activation && SC.legalTargets(world, activation.u, beltObstacles).includes(hit.id)) { doFireAt(hit.id); return true; }
+    if (activation && SC.legalTargets(world, activation.u).includes(hit.id)) { doFireAt(hit.id); return true; }
     if (!activation || activation.u !== hit.id) selectShip(hit.id);
     return true;
   }
@@ -625,14 +1436,18 @@ function handleShipOrDestinationClick(hit, worldPoint) {
 }
 // Shared by both click handlers' fallthrough (once
 // handleShipOrDestinationClick has returned false): the star/moon/
-// asteroid/planet info-panel branches, identical in both the 3D and 2D
+// planet info-panel branches, identical in both the 3D and 2D
 // views since neither renderer has anything hit-kind-specific left to say
 // once a ship/travel click has been ruled out.
 function dispatchBodyClick(hit) {
   if (hit?.kind === "star") { setHint(""); showBodyInfo(hit); return; }
   if (hit?.kind === "moon") { setHint(`${hit.label} — a moon of ${hit.parentLabel}.`); showBodyInfo(hit); return; }
-  if (hit?.kind === "asteroid") { setHint(`Asteroid — costs ${MP_MAX} MP to push through, blocks line of sight.`); showBodyInfo(hit); return; }
-  if (hit?.kind === "planet") { setHint(""); showBodyInfo(hit); return; }
+  if (hit?.kind === "planet") {
+    const info = infoFor(hit);
+    setHint(`${info.name} — ${info.detail}`);
+    showBodyInfo(hit);
+    return;
+  }
   setHint("Empty space — nothing here.");
   showBodyInfo(null);
 }
@@ -656,20 +1471,43 @@ function renderInfoPanel() {
     infoBack.disabled = groupMoveArmed ? !groupBackwardRoute : !SC.canBack(activation);
     infoTurnL.title = infoTurnR.title = groupMoveArmed ? `Turn all ${commandedShips.length} Fleets (free, 2 maximum)` : "Turn (free, 2 maximum)";
     infoForward.title = groupMoveArmed && groupForwardRoute
-      ? `Move all ${commandedShips.length} ships forward · ${groupForwardRoute.cost} MP`
+      ? `Move all ${commandedShips.length} ships forward · ${groupForwardRoute.cost} AP`
       : "";
     infoBack.title = groupMoveArmed && groupBackwardRoute
-      ? `Move all ${commandedShips.length} ships back · ${groupBackwardRoute.cost} MP`
-      : "1 hex astern, keeps facing — costs all remaining MP";
-    infoFire.disabled = !SC.canFire(world, activation, beltObstacles);
+      ? `Move all ${commandedShips.length} ships back · ${groupBackwardRoute.cost} AP`
+      : "1 hex astern, keeps facing — costs all remaining AP";
+    infoFire.disabled = !SC.canFire(world, activation);
+    const course = shipCourses.get(u);
+    infoTravel.textContent = course ? "Cancel Course" : "Set Course";
+    infoTravel.title = course ? `Cancel target ${course.join(",")}` : "Choose a target hex for next-turn movement";
     infoGroupMove.style.display = SC.isFlagship(world, u) ? "" : "none";
     infoGroupMove.textContent = groupMoveEnabled
       ? "Cancel group move"
       : `Move command group (${commandedShips.length})`;
     infoGroupMove.disabled = !groupMoveEnabled && (!SC.canMove(activation) || commandedShips.length < 2);
     infoGroupMove.setAttribute("aria-pressed", String(groupMoveEnabled));
+    const mergeable = mergeCandidates(u);
+    infoMerge.style.display = mergeable.length ? "" : "none";
+    infoMerge.textContent = `Merge Fleets (${mergeable.length + 1})`;
+    infoMerge.disabled = !SC.canMove(activation);
+    infoMerge.title = `Combine ready friendly Fleets in this hex up to ${MAX_FLEET_STRENGTH} Ships; costs all remaining AP`;
+    const canSplit = memberCount(u) >= 2;
+    infoSplit.style.display = canSplit ? "" : "none";
+    infoSplit.disabled = !SC.canMove(activation);
+    infoSplit.title = memberCount(u) > 19
+      ? "Detach 19 Ships; costs all remaining AP"
+      : "Split this Fleet in half; costs all remaining AP";
+    const conquerTarget = adjacentConquestTarget(u);
+    infoConquer.style.display = conquerTarget ? "" : "none";
+    if (conquerTarget) {
+      const x = conquerTarget.resourceValue;
+      infoConquer.textContent = `Conquer ${conquerTarget.label} (${x} Ships · ${conquestDurationTurns(x)} rounds)`;
+    }
     return;
   }
+  infoMerge.style.display = "none";
+  infoSplit.style.display = "none";
+  infoConquer.style.display = "none";
   infoPanel.style.display = "none";
 }
 infoTurnL.onclick = () => doTurn(1);
@@ -677,8 +1515,11 @@ infoTurnR.onclick = () => doTurn(-1);
 infoForward.onclick = doForward;
 infoBack.onclick = doBackward;
 infoFire.onclick = armFireMode;
-infoTravel.onclick = armTravel;
+infoTravel.onclick = toggleCourse;
 infoGroupMove.onclick = toggleGroupMove;
+infoMerge.onclick = mergeFleets;
+infoSplit.onclick = splitFleet;
+infoConquer.onclick = beginConquest;
 infoEnd.onclick = endActivation;
 
 function strategicShipDisplayState(ship, faction, participantSet) {
@@ -714,10 +1555,27 @@ function selectShipFromRoster(ship) {
 }
 
 function renderTurnClock(nowMs = performance.now()) {
+  if (!strategicTurnUsesTimer(factionControllers)) {
+    turnClock.hidden = true;
+    lastRenderedTimerSecond = null;
+    return;
+  }
+  turnClock.hidden = false;
   const remainingSeconds = Math.ceil(strategicTurnRemainingMs(strategicTurn, nowMs) / 1000);
   lastRenderedTimerSecond = remainingSeconds;
   turnClock.textContent = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")} remaining`;
 }
+
+function setTurnPanelMinimized(minimized) {
+  turnPanel.classList.toggle("minimized", minimized);
+  turnPanelToggle.textContent = minimized ? "+" : "−";
+  turnPanelToggle.title = minimized ? "Expand Fleet roster" : "Minimize Fleet roster";
+  turnPanelToggle.setAttribute("aria-label", turnPanelToggle.title);
+  turnPanelToggle.setAttribute("aria-expanded", String(!minimized));
+}
+
+turnPanelToggle.onclick = () => setTurnPanelMinimized(!turnPanel.classList.contains("minimized"));
+setTurnPanelMinimized(false);
 
 function renderTurnPanel(nowMs = performance.now()) {
   if (!shipsSpawned) return;
@@ -733,18 +1591,21 @@ function renderTurnPanel(nowMs = performance.now()) {
     selectedShip,
     participants: [...participantSet],
     alive: [...armadaRoster.values()].flat().map(ship => SC.isAlive(world, ship)),
+    members: [...armadaRoster.values()].flat().map(ship => memberCount(ship)),
+    controllers: [...factionControllers],
   });
   if (rosterSignature === lastTurnRosterSignature) return;
   lastTurnRosterSignature = rosterSignature;
   turnFactions.replaceChildren();
 
   for (const [faction, ships] of armadaRoster) {
+    if (!configuredFactions.includes(faction)) continue;
     const section = document.createElement("section");
     section.className = `turnFaction${faction === activeFaction ? " active" : ""}`;
     const header = document.createElement("div");
     header.className = "turnFactionHeader";
     const name = document.createElement("span");
-    name.textContent = `${FACTIONS[faction].label} Armada`;
+    name.textContent = `${FACTIONS[faction].label} Armada · ${isNpcFaction(faction) ? "NPC" : "Player"}`;
     name.style.color = colorsFor({ faction }).fill;
     const ready = ships.filter(ship => shipCanActThisTurn(ship) && !participantSet.has(ship)).length;
     const livingShips = ships.filter(ship => SC.isAlive(world, ship));
@@ -763,13 +1624,16 @@ function renderTurnPanel(nowMs = performance.now()) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = `turnShip ${displayState.className}`;
-      button.title = `Fleet ${SC.labelOf(world, ship)} — ${displayState.label}. Pan to this Fleet.`;
+      const shipCount = memberCount(ship);
+      button.title = `Fleet ${SC.labelOf(world, ship)} — ${shipCount} Ships, ${displayState.label}. Pan to this Fleet.`;
+      button.setAttribute("aria-label", `Fleet ${SC.labelOf(world, ship)} ${displayState.label}, ${shipCount} Ships`);
       button.setAttribute("aria-pressed", String(selectedShip === ship));
       const label = document.createElement("span");
-      label.textContent = `Fleet ${SC.labelOf(world, ship)}${SC.isFlagship(world, ship) ? " ★" : ""}`;
+      const flagshipCount = SC.flagshipCountOf(world, ship);
+      label.textContent = `Fleet ${SC.labelOf(world, ship)}${flagshipCount ? ` ★${flagshipCount > 1 ? `×${flagshipCount}` : ""}` : ""}`;
       const status = document.createElement("span");
       status.className = "turnShipState";
-      status.textContent = displayState.label;
+      status.textContent = `${shipCount} Ships`;
       button.append(label, status);
       button.onclick = () => selectShipFromRoster(ship);
       shipList.appendChild(button);
@@ -781,18 +1645,26 @@ function renderTurnPanel(nowMs = performance.now()) {
 
 function tickStrategicTurn(nowMs = performance.now()) {
   if (!shipsSpawned) return;
+  if (!strategicTurnUsesTimer(factionControllers)) {
+    if (!turnClock.hidden) renderTurnClock(nowMs);
+    return;
+  }
   const expiringFaction = activeStrategicFaction(strategicTurn);
+  const previousTurn = strategicTurn;
   const result = expireStrategicTurn(strategicTurn, {
     livingShipIdsByFaction: livingShipIdsByFaction(),
     nowMs,
+    eligibleFactionIds: economicallyEligibleFactions(),
   });
   if (result.expired) {
     if (activation && SC.factionOf(world, activation.u) === expiringFaction) activation.mp = 0;
     strategicTurn = result.state;
+    const economyHint = processStrategicTurnTransition(previousTurn, strategicTurn);
     clearSelection();
     lastRenderedTimerSecond = null;
-    setHint(`${FACTIONS[expiringFaction].label} ran out of time — ${result.expiredShipIds.length} remaining ships lost their MP. ${FACTIONS[activeStrategicFaction(strategicTurn)].label} turn begins.`);
+    setHint(`${FACTIONS[expiringFaction].label} ran out of time — ${result.expiredShipIds.length} remaining ships lost their AP. ${FACTIONS[activeStrategicFaction(strategicTurn)].label} turn begins.${economyHint ? ` ${economyHint}.` : ""}`);
     render();
+    scheduleNpcTurn();
     return;
   }
   const remainingSeconds = Math.ceil(strategicTurnRemainingMs(strategicTurn, nowMs) / 1000);
@@ -804,11 +1676,11 @@ function levelData(entry) {
 }
 
 const FILL = {
-  system: "#3a2f6a", star: "#5a4a1a", planet: "#1a3a5c", belt: "#b58a5c",
+  system: "#3a2f6a", star: "#5a4a1a", planet: "#1a3a5c",
   "body-center": "#5a4a1a", moon: "#2e3644",
 };
 const STROKE = {
-  system: "#a78bfa", star: "#ffd166", planet: "#4a9eff", belt: "#e0b98a",
+  system: "#a78bfa", star: "#ffd166", planet: "#4a9eff",
   "body-center": "#ffd166", moon: "#9fb3c8",
 };
 
@@ -862,7 +1734,7 @@ const ID_COLORS = { ...PLANET_COLORS, ...MOON_COLORS };
 // renderSystem3D); the 2D fallback has no UV-mapped surface to put a
 // photo on, so it keeps reading ID_COLORS/colorsFor's flat tint the same
 // as every body without an entry here still does in 3D too (every moon
-// but Earth's own, the belt). Only bodies solarsystemscope actually
+// but Earth's own). Only bodies solarsystemscope actually
 // publishes a real photo for get an entry; there's no "closest guess"
 // fallback texture for the rest.
 const BODY_TEXTURES = {
@@ -955,20 +1827,6 @@ const LOCAL_MAX_PX = 22;
 const MIN_ZOOM = 1, MAX_ZOOM = 60;
 const KEY_ZOOM_FACTOR = 1.3;
 const KEY_PAN_PX = 60;
-// The asteroid belt is real terrain, not decoration: every hex cell inside
-// its actual 2.1-3.3 AU ring (see beltAsteroidHexes below) either holds a
-// single "1-hex asteroid" -- costs a ship's whole MP budget to push into
-// (see hexMoveCost) and still blocks line of sight, but doesn't block
-// movement outright the way another ship does -- or is empty. Two fixed
-// angular wedges are kept permanently clear -- corridors through the
-// field, LOTGH's Iserlohn/Fezzan corridors being the reference: the belt
-// is otherwise dense enough to matter, but these two
-// lanes are the only reliable way through, so controlling them is the
-// actual tactical prize.
-const BELT_ASTEROID_FILL = 0.5;
-const BELT_CORRIDOR_CENTERS_DEG = [90, 270];
-const BELT_CORRIDOR_HALF_WIDTH_DEG = 12;
-const BELT_ASTEROID_RADIUS_PX = 2.4;
 
 // Shared pointy-top strategic hex size. The lattice itself is intentionally
 // sparse: gravity, reachable destinations, occupied tokens, and the hover
@@ -1020,7 +1878,6 @@ function snapToHexGrid(x, y) {
 // keeps their local rings and cluster visually attached to the planet.
 function snapGravityBodiesToHexGrid(layout) {
   for (const planet of layout.planets) {
-    if (planet.kind === "belt") continue;
     const [x, y] = snapToHexGrid(planet.x, planet.y);
     const dx = x - planet.x, dy = y - planet.y;
     planet.x = x; planet.y = y;
@@ -1041,10 +1898,22 @@ function sparseOverlaySnapshot() {
   const commandCenter = selectedShip != null && SC.isAlive(world, selectedShip) && SC.isFlagship(world, selectedShip)
     ? SC.posOf(world, selectedShip)
     : null;
+  const courseTarget = selectedShip != null ? shipCourses.get(selectedShip) : null;
+  const courseLines = [...shipCourses].flatMap(([ship, target]) => {
+    if (!SC.isAlive(world, ship)) return [];
+    return [{
+      from: toCell(SC.posOf(world, ship)),
+      to: toCell(target),
+      colorHex: colorsFor({ faction: SC.factionOf(world, ship) }).fill,
+    }];
+  });
   return {
+    boardCells: (tutorialMap?.cells || []).map(toCell),
     commandCells: commandCenter ? hexPatch(commandCenter, CMD_R).map(toCell) : [],
     hoverCells: hoverPatchCenter ? hexPatch(hoverPatchCenter).map(toCell) : [],
     reachableCells: [...reachableMoves.values()].map(route => ({ ...toCell(route.position), cost: route.cost })),
+    courseCells: courseTarget ? [toCell(courseTarget)] : [],
+    courseLines,
     hoveredKey: pointerHex ? hexKey(pointerHex[0], pointerHex[1]) : null,
     colorHex: activation ? colorsFor({ faction: SC.factionOf(world, activation.u) }).fill : null,
     hexSize: GRID_HEX_SIZE_PX,
@@ -1065,7 +1934,7 @@ function updateSystemHover(hit, worldPoint, refreshOverlay) {
   hoverPatchCenter = nextPatch;
   const route = nextPointerKey ? reachableMoves.get(nextPointerKey) : null;
   hoverMoveHint = route
-    ? (groupMoveArmed ? groupMoveText(route) : `Move here · ${route.cost} MP`)
+    ? (groupMoveArmed ? groupMoveText(route) : `Move here · ${route.cost} AP`)
     : null;
   renderHint();
   refreshOverlay();
@@ -1082,7 +1951,7 @@ function clearSystemHover(refreshOverlay) {
 }
 
 // One-time spawn into the shared `world` (see its declaration above) --
-// every faction's 12 ships, placed at their formation-derived starting
+// every faction's initial Fleets, placed at their formation-derived starting
 // hex exactly like the old (now-removed) placeShips computed fresh on
 // every render, but done exactly once here: from this point on a ship's
 // real Position/Facing components are the only source of truth for where
@@ -1095,6 +1964,7 @@ function clearSystemHover(refreshOverlay) {
 let shipsSpawned = false;
 function spawnInitialShips(layout) {
   for (const [faction, pos] of Object.entries(FLEET_POSITIONS)) {
+    if (!configuredFactions.includes(faction)) continue;
     const distanceKm = Math.hypot(pos.xKm, pos.yKm);
     const angle = Math.atan2(pos.yKm, pos.xKm);
     const r = layout.dist.toPixel(distanceKm);
@@ -1105,16 +1975,108 @@ function spawnInitialShips(layout) {
       const [c, rIdx] = pixelToHexIndex(anchorX + dx, anchorY + dy);
       const ship = SC.spawnFleet(world, {
         faction, c, r: rIdx, dir: directionToward([c, rIdx], [0, 0]), isFlagship: i === flag,
-        label: `${faction[0].toUpperCase()}${i + 1}`,
+        label: `${faction[0].toUpperCase()}${i + 1}`, strength: INITIAL_FLEET_STRENGTH,
       });
       armadaRoster.get(faction).push(ship);
+      attachFreshMembers(ship, INITIAL_FLEET_STRENGTH, i === flag ? 1 : 0);
+      shipTurnMp.set(ship, MP_MAX);
+      shipTurnTurns.set(ship, 0);
     });
   }
 }
-function ensureShipsSpawned(layout) {
+
+function startPlayableTutorial() {
   if (shipsSpawned) return;
+  const layout = systemStaticCache?.layout;
+  const earth = layout?.planets.find(planet => planet.id === "earth");
+  if (!layout || !earth) {
+    setHint("The system map is still loading. Try Tutorial again in a moment.");
+    return;
+  }
+  const faction = Object.keys(FACTIONS)[0];
+  configuredFactions.splice(0, configuredFactions.length, faction);
+  factionControllers.clear();
+  factionControllers.set(faction, "player");
+  for (const economy of planetEconomy.values()) {
+    economy.owner = null;
+    economy.conquest = null;
+    economy.lastProducedTurn = null;
+  }
+  syncPlanetEconomy(layout);
+  strategicTurn = createStrategicTurnState({ factionOrder: [faction], startedAtMs: performance.now() });
+  const earthPosition = planetHex(earth);
+  tutorialMap = createPlayableTutorialMap(earthPosition);
+  const fleets = tutorialMap.fleets.map((trainingFleet, index) => {
+    const fleet = SC.spawnFleet(world, {
+      faction,
+      c: trainingFleet.position[0],
+      r: trainingFleet.position[1],
+      dir: trainingFleet.facing,
+      flagshipCount: trainingFleet.isFlagship ? 1 : 0,
+      label: `${faction[0].toUpperCase()}${index + 1}`,
+      strength: trainingFleet.shipCount,
+    });
+    armadaRoster.get(faction).push(fleet);
+    attachFreshMembers(fleet, trainingFleet.shipCount, trainingFleet.isFlagship ? 1 : 0);
+    shipTurnMp.set(fleet, MP_MAX);
+    shipTurnTurns.set(fleet, 0);
+    return fleet;
+  });
+  shipsSpawned = true;
+  tutorialMode = true;
+  tutorialStepIndex = 0;
+  tutorialLibraryReturnToGame = false;
+  startOverlay.hidden = true;
+  tutorialGuide.hidden = false;
+  scene3dStaticSource = null;
+  lastTurnRosterSignature = null;
+  renderPlayableTutorialStep();
+  setHint("Playable tutorial started — command three 10-Ship Fleets on the training board.");
+  render();
+  requestAnimationFrame(() => {
+    const [x, z] = warpedGravityPoint(...shipHexOffset(...tutorialMap.center), systemStaticCache?.wells || []);
+    if (mapArea.dataset.renderer === "3d" && scene3d) {
+      scene3d.panTo(x, z);
+      scene3d.zoomBy(4);
+    } else {
+      camera2d.x = x;
+      camera2d.y = z;
+      camera2d.zoom = 4;
+      render();
+    }
+  });
+}
+
+function startNewGame() {
+  if (shipsSpawned) return;
+  const layout = systemStaticCache?.layout;
+  if (!layout) {
+    setHint("The system map is still loading. Try New Game again in a moment.");
+    return;
+  }
+  const playerCount = Number(playerCountSelect.value);
+  const npcCount = Number(npcCountSelect.value);
+  const setup = strategicFactionSetup(Object.keys(FACTIONS), { playerCount, npcCount });
+  if (!setup) return;
+  configuredFactions.splice(0, configuredFactions.length, ...setup.factions);
+  factionControllers.clear();
+  for (const [faction, controller] of setup.controllers) factionControllers.set(faction, controller);
+  for (const [faction, config] of Object.entries(FACTIONS)) {
+    if (!configuredFactions.includes(faction)) continue;
+    planetEconomy.set(config.startAt, { owner: faction, conquest: null, lastProducedTurn: null });
+  }
+  strategicTurn = createStrategicTurnState({ factionOrder: configuredFactions, startedAtMs: performance.now() });
   spawnInitialShips(layout);
   shipsSpawned = true;
+  tutorialMode = false;
+  tutorialGuide.hidden = true;
+  startFactionEconomyTurn(layout, activeStrategicFaction(strategicTurn), strategicTurn.round);
+  startOverlay.hidden = true;
+  scene3dStaticSource = null;
+  lastTurnRosterSignature = null;
+  setHint(`New Game started — ${FACTIONS[activeStrategicFaction(strategicTurn)].label} Armada acts first.`);
+  render();
+  scheduleNpcTurn();
 }
 
 // Individual ship tokens, not one "12" blob per faction -- each ship sits
@@ -1132,77 +2094,51 @@ function shipsSnapshot(wells = []) {
   // -- a fixed red would nearly vanish against a Red-faction target's
   // own red fill/stroke, and the attacker's color reads as "who can hit
   // this" at a glance.
-  const targets = activation && SC.canFire(world, activation, beltObstacles)
-    ? new Set(SC.legalTargets(world, activation.u, beltObstacles)) : null;
+  const targets = activation && SC.canFire(world, activation)
+    ? new Set(SC.legalTargets(world, activation.u)) : null;
   const groupMembers = groupMoveArmed ? new Set(commandGroupShips()) : null;
   const targetColor = targets ? colorsFor({ faction: SC.factionOf(world, activation.u) }).fill : null;
-  return SC.aliveFleets(world).map(e => {
+  const alive = SC.aliveFleets(world).filter(fleet => memberCount(fleet));
+  const stacks = new Map();
+  for (const fleet of alive) {
+    const stackKey = hexKey(...SC.posOf(world, fleet));
+    if (!stacks.has(stackKey)) stacks.set(stackKey, []);
+    stacks.get(stackKey).push(fleet);
+  }
+  const stackInfo = new Map();
+  for (const fleets of stacks.values()) {
+    const assignments = assignMixedFleetSlots(fleets.map(fleet => ({ fleetId: fleet, members: membersOf(fleet) })));
+    const byFleet = new Map(fleets.map(fleet => [fleet, []]));
+    for (const assignment of assignments) byFleet.get(assignment.fleetId).push(assignment);
+    fleets.forEach((fleet, index) => stackInfo.set(fleet, {
+      fleetIds: fleets, memberSlots: byFleet.get(fleet), showBase: index === 0,
+    }));
+  }
+  return alive.map(e => {
     const [c, r] = SC.posOf(world, e);
     const [gridX, gridY] = shipHexOffset(c, r);
     const [x, y] = warpedGravityPoint(gridX, gridY, wells);
     const hasActed = hasStrategicShipActed(strategicTurn, e);
+    const stack = stackInfo.get(e);
     return {
-      id: e, kind: "fleet", faction: SC.factionOf(world, e), isFlag: SC.isFlagship(world, e),
+      id: e, kind: stack.showBase ? "fleet-stack" : "fleet", fleetIds: stack.fleetIds,
+      showBase: stack.showBase, memberSlots: stack.memberSlots,
+      faction: SC.factionOf(world, e), isFlag: SC.isFlagship(world, e),
       label: SC.labelOf(world, e), facingDeg: DIR_ANGLE[SC.facingOf(world, e)],
-      strength: SC.strengthOf(world, e), formation: SC.fleetFormationOf(world, e),
-      isTarget: !!targets?.has(e), targetColor, isGroupMember: !!groupMembers?.has(e),
-      hasActed, colorHex: strategicShipColor(SC.factionOf(world, e), hasActed),
+      strength: memberCount(e), effectiveStrength: fleetStrength(e), formation: SC.fleetFormationOf(world, e),
+      isTarget: stack.fleetIds.some(fleet => targets?.has(fleet)), targetColor,
+      isGroupMember: stack.fleetIds.some(fleet => groupMembers?.has(fleet)),
+      hasActed, colorHex: strategicFleetTone(SC.factionOf(world, e), e, hasActed),
       x, y,
     };
   });
 }
 
-function inBeltCorridor(angleDeg) {
-  const a = ((angleDeg % 360) + 360) % 360;
-  return BELT_CORRIDOR_CENTERS_DEG.some(centerDeg => {
-    const diff = Math.abs(((a - centerDeg + 540) % 360) - 180);
-    return diff <= BELT_CORRIDOR_HALF_WIDTH_DEG;
-  });
-}
-// Every hex cell whose center (via shipHexOffset, the same conversion the
-// strategic lattice and every ship use) falls inside the belt's real
-// inner/outer radius, minus the two clear corridors, minus roughly half
-// the rest -- deterministic per (c,r) via hashAngleDeg (the same "stable,
-// not fabricated" approach the minor moons' synthetic phase already uses
-// in orbits.js), so the field itself never visibly reshuffles between
-// renders even though it's recomputed fresh every time (cheap: a
-// bounding-box scan over a few thousand candidate hexes, almost all
-// rejected by the radius check before the hash is even touched). Shared
-// between the 3D and 2D renderers, and by updateBeltObstacles below, so
-// none of the three can drift apart from each other.
-function beltAsteroidHexes(layout, belt) {
-  const innerPx = layout.dist.toPixel(belt.beltInnerAU * AU_KM);
-  const outerPx = layout.dist.toPixel(belt.beltOuterAU * AU_KM);
-  const rMax = Math.ceil(outerPx / (GRID_HEX_SIZE_PX * 1.5)) + 1;
-  const asteroids = [];
-  for (let r = -rMax; r <= rMax; r++) {
-    for (let c = -rMax; c <= rMax; c++) {
-      const [x, y] = shipHexOffset(c, r);
-      const dist = Math.hypot(x, y);
-      if (dist < innerPx || dist > outerPx) continue;
-      if (inBeltCorridor(Math.atan2(y, x) * 180 / Math.PI)) continue;
-      if (hashAngleDeg(`belt-asteroid-${c},${r}`) / 360 >= BELT_ASTEROID_FILL) continue;
-      asteroids.push({ c, r, x, y, kind: "asteroid", id: `asteroid-${c},${r}` });
-    }
-  }
-  return asteroids;
-}
-// Refreshes the module-level beltObstacles (see its declaration above)
-// from the current asteroid list -- called once per render, right after
-// computing it, so doForward/doFireAt/etc. (which run outside any single
-// render) always check against the field as it actually looks right now.
-function updateBeltObstacles(asteroids) {
-  beltObstacles = new Set(asteroids.map(a => hexKey(a.c, a.r)));
-}
-
-// Gravity wells are the Sun and planets. Moons remain visual bodies only,
-// and the asteroid belt is terrain rather than a single point mass.
+// Gravity wells are the Sun and planets. Moons remain visual bodies only.
 function gravityWells(layout) {
   const wells = [];
   if (layout.center) wells.push({ id: layout.center.id, x: 0, z: 0, rPx: layout.center.rPx, colorHex: colorsFor(layout.center).fill, spinDirection: gravitySpinDirection(layout.center.id) });
-  for (const p of layout.planets) {
-    if (p.kind !== "belt") wells.push({ id: p.id, x: p.x, z: p.y, rPx: p.rPx, colorHex: colorsFor(p).fill, spinDirection: gravitySpinDirection(p.id) });
-  }
+  for (const p of layout.planets) wells.push({ id: p.id, x: p.x, z: p.y, rPx: p.rPx, colorHex: colorsFor(p).fill, spinDirection: gravitySpinDirection(p.id) });
   return wells;
 }
 
@@ -1212,14 +2148,13 @@ function gravityWells(layout) {
 // too small to reach even one hex (radius < GRID_HEX_SIZE_PX) is skipped
 // entirely -- gravityWells already excludes moons, but a very small/
 // close-in planet could still round to nothing.
-const GRAVITY_INFLUENCE_RADIUS_FACTOR = 4;
 // The 2D fallback's own opacity ceiling (see the gravity-hex drawing loop
 // in renderSystem2D) -- scaled down per hex by gravityHexIntensity, so
 // only the deepest hexes ever actually reach this value.
 const GRAVITY_HEX_MAX_OPACITY = 0.3;
 // Strength is a real, unbounded falloff, not a flat 3-tier scale -- inversely
 // proportional to distance in units of the body's own radius, scaled so
-// it lands on exactly 1 MP (the same as open space) right at the edge of
+// it lands on exactly 1 AP (the same as open space) right at the edge of
 // GRAVITY_INFLUENCE_RADIUS_FACTOR: a hex FACTOR radii out has strength 1;
 // one body-radius out has strength FACTOR; deep inside grows without a
 // ceiling. This strength controls color, line weight, and arrow emphasis,
@@ -1234,7 +2169,7 @@ function gravityHexCost(distPx, well) {
 // (cost 1, the outer edge of a well's reach) paint at
 // GRAVITY_HEX_MIN_INTENSITY, climbing toward full intensity as cost
 // grows -- so the color itself visibly deepens/brightens the closer (and
-// more expensive) a hex is, the same falloff the MP cost already uses,
+// more expensive) a hex is, the same falloff the AP cost already uses,
 // just read as a gradient instead of a number. Cost is unbounded
 // (gravityHexCost has no ceiling right next to a massive body), so this
 // clamps at 1 rather than trying to normalize against some cost that
@@ -1247,12 +2182,11 @@ function gravityHexIntensity(cost) {
 
 // Every hex within reach of the Sun or a planet's gravity, painted that
 // body's own color. Where two wells' reach overlaps, a hex takes
-// whichever well demands the *most* MP (worst case); a tie keeps
+// whichever well demands the *most* AP (worst case); a tie keeps
 // whichever well was found first (arbitrary but stable within one
 // render). Bounded per-well -- only hexes within that one well's own
-// radius are ever considered, the same "local scan, not the whole grid"
-// approach beltAsteroidHexes uses -- so this stays cheap even though the
-// Sun's own field alone can cover a thousand-plus hexes.
+// radius are ever considered, so this stays cheap even though the Sun's
+// own field alone can cover a thousand-plus hexes.
 function gravityHexes(layout) {
   const cells = new Map(); // "c,r" -> {cost, colorHex, x, y}
   for (const well of gravityWells(layout)) {
@@ -1275,8 +2209,8 @@ function gravityHexes(layout) {
   return cells;
 }
 // Refreshes the module-level gravityHexCosts (see its declaration above)
-// from the current gravity-hex map -- called once per render, right
-// after computing it, mirroring updateBeltObstacles above.
+// from the current gravity-hex map -- called once per render, right after
+// computing it.
 function updateGravityHexes(cells) {
   gravityHexCosts = cells;
 }
@@ -1398,12 +2332,10 @@ function systemStaticData(data, sourceKey) {
   const layout = snapGravityBodiesToHexGrid(
     layoutSystemWithMoons(data, { maxPixel: ORBIT_MAX_PX, localMaxPixel: LOCAL_MAX_PX }),
   );
-  ensureShipsSpawned(layout);
+  syncPlanetEconomy(layout);
   const wells = gravityWells(layout);
   const gravityCells = gravityHexes(layout);
-  const beltBody = layout.planets.find(p => p.kind === "belt");
-  const asteroids = beltBody ? beltAsteroidHexes(layout, beltBody) : [];
-  systemStaticCache = { sourceKey, layout, wells, gravityCells, asteroids };
+  systemStaticCache = { sourceKey, layout, wells, gravityCells };
   return systemStaticCache;
 }
 
@@ -1413,14 +2345,13 @@ function renderSystem3D(entry, data) {
   mapArea.dataset.renderer = "3d";
   const scene = ensureScene3D();
   mapArea.dataset.rendererState = canvas3d.dataset.rendererState;
-  const { layout, wells, gravityCells, asteroids } = systemStaticData(data, entry.systemId);
+  const { layout, wells, gravityCells } = systemStaticData(data, entry.systemId);
   updateGravityHexes(gravityCells);
-  updateBeltObstacles(asteroids);
   recomputeReachableMoves();
   const ships = shipsSnapshot(wells);
 
   if (scene3dStaticSource !== entry.systemId) {
-    scene.rebuildStatic(({ addBody, addRing, addAsteroid, addGravityField }) => {
+    scene.rebuildStatic(({ addBody, addRing, addGravityField }) => {
       const arrowsByColor = new Map();
       for (const arrow of gravityPullArrows(gravityCells, wells)) {
         if (!arrowsByColor.has(arrow.colorHex)) arrowsByColor.set(arrow.colorHex, []);
@@ -1435,14 +2366,12 @@ function renderSystem3D(entry, data) {
         addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center), spinDirection: gravitySpinDirection(layout.center.id) });
       }
       for (const p of layout.planets) {
-        if (p.kind === "belt") {
-          for (const a of asteroids) {
-            addAsteroid({ x: a.x, z: a.y, radius: BELT_ASTEROID_RADIUS_PX, colorHex: FILL.belt, data: a });
-          }
-          continue;
-        }
         addRing(0, 0, Math.hypot(p.x, p.y));
-        addBody({ x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, data: p, textureUrl: textureFor(p), spinDirection: gravitySpinDirection(p.id) });
+        addBody({
+          x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, data: p,
+          textureUrl: textureFor(p), spinDirection: gravitySpinDirection(p.id),
+          ownerColorHex: p.ownerFaction ? colorsFor({ faction: p.ownerFaction }).fill : null,
+        });
         for (const m of p.moons) {
           addRing(p.x, p.y, m.localRingPx, m.inclinationDeg);
           addBody({ x: m.x, y: m.tiltHeight, z: m.tiltZ, radius: m.rPx, color: colorsFor(m).fill, data: m, textureUrl: textureFor(m) });
@@ -1452,12 +2381,13 @@ function renderSystem3D(entry, data) {
     scene3dStaticSource = entry.systemId;
   }
 
-  scene.rebuildDynamic(({ addShip, addTracer }) => {
+  scene.rebuildDynamic(({ addShip, addTracer, addExplosion }) => {
     for (const s of ships) {
       addShip({
         x: s.x, z: s.y, colorHex: s.colorHex, data: s,
-        selected: s.id === selectedShip, facingDeg: s.facingDeg, isFlag: s.isFlag,
+        selected: s.fleetIds.includes(selectedShip), facingDeg: s.facingDeg, isFlag: s.isFlag,
         strength: s.strength, formation: s.formation,
+        memberSlots: s.memberSlots, showBase: s.showBase,
         isTarget: s.isTarget, targetColor: s.targetColor, isGroupMember: s.isGroupMember,
         hasActed: s.hasActed,
       });
@@ -1466,8 +2396,17 @@ function renderSystem3D(entry, data) {
     // expiring `effects` and repainting while any are still fading.
     const now = performance.now();
     for (const eff of effects) {
+      if (eff.kind === "explosion") {
+        const [gridX, gridY] = shipHexOffset(...eff.position);
+        const [x, z] = warpedGravityPoint(gridX, gridY, wells);
+        addExplosion({ x, z, slotIndex: eff.slotIndex, seed: eff.seed, progress: (now - eff.start) / eff.dur });
+        continue;
+      }
       const alpha = 1 - (now - eff.start) / eff.dur;
-      addTracer({ from: shipHexOffset(...eff.from), to: shipHexOffset(...eff.to), hit: eff.hit, alpha });
+      addTracer({
+        from: shipHexOffset(...eff.from), to: shipHexOffset(...eff.to),
+        hit: eff.hit, colorHex: eff.colorHex, alpha,
+      });
     }
   });
   scene.updateSparseOverlays(sparseOverlaySnapshot());
@@ -1551,9 +2490,8 @@ function renderSystem2D(entry, data) {
   const ctx = canvas.getContext("2d");
   const cx = canvas.width / 2, cy = canvas.height / 2;
 
-  const { layout, wells, gravityCells, asteroids } = systemStaticData(data, entry.systemId);
+  const { layout, wells, gravityCells } = systemStaticData(data, entry.systemId);
   updateGravityHexes(gravityCells);
-  updateBeltObstacles(asteroids);
   recomputeReachableMoves();
   const ships = shipsSnapshot(wells);
 
@@ -1591,7 +2529,7 @@ function renderSystem2D(entry, data) {
   }
 
   // A local, body-colored deformation lattice only where gravity exists.
-  // Both opacity and stroke weight climb with the same MP-cost gradient as
+  // Both opacity and stroke weight climb with the same AP-cost gradient as
   // the fill, making the deepest pull around a body read most strongly.
   for (const { colorHex, x, y, cost } of gravityCells.values()) {
     const intensity = gravityHexIntensity(cost);
@@ -1617,11 +2555,29 @@ function renderSystem2D(entry, data) {
     ctx.stroke();
   };
   const sparseOverlay = sparseOverlaySnapshot();
+  for (const cell of sparseOverlay.boardCells) {
+    drawOverlayHex(cell, { stroke: "rgba(83,97,124,0.34)" });
+  }
+  for (const line of sparseOverlay.courseLines) {
+    const [fromX, fromY] = warpedGravityPoint(line.from.x, line.from.z, wells);
+    const [toX, toY] = warpedGravityPoint(line.to.x, line.to.z, wells);
+    ctx.beginPath();
+    ctx.moveTo(...worldToScreen(camera2d, fromX, fromY));
+    ctx.lineTo(...worldToScreen(camera2d, toX, toY));
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = hexToRgba(line.colorHex, 0.8);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   for (const cell of sparseOverlay.commandCells) {
     drawOverlayHex(cell, { fill: hexToRgba(sparseOverlay.colorHex, 0.035), stroke: hexToRgba(sparseOverlay.colorHex, 0.2) });
   }
   for (const cell of sparseOverlay.hoverCells) {
     drawOverlayHex(cell, { stroke: "rgba(136,146,171,0.55)" });
+  }
+  for (const cell of sparseOverlay.courseCells) {
+    drawOverlayHex(cell, { fill: hexToRgba(ACCENT.flagshipArrow, 0.2), stroke: ACCENT.flagshipArrow, lineWidth: 3 });
   }
   if (sparseOverlay.colorHex) {
     for (const cell of sparseOverlay.reachableCells) {
@@ -1656,6 +2612,13 @@ function renderSystem2D(entry, data) {
     ctx.lineWidth = selected ? 3 : 2;
     ctx.strokeStyle = selected ? "#ffffff" : colors.stroke;
     ctx.stroke();
+    if (body.ownerFaction) {
+      ctx.beginPath();
+      ctx.arc(sx, sy, rPx * 1.45, 0, Math.PI * 2);
+      ctx.lineWidth = Math.max(1.5, camera2d.zoom);
+      ctx.strokeStyle = colorsFor({ faction: body.ownerFaction }).fill;
+      ctx.stroke();
+    }
     return [sx, sy, rPx];
   };
   const drawCurrentCue = well => {
@@ -1700,28 +2663,33 @@ function renderSystem2D(entry, data) {
     const tapRadius = Math.max(s * 1.8, 6);
     const corners = hexCorners(sx, sy, s);
 
-    ctx.beginPath();
-    corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
-    ctx.closePath();
-    ctx.fillStyle = hexToRgba(colorHex, SHIP_FILL_ALPHA);
-    ctx.fill();
-    ctx.lineWidth = selected || ship.isGroupMember ? 2 : 1;
-    ctx.strokeStyle = selected ? "#ffffff" : (ship.isGroupMember ? ACCENT.flagshipArrow : colorHex);
-    ctx.stroke();
+    if (ship.showBase) {
+      ctx.beginPath();
+      corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+      ctx.closePath();
+      ctx.fillStyle = hexToRgba(colorHex, SHIP_FILL_ALPHA);
+      ctx.fill();
+      ctx.lineWidth = selected || ship.isGroupMember ? 2 : 1;
+      ctx.strokeStyle = selected ? "#ffffff" : (ship.isGroupMember ? ACCENT.flagshipArrow : colorHex);
+      ctx.stroke();
+    }
 
     const miniSize = Math.max(s * 0.3, 1.1);
     const miniSpacing = Math.max(s * 1.05, 3);
-    const members = fleetShipPositions({
-      x: sx, y: sy, facingDeg: ship.facingDeg, formation: ship.formation,
-      strength: ship.strength, spacing: miniSpacing,
+    const allSlots = fleetShipPositions({
+      x: sx, y: sy, facingDeg: 0, formation: "sphere",
+      strength: 57, spacing: miniSpacing,
     });
-    for (let i = 0; i < members.length; i++) {
-      const [mx, my] = members[i];
+    for (let i = 0; i < ship.memberSlots.length; i++) {
+      const slot = ship.memberSlots[i];
+      const [mx, my] = allSlots[slot.slotIndex];
       const [tip, base1, base2] = shipArrowPoints(mx, my, miniSize, ship.facingDeg);
       ctx.beginPath();
       ctx.moveTo(...tip); ctx.lineTo(...base1); ctx.lineTo(...base2);
       ctx.closePath();
-      ctx.fillStyle = ship.isFlag && i === 0 && !ship.hasActed ? ACCENT.flagshipArrow : colorHex;
+      ctx.fillStyle = slot.member.isOriginalFlagship ? ACCENT.flagshipArrow
+        : slot.member.state === StrategicShipState.ROUTED ? "#ff3355"
+          : slot.member.state === StrategicShipState.SHAKEN ? "#ffd166" : colorHex;
       ctx.fill();
       ctx.strokeStyle = hexToRgba("#ffffff", 0.35);
       ctx.lineWidth = Math.max(0.6, miniSize * 0.2);
@@ -1731,7 +2699,7 @@ function renderSystem2D(entry, data) {
     // shipsSnapshot) -- outlined in the *attacker's* own color (not
     // battle/render.js's fixed ACCENT.targetOutline red), so it reads as
     // "who can hit this" and doesn't vanish against a same-colored hull.
-    if (ship.isTarget) {
+    if (ship.showBase && ship.isTarget) {
       ctx.beginPath();
       corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
       ctx.closePath();
@@ -1741,28 +2709,8 @@ function renderSystem2D(entry, data) {
     }
     return tapRadius;
   };
-  // One small hex per asteroid, matching the "1-hex" token language ships
-  // already use, but a static muted rock (belt's existing FILL/STROKE
-  // colors) with no facing/selection state -- these are terrain, not
-  // actors.
-  const drawAsteroid = a => {
-    const [sx, sy] = worldToScreen(camera2d, a.x, a.y);
-    const s = Math.min(Math.max(BELT_ASTEROID_RADIUS_PX * camera2d.zoom, 1.2), 8);
-    const corners = hexCorners(sx, sy, s);
-    ctx.beginPath();
-    corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
-    ctx.closePath();
-    ctx.fillStyle = FILL.belt;
-    ctx.fill();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = STROKE.belt;
-    ctx.stroke();
-    return Math.max(s * 1.4, 6);
-  };
   if (layout.center) drawDot(layout.center, false);
-  for (const a of asteroids) a.hitRPx = drawAsteroid(a);
   for (const p of layout.planets) {
-    if (p.kind === "belt") continue;
     drawRing(...worldToScreen(camera2d, 0, 0), Math.hypot(p.x, p.y));
     const [px, py] = drawDot(p, false);
     for (const m of p.moons) {
@@ -1771,22 +2719,55 @@ function renderSystem2D(entry, data) {
     }
   }
   for (const well of wells) drawCurrentCue(well);
-  for (const s of ships) s.hitRPx = drawFleet(s, s.id === selectedShip);
+  for (const s of ships) s.hitRPx = drawFleet(s, s.fleetIds.includes(selectedShip));
   // A shot's tracer, fading over time -- see ensureEffectLoop, which owns
   // expiring `effects` and repainting while any are still fading. Same
   // width/halo/duration parity as battle/render.js's own laser effect
-  // (LINE_WIDTH/LASER_HALO_ALPHA), keeping the hit/miss color scheme this
-  // file already used rather than battle's per-faction color, since a
-  // tracer here has no single "side" to key off of the way battle's
-  // fixed 2-side board does.
+  // (LINE_WIDTH/LASER_HALO_ALPHA). The firing faction's color is captured
+  // when the effect is created, so the beam remains stable throughout its fade.
   const effNow = performance.now();
   for (const eff of effects) {
+    if (eff.kind === "explosion") {
+      const progress = Math.max(0, Math.min(1, (effNow - eff.start) / eff.dur));
+      const fade = 1 - progress;
+      const [gridX, gridY] = shipHexOffset(...eff.position);
+      const [worldX, worldY] = warpedGravityPoint(gridX, gridY, wells);
+      const [centerX, centerY] = worldToScreen(camera2d, worldX, worldY);
+      const s = scaledStrategicShipIconRadius(camera2d.zoom);
+      const miniSpacing = Math.max(s * 1.05, 3);
+      const slot = fleetShipPositions({
+        x: centerX, y: centerY, facingDeg: 0, formation: "sphere",
+        strength: 57, spacing: miniSpacing,
+      })[eff.slotIndex];
+      const radius = 2 + 13 * Math.sin(Math.PI * Math.min(1, progress * 1.15));
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      const glow = ctx.createRadialGradient(slot[0], slot[1], 0, slot[0], slot[1], radius);
+      glow.addColorStop(0, `rgba(255,245,180,${fade})`);
+      glow.addColorStop(0.35, `rgba(255,150,35,${fade * 0.9})`);
+      glow.addColorStop(1, "rgba(255,45,20,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(slot[0], slot[1], radius, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = `rgba(255,185,55,${fade})`;
+      ctx.lineWidth = 1.5;
+      for (let index = 0; index < 7; index++) {
+        const angle = ((eff.seed * 0.61803398875 + index / 7) % 1) * Math.PI * 2;
+        const inner = radius * 0.35;
+        const outer = radius * (0.75 + progress * 0.65);
+        ctx.beginPath();
+        ctx.moveTo(slot[0] + Math.cos(angle) * inner, slot[1] + Math.sin(angle) * inner);
+        ctx.lineTo(slot[0] + Math.cos(angle) * outer, slot[1] + Math.sin(angle) * outer);
+        ctx.stroke();
+      }
+      ctx.restore();
+      continue;
+    }
     const [fx, fy] = worldToScreen(camera2d, ...shipHexOffset(...eff.from));
     const [tx, ty] = worldToScreen(camera2d, ...shipHexOffset(...eff.to));
     const alpha = Math.max(0, 1 - (effNow - eff.start) / eff.dur);
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.strokeStyle = eff.hit ? "#ff3355" : "#8899aa";
+    ctx.strokeStyle = eff.colorHex;
     ctx.lineWidth = eff.hit ? LINE_WIDTH.laserHit : LINE_WIDTH.laserMiss;
     ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(tx, ty); ctx.stroke();
     if (eff.hit) {
@@ -1812,24 +2793,19 @@ function renderSystem2D(entry, data) {
   canvas.oncontextmenu = ev => ev.preventDefault();
   canvas.style.cursor = "grab";
 
-  // Whatever body/ship/asteroid sits under a given screen point, in the
-  // same priority a click resolves it in (ship > asteroid > star > moon >
-  // planet) -- shared by onclick and onmousemove (hover) so they can't
-  // drift apart. The belt's own single synthetic point (kind "belt") is
-  // deliberately excluded here -- it's just an orbit/math anchor now (see
-  // beltAsteroidHexes), not a click target; the individual asteroid hexes
-  // are what's actually clickable across that whole ring.
+  // Whatever body or ship sits under a given screen point, in the same
+  // priority a click resolves it in (ship > star > moon > planet) -- shared
+  // by onclick and onmousemove (hover) so they can't drift apart.
   function hitAt(x, y) {
     const within = b => {
       const [sx, sy] = worldToScreen(camera2d, b.x, b.y);
-      const tap = (b.kind === "fleet" || b.kind === "asteroid") ? b.hitRPx : Math.max(screenRadius(b), 10);
+      const tap = b.kind === "fleet-stack" ? b.hitRPx : Math.max(screenRadius(b), 10);
       return Math.hypot(x - sx, y - sy) <= tap;
     };
-    return ships.find(within)
-      || asteroids.find(within)
+    return ships.filter(ship => ship.showBase).find(within)
       || (layout.center && within(layout.center) ? layout.center : null)
       || layout.planets.flatMap(p => p.moons).find(within)
-      || layout.planets.filter(p => p.kind !== "belt").find(within)
+      || layout.planets.find(within)
       || null;
   }
 
@@ -1946,7 +2922,7 @@ function render() {
   // Fleet controls belong to the System level only. renderInfoPanel()
   // decides whether they are visible for the currently selected Fleet.
   if (entry.level !== "system") infoPanel.style.display = "none";
-  turnPanel.style.display = entry.level === "system" ? "block" : "none";
+  turnPanel.style.display = entry.level === "system" && shipsSpawned ? "block" : "none";
   if (entry.level === "system") {
     renderSystem(entry, data);
     renderTurnPanel();

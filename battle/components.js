@@ -4,11 +4,11 @@
 export const Position = "Position";           // {c, r}
 export const Facing = "Facing";                // {dir}            0..5, see hexmath.DIR_ANGLE
 export const Side = "Side";                    // {value}          0 (Blue) | 1 (Red)
-export const Strength = "Strength";            // {value}          0..4
+export const Strength = "Strength";            // {value}          non-negative, may be fractional
 export const FleetFormation = "FleetFormation"; // {name}          compact in-hex Ship arrangement
 export const Morale = "Morale";                // {state}          MoraleState.STEADY|SHAKEN|ROUTED
 export const Label = "Label";                  // {id}             display id, e.g. "B3"
-export const Flagship = "Flagship";            // tag, presence-only
+export const Flagship = "Flagship";            // {count}; legacy truthy tags count as one
 // Main Fleet is the player-facing name; Flagship remains the compatibility
 // component key for existing saves, scenarios, and headless callers.
 export const MainFleet = Flagship;

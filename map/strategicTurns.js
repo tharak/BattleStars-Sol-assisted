@@ -33,7 +33,8 @@ function livingIds(livingShipIdsByFaction, faction) {
   return livingShipIdsByFaction[faction] || [];
 }
 
-function advanceFaction(state, livingShipIdsByFaction, nowMs) {
+function advanceFaction(state, livingShipIdsByFaction, nowMs, eligibleFactionIds = []) {
+  const eligible = new Set(eligibleFactionIds);
   let factionIndex = state.factionIndex;
   let round = state.round;
   let actedShipIds = [...state.actedShipIds];
@@ -45,7 +46,8 @@ function advanceFaction(state, livingShipIdsByFaction, nowMs) {
       actedShipIds = [];
       forfeitedShipIds = [];
     }
-    if (livingIds(livingShipIdsByFaction, state.factionOrder[factionIndex]).length) break;
+    const faction = state.factionOrder[factionIndex];
+    if (livingIds(livingShipIdsByFaction, faction).length || eligible.has(faction)) break;
   }
   return {
     ...state,
@@ -61,6 +63,7 @@ export function completeStrategicActivations(state, {
   shipIds,
   livingShipIdsByFaction,
   nowMs,
+  eligibleFactionIds,
 }) {
   const activeFaction = activeStrategicFaction(state);
   const activeLiving = livingIds(livingShipIdsByFaction, activeFaction);
@@ -69,11 +72,11 @@ export function completeStrategicActivations(state, {
   for (const shipId of shipIds) if (activeLivingSet.has(shipId)) acted.add(shipId);
   const completed = { ...state, actedShipIds: [...acted] };
   return activeLiving.every(shipId => acted.has(shipId))
-    ? advanceFaction(completed, livingShipIdsByFaction, nowMs)
+    ? advanceFaction(completed, livingShipIdsByFaction, nowMs, eligibleFactionIds)
     : completed;
 }
 
-export function expireStrategicTurn(state, { livingShipIdsByFaction, nowMs }) {
+export function expireStrategicTurn(state, { livingShipIdsByFaction, nowMs, eligibleFactionIds }) {
   if (nowMs < state.deadlineMs) return { expired: false, state, expiredShipIds: [] };
   const faction = activeStrategicFaction(state);
   const expiredShipIds = livingIds(livingShipIdsByFaction, faction)
@@ -86,6 +89,6 @@ export function expireStrategicTurn(state, { livingShipIdsByFaction, nowMs }) {
   return {
     expired: true,
     expiredShipIds,
-    state: advanceFaction(completed, livingShipIdsByFaction, nowMs),
+    state: advanceFaction(completed, livingShipIdsByFaction, nowMs, eligibleFactionIds),
   };
 }

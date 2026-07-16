@@ -6,6 +6,7 @@ import { hexDist, key } from "../battle/hexmath.js";
 import * as SC from "../battle/core/shipRules.js";
 import {
   compareStrategicRoutes,
+  chooseCourseRoute,
   executeStrategicGroupRoute,
   executeStrategicGroupTurn,
   executeStrategicRoute,
@@ -18,6 +19,16 @@ import {
   StrategicMoveAction,
   translateFormationHex,
 } from "../map/strategicMovement.js";
+
+test("course routing chooses the reachable hex closest to a distant target", () => {
+  const routes = new Map([
+    ["1,0", { position: [1, 0], cost: 1, backwardSteps: 0, turns: 0, actions: [], finalFacing: 0 }],
+    ["2,0", { position: [2, 0], cost: 2, backwardSteps: 0, turns: 0, actions: [], finalFacing: 0 }],
+    ["0,1", { position: [0, 1], cost: 1, backwardSteps: 0, turns: 0, actions: [], finalFacing: 0 }],
+  ]);
+  assert.deepEqual(chooseCourseRoute(routes, [0, 0], [10, 0]).position, [2, 0]);
+  assert.equal(chooseCourseRoute(routes, [0, 0], [-10, 0]), null);
+});
 
 const activation = (overrides = {}) => ({
   u: 1,
@@ -114,13 +125,13 @@ test("a backward hex uses the full allowance once the two-turn cap applies", () 
   assert.equal(partlySpent.has("-1,0"), false);
 });
 
-test("terrain costs admit affordable asteroids and gravity but reject unaffordable cells", () => {
-  const asteroid = findReachableDestinations({
+test("variable movement costs admit affordable cells and reject unaffordable cells", () => {
+  const expensive = findReachableDestinations({
     position: [0, 0], facing: 0, activation: activation(),
     movementCost: next => key(...next) === "1,0" ? MAX_MOVEMENT_POINTS : 1,
   });
-  assert.equal(asteroid.get("1,0").cost, MAX_MOVEMENT_POINTS);
-  assert.equal(asteroid.get("1,0").remainingMp, 0);
+  assert.equal(expensive.get("1,0").cost, MAX_MOVEMENT_POINTS);
+  assert.equal(expensive.get("1,0").remainingMp, 0);
 
   const gravity = findReachableDestinations({
     position: [0, 0], facing: 0, activation: activation(),

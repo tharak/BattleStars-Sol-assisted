@@ -29,6 +29,14 @@ export const posOf = (world, e) => { const p = world.get(e, C.Position); return 
 export const facingOf = (world, e) => world.get(e, C.Facing).dir;
 export const factionOf = (world, e) => world.get(e, C.Side).value;
 export const strengthOf = (world, e) => world.get(e, C.Strength).value;
+export const setStrength = (world, e, value) => {
+  const strength = world.get(e, C.Strength);
+  if (!strength || !Number.isFinite(value) || value < 0) return null;
+  strength.value = Math.round(value * 1000) / 1000;
+  if (strength.value > 0) world.add(e, C.Alive, true);
+  else world.remove(e, C.Alive);
+  return strength.value;
+};
 export const fleetFormationOf = (world, e) => world.get(e, C.FleetFormation)?.name || "sphere";
 export const setFleetFormation = (world, e, name) => {
   if (!FLEET_FORMATION_NAMES.includes(name)) return false;
@@ -39,7 +47,19 @@ export const setFleetFormation = (world, e, name) => {
 };
 export const moraleOf = (world, e) => world.get(e, C.Morale).state;
 export const labelOf = (world, e) => world.get(e, C.Label).id;
-export const isFlagship = (world, e) => world.has(e, C.Flagship);
+export const flagshipCountOf = (world, e) => {
+  const flagship = world.get(e, C.Flagship);
+  if (!flagship) return 0;
+  if (typeof flagship === "object" && Number.isFinite(flagship.count)) return Math.max(0, Math.floor(flagship.count));
+  return 1;
+};
+export const setFlagshipCount = (world, e, count) => {
+  const normalized = Math.max(0, Math.floor(Number(count) || 0));
+  if (normalized > 0) world.add(e, C.Flagship, { count: normalized });
+  else world.remove(e, C.Flagship);
+  return normalized;
+};
+export const isFlagship = (world, e) => flagshipCountOf(world, e) > 0;
 export const isMainFleet = isFlagship;
 export const isAlive = (world, e) => world.has(e, C.Alive);
 const setPos = (world, e, pos) => { const p = world.get(e, C.Position); p.c = pos[0]; p.r = pos[1]; };
@@ -51,22 +71,32 @@ const setPos = (world, e, pos) => { const p = world.get(e, C.Position); p.c = po
 // than force map/main.js to reach into World internals itself.
 export function setPosition(world, e, c, r) { setPos(world, e, [c, r]); }
 
-export function spawnFleet(world, { faction, c, r, dir, isFlagship = false, isMainFleet = isFlagship, label, formation = "sphere" }) {
+export function spawnFleet(world, {
+  faction, c, r, dir, isFlagship = false, isMainFleet = isFlagship,
+  flagshipCount = isMainFleet ? 1 : 0,
+  label, formation = "sphere", strength = 4, moraleState = MoraleState.STEADY,
+}) {
   const e = world.createEntity();
   world.add(e, C.Position, { c, r });
   world.add(e, C.Facing, { dir });
   world.add(e, C.Side, { value: faction });
-  world.add(e, C.Strength, { value: 4 });
+  world.add(e, C.Strength, { value: strength });
   world.add(e, C.FleetFormation, { name: formation });
-  world.add(e, C.Morale, { state: MoraleState.STEADY });
+  world.add(e, C.Morale, { state: moraleState });
   world.add(e, C.Label, { id: label });
   world.add(e, C.Alive, true);
-  if (isMainFleet) world.add(e, C.Flagship, true);
+  setFlagshipCount(world, e, flagshipCount);
   return e;
 }
 // Compatibility alias for headless callers while the game-wide Armada/Fleet
 // vocabulary migrates. New production code should call spawnFleet.
 export const spawnShip = spawnFleet;
+
+export function spendStrength(world, e, amount) {
+  const strength = world.get(e, C.Strength);
+  if (!strength || amount < 0 || !Number.isFinite(amount)) return null;
+  return setStrength(world, e, Math.max(0, strength.value - amount));
+}
 
 // --- faction-generic roster queries -------------------------------------
 export const aliveFleets = world => world.query(C.Alive);
@@ -98,12 +128,8 @@ export function inCommand(world, e) {
   const fl = flagshipOf(world, factionOf(world, e));
   return fl !== null && hexDist(posOf(world, e), posOf(world, fl)) <= CMD_R;
 }
-// `extraObstacles` (a Set of "c,r" keys, or undefined) folds in terrain
-// this module has no concept of -- currently just the star map's
-// asteroid field. Kept optional and additive rather than teaching this
-// module what an asteroid is; the caller decides what else blocks a hex.
-export function occupiedSet(world, extraObstacles) {
-  const s = new Set(extraObstacles || []);
+export function occupiedSet(world) {
+  const s = new Set();
   for (const e of aliveFleets(world)) { const [c, r] = posOf(world, e); s.add(key(c, r)); }
   return s;
 }
@@ -111,8 +137,8 @@ export function nearestEnemy(world, e) {
   const en = enemiesOf(world, factionOf(world, e));
   return en.length ? argmin(en, x => hexDist(posOf(world, e), posOf(world, x))) : null;
 }
-export function legalTargets(world, e, extraObstacles) {
-  const occ = occupiedSet(world, extraObstacles);
+export function legalTargets(world, e) {
+  const occ = occupiedSet(world);
   const pos = posOf(world, e), facing = facingOf(world, e);
   return enemiesOf(world, factionOf(world, e)).filter(x => {
     const xp = posOf(world, x);
@@ -134,8 +160,8 @@ export function canTurn(act) {
 export function canBack(act) {
   return canMoveBackwardDuringActivation(act);
 }
-export function canFire(world, act, extraObstacles) {
-  return !!(act && act.u != null && !act.fired && legalTargets(world, act.u, extraObstacles).length > 0);
+export function canFire(world, act) {
+  return !!(act && act.u != null && !act.fired && legalTargets(world, act.u).length > 0);
 }
 
 // --- movement --------------------------------------------------------------
@@ -149,9 +175,9 @@ export const backwardHex = (world, e) => neighbor(posOf(world, e), (facingOf(wor
 
 // `isBlocked(nextPos)`, if given, is checked before the universal Shaken-
 // refusal rule -- battle passes board-bounds + ship-occupancy; the star
-// map passes ship occupancy while terrain only costs MP, a concern
+// map passes ship occupancy while terrain only costs AP, a concern
 // map/main.js owns entirely outside this module. Returns
-// {ok:true} or {ok:false, reason:"blocked"|"shaken"}; never mutates MP,
+// {ok:true} or {ok:false, reason:"blocked"|"shaken"}; never mutates AP,
 // that bookkeeping belongs to each caller's own activation object.
 export function stepInto(world, e, dir, { isBlocked } = {}) {
   const pos = posOf(world, e);
@@ -253,6 +279,8 @@ export function destroy(world, e, random, { onDestroyed, onFlagshipLost, moraleC
 // runs after the defender's destruction, contagion, and flagship effects.
 export function fire(world, e, tgt, random, {
   supplyState = SupplyState.NORMAL,
+  damagePerHit = 1,
+  redirectMissesTo = null,
   onResolved,
   onHit,
   onDestroyed,
@@ -271,10 +299,11 @@ export function fire(world, e, tgt, random, {
   const from = posOf(world, e), to = posOf(world, tgt);
   onResolved?.({ hits, rolls, arc, need, from, to });
   let destroyed = false;
-  if (hits) {
+  const damage = Math.max(0, hits * damagePerHit);
+  if (damage) {
     onHit?.(tgt);
     const tgtStrength = world.get(tgt, C.Strength);
-    tgtStrength.value = Math.max(0, tgtStrength.value - hits);
+    tgtStrength.value = Math.max(0, Math.round((tgtStrength.value - damage) * 1000) / 1000);
     if (tgtStrength.value === 0) {
       const destroyedFaction = factionOf(world, tgt);
       destroy(world, tgt, random, { onDestroyed, onFlagshipLost, moraleCheckOpts });
@@ -283,5 +312,35 @@ export function fire(world, e, tgt, random, {
     }
     else moraleCheck(world, tgt, random, { ...moraleCheckOpts, fromFlankOrRear: arc !== FiringArc.FRONT });
   }
-  return { hits, rolls, arc, need, destroyed, from, to };
+  let collateral = null;
+  const missedShots = rolls.length - hits;
+  if (redirectMissesTo != null && redirectMissesTo !== tgt && isAlive(world, redirectMissesTo) && missedShots > 0) {
+    const collateralDamage = Math.max(0, Math.round(missedShots * damagePerHit * 1000) / 1000);
+    let collateralDestroyed = false;
+    if (collateralDamage) {
+      onHit?.(redirectMissesTo);
+      const collateralStrength = world.get(redirectMissesTo, C.Strength);
+      collateralStrength.value = Math.max(0, Math.round((collateralStrength.value - collateralDamage) * 1000) / 1000);
+      if (collateralStrength.value === 0) {
+        const destroyedFaction = factionOf(world, redirectMissesTo);
+        destroy(world, redirectMissesTo, random, { onDestroyed, onFlagshipLost, moraleCheckOpts });
+        collateralDestroyed = true;
+        onEnemyDestroyed?.({
+          attacker: e, destroyed: redirectMissesTo,
+          attackerFaction: factionOf(world, e), destroyedFaction,
+        });
+      } else {
+        moraleCheck(world, redirectMissesTo, random, {
+          ...moraleCheckOpts, fromFlankOrRear: arc !== FiringArc.FRONT,
+        });
+      }
+    }
+    collateral = {
+      target: redirectMissesTo,
+      hits: missedShots,
+      damage: collateralDamage,
+      destroyed: collateralDestroyed,
+    };
+  }
+  return { hits, damage, rolls, arc, need, destroyed, collateral, from, to };
 }

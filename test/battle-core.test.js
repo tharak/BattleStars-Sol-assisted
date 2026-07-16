@@ -137,3 +137,55 @@ test("strategic-map combat returns presentation data without owning effects", ()
   assert.deepEqual(result.from, [10, 13]);
   assert.deepEqual(result.to, [11, 13]);
 });
+
+test("strategic combat can scale damage independently from hit count", () => {
+  const world = new ShipRules.World();
+  const attacker = ShipRules.spawnFleet(world, {
+    faction: 0, c: 10, r: 13, dir: 0, label: "A1", strength: 40,
+  });
+  const target = ShipRules.spawnFleet(world, {
+    faction: 1, c: 11, r: 13, dir: 3, label: "T1", strength: 40,
+  });
+  const random = new SequenceRandomSource([...Array(40).fill(6), 6]);
+
+  const result = ShipRules.fire(world, attacker, target, random, { damagePerHit: 0.1 });
+
+  assert.equal(result.hits, 40);
+  assert.equal(result.damage, 4);
+  assert.equal(ShipRules.strengthOf(world, target), 36);
+});
+
+test("strategic misses can strike a second allied Fleet in the target hex", () => {
+  const world = new ShipRules.World();
+  const attacker = ShipRules.spawnFleet(world, {
+    faction: 0, c: 10, r: 13, dir: 0, label: "A1", strength: 4,
+  });
+  const target = ShipRules.spawnFleet(world, {
+    faction: 1, c: 11, r: 13, dir: 3, label: "T1", strength: 4,
+  });
+  const ally = ShipRules.spawnFleet(world, {
+    faction: 1, c: 11, r: 13, dir: 3, label: "T2", strength: 4,
+  });
+  const random = new SequenceRandomSource([6, 1, 1, 1, 6, 6]);
+
+  const result = ShipRules.fire(world, attacker, target, random, {
+    damagePerHit: 0.1,
+    redirectMissesTo: ally,
+  });
+
+  assert.equal(ShipRules.strengthOf(world, target), 3.9);
+  assert.equal(ShipRules.strengthOf(world, ally), 3.7);
+  assert.deepEqual(result.collateral, {
+    target: ally, hits: 3, damage: 0.3, destroyed: false,
+  });
+});
+
+test("conquest can spend a Fleet's Strength and exhaust the Fleet", () => {
+  const world = new ShipRules.World();
+  const fleet = ShipRules.spawnFleet(world, {
+    faction: "blue", c: 0, r: 0, dir: 0, label: "B1", strength: 3,
+  });
+  assert.equal(ShipRules.spendStrength(world, fleet, 1), 2);
+  assert.equal(ShipRules.spendStrength(world, fleet, 2), 0);
+  assert.equal(ShipRules.isAlive(world, fleet), false);
+});

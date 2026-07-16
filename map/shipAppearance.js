@@ -12,6 +12,21 @@ export function strategicShipColor(faction, hasActed = false) {
   return hasActed ? colors.acted : colors.fill;
 }
 
+export function strategicLaserColor(faction) {
+  return STRATEGIC_FACTION_COLORS[faction]?.fill || "#ffffff";
+}
+
+const FLEET_TONE_FACTORS = Object.freeze([-0.24, -0.16, -0.08, 0, 0.08, 0.16, 0.24]);
+export function strategicFleetTone(faction, fleetId, hasActed = false) {
+  const base = strategicShipColor(faction, hasActed);
+  const amount = FLEET_TONE_FACTORS[Math.abs(Number(fleetId) || 0) % FLEET_TONE_FACTORS.length];
+  const value = parseInt(base.slice(1), 16);
+  const channels = [(value >> 16) & 255, (value >> 8) & 255, value & 255].map(channel => (
+    Math.round(amount >= 0 ? channel + (255 - channel) * amount : channel * (1 + amount))
+  ));
+  return `#${channels.map(channel => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
 export function scaledStrategicShipIconRadius(zoom) {
   return Math.max(STRATEGIC_SHIP_ICON_RADIUS * zoom, 1.5);
 }

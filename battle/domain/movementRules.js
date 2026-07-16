@@ -17,13 +17,10 @@ export function canMoveBackwardDuringActivation(activation) {
 
 export function forwardMovementCost({
   baseCost = MOVE_BASE_COST,
-  movementAllowance = MAX_MOVEMENT_POINTS,
-  hasAsteroid = false,
   gravityCost = baseCost,
 } = {}) {
-  const asteroidExtra = hasAsteroid ? movementAllowance - baseCost : 0;
   const gravityExtra = Math.max(0, gravityCost - baseCost);
-  return baseCost + Math.max(asteroidExtra, gravityExtra);
+  return baseCost + gravityExtra;
 }
 
 export function backwardMovementCost({ movementAllowance = MAX_MOVEMENT_POINTS } = {}) {

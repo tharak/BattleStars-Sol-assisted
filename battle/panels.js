@@ -1,6 +1,6 @@
 // Log + side-panel text rendering. Reads state/queries only -- never
 // mutates game state.
-import { STATE_NAME, MAX_TURNS, MP_MAX, MAX_TURNS_PER_ACTIVATION, sideName } from "./config.js";
+import { STATE_NAME, MAX_TURNS, AP_MAX, MAX_TURNS_PER_ACTIVATION, sideName } from "./config.js";
 import * as Q from "./queries.js";
 
 const logEl = document.getElementById("log");
@@ -63,7 +63,7 @@ export function updatePanels(state) {
     const u = act.u;
     ai.innerHTML = `<b>${Q.labelOf(state, u)}${Q.isFlagship(state, u) ? " ★" : ""}</b> — str ${Q.strengthOf(state, u)}, ${STATE_NAME[Q.moraleOf(state, u)]}, ` +
       `${act.cmd ? "in command (+1 morale/rally)" : "OUT of command"}<br>` +
-      `MP ${act.mp}/${MP_MAX} · turns ${act.turns || 0}/${MAX_TURNS_PER_ACTIVATION}${act.fired ? " · has fired" : ""}` +
+      `AP ${act.mp}/${AP_MAX} · turns ${act.turns || 0}/${MAX_TURNS_PER_ACTIVATION}${act.fired ? " · has fired" : ""}` +
       (act.fireMode ? ` · <span style="color:var(--red)">pick a highlighted target</span>` : "") +
       (Q.canSwitchSelection(state) ? `<br><span style="color:var(--dim)">Changed your mind? Click another un-activated Fleet to switch — nothing's committed yet.</span>` : "");
     btns.L.disabled = btns.R.disabled = btns.F.disabled = !Q.canMove(state);

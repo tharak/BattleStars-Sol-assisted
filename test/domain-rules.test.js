@@ -65,11 +65,9 @@ test("rally resolution is deterministic and applies command bonus", () => {
   });
 });
 
-test("movement costs preserve open, asteroid, gravity, and backward rules", () => {
+test("movement costs preserve open, gravity, and backward rules", () => {
   assert.equal(forwardMovementCost(), 1);
-  assert.equal(forwardMovementCost({ hasAsteroid: true }), 3);
   assert.equal(forwardMovementCost({ gravityCost: 5 }), 5);
-  assert.equal(forwardMovementCost({ hasAsteroid: true, gravityCost: 4 }), 4);
   assert.equal(backwardMovementCost(), 3);
 });
 

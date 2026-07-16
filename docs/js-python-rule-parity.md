@@ -26,10 +26,10 @@
 | Board | Radius-13 hexagon in a 27×27 bounding box | 24×18 rectangle | Web board was changed independently; published simulation baselines retain their original board |
 | Deployment anchors | Columns 7/19, row 13 | Columns 5/18, row 9 | Match each board geometry |
 | Time limit | 15 turns | 40 turns | Python allows benchmark battles to terminate naturally; paper/browser victory uses 15 |
-| Backward movement | Implemented; costs all 3 MP | Not implemented | Baseline AI never retreats, so its outcomes are unaffected |
+| Backward movement | Implemented; costs all 3 AP | Not implemented | Baseline AI never retreats, so its outcomes are unaffected |
 | RNG algorithm | `MathRandomSource`, Mulberry32 seeded source, or exact sequence | `random.Random` | Deterministic within each runtime, not cross-language identical |
 | Extra modes | Manual/fixed deployment, hotseat, spectate, side-at-once | Alternating AI only | Browser playtest features |
-| Strategic terrain | Asteroids and gravity costs on `map.html` | Absent | Strategic-map-only rules |
+| Strategic gravity | Gravity currents on `map.html` | Absent | Strategic-map-only rules |
 
 ## Drift policy
 

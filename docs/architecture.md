@@ -83,8 +83,11 @@ These modules accept plain values and return plain results. They do not know abo
 ### Strategic rendering
 
 - `map/main.js` dynamically loads `scene3d.js`, coordinates renderer state, and owns the explicit 2D fallback.
-- `map/scene3d.js` is the only Three.js importer. It retains static bodies, gravity, rings, and asteroids separately from dynamic ships and tracers, tracks context loss/restoration, and exposes renderer diagnostics without deciding gameplay.
+- `map/scene3d.js` is the only Three.js importer. It retains static bodies, gravity, and rings separately from dynamic ships and tracers, tracks context loss/restoration, and exposes renderer diagnostics without deciding gameplay.
 - `map/gravityField.js` builds deduplicated gravity geometry as pure data.
+- `map/strategicEconomy.js` derives planet yield, conquest timing, and safe production placement from plain strategic values; tuning lives in `map/strategicBalance.js`.
+- `map/strategicFleetActions.js` owns pure merge/split value calculations and friendly-stacking movement policy; `map/main.js` remains the thin ECS/UI adapter.
+- `map/tutorials.js` owns the tutorial catalog and the pure radius-10 Earth training-board fixture; `map/main.js` only anchors and renders that fixture.
 - `map/renderQuality.js` chooses the low/high presentation tier from explicit capability signals.
 - Vite bundles Three.js and textures locally. The production browser tests require real WebGL startup and separately force the 2D and module-load-failure paths.
 
