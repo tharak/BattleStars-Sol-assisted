@@ -10,6 +10,7 @@ import {
   executeStrategicGroupRoute,
   executeStrategicGroupTurn,
   executeStrategicRoute,
+  executeStrategicRouteStepwise,
   findGroupReachableDestinations,
   findReachableDestinations,
   hexPatch,
@@ -108,6 +109,33 @@ test("route execution applies its advertised forced gravity step", () => {
   });
   assert.equal(result.ok, true);
   assert.deepEqual(applied, [[1, -1]]);
+});
+
+test("stepwise course execution yields after every moved hex", async () => {
+  const world = new SC.World();
+  const ship = SC.spawnShip(world, { faction: "blue", c: 0, r: 0, dir: 0, label: "Course" });
+  const act = activation({ u: ship });
+  const route = findReachableDestinations({
+    position: SC.posOf(world, ship), facing: SC.facingOf(world, ship), activation: act,
+  }).get("3,0");
+  const observedPositions = [];
+  const waits = [];
+
+  const result = await executeStrategicRouteStepwise(route, {
+    activation: act,
+    turnLeft: () => SC.turn(world, ship, 1),
+    turnRight: () => SC.turn(world, ship, -1),
+    moveForward: () => SC.moveForward(world, ship),
+    moveBackward: () => SC.moveBackward(world, ship),
+    afterMovement: step => observedPositions.push({ ...step, position: SC.posOf(world, ship) }),
+    waitForNextMovement: step => waits.push(step.movementIndex),
+  });
+
+  assert.deepEqual(observedPositions.map(step => step.position), [[1, 0], [2, 0], [3, 0]]);
+  assert.deepEqual(waits, [1, 2, 3]);
+  assert.deepEqual(result, { ok: true, movements: 3 });
+  assert.equal(act.mp, route.remainingMp);
+  assert.equal(act.moved, true);
 });
 
 test("a backward hex uses the full allowance once the two-turn cap applies", () => {

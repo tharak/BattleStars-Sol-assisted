@@ -20,7 +20,9 @@ export function selectUnit(context, entity) {
   context.world.remove(entity, C.HitSinceAct);
   Object.assign(activation, {
     u: entity,
-    mp: MP_MAX, turns: 0,
+    mp: MP_MAX + (context.world.get(entity, C.Captain)?.abilityId === "full_throttle" ? 1 : 0), turns: 0,
+    maxTurns: context.world.get(entity, C.Captain)?.abilityId === "master_helmsman" ? 3 : undefined,
+    backwardCost: context.world.get(entity, C.Captain)?.abilityId === "retro_thrusters" ? 2 : undefined,
     moved: false,
     fired: false,
     fireMode: false,

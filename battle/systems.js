@@ -64,6 +64,7 @@ function moraleHooks(state) {
 // pre-extraction code's flagship-loss loop did.
 function flagshipLostHook(state, destroyedEntity) {
   return flagSide => {
+    if (state.world.get(destroyedEntity, C.Captain)) return;
     state.G.fleets[flagSide].flagLost = true;
     state.events.emit(BattleEvent.FLAGSHIP_LOST, { unit: destroyedEntity, side: flagSide });
     for (const v of Q.aliveOfSide(state, flagSide)) moraleCheck(state, v);
@@ -168,7 +169,7 @@ export function moveActivatedUnitBackward(state) {
   if (!state.act?.u) return false;
   return tryMoveActivatedUnit(state, {
     direction: (Q.facingOf(state, state.act.u) + 3) % 6,
-    movementPointCost: MP_MAX,
+    movementPointCost: state.act.backwardCost || MP_MAX,
   });
 }
 
@@ -203,7 +204,10 @@ export function flee(state, e) {
 }
 export function routedActivation(state, e) { // shared by AI and human routed units
   if (!Q.hasHitSinceAct(state, e)) {
-    const rally = resolveRally({ inCommand: Q.inCommand(state, e) }, state.random);
+    const rally = resolveRally({
+      inCommand: Q.inCommand(state, e),
+      captainBonus: state.world.get(e, C.Captain)?.abilityId === "rallying_voice" ? 1 : 0,
+    }, state.random);
     if (rally.passed) {
       state.world.get(e, C.Morale).state = SHAKEN;
       state.world.remove(e, C.HitSinceAct);

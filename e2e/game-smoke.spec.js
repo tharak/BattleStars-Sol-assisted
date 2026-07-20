@@ -46,6 +46,8 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   await expect(page.locator("#turnClock")).toBeHidden();
   await expect(page.locator("#tutorialStep")).toHaveText("Step 1 of 12");
   await expect(page.locator("#tutorialActionTitle")).toHaveText("Select your Fleet");
+  await expect(page.locator('[data-tutorial-target="true"]')).toHaveCount(3);
+  await expect(page.locator(".turnShip.ready").first()).toHaveAttribute("aria-describedby", "tutorialActionMessage");
   await page.locator("#tutorialExitBtn").click();
   await expect(page.locator("#startOverlay")).toBeVisible();
   await expect(page.locator(".turnShip")).toHaveCount(0);
@@ -53,11 +55,14 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   await page.locator(".turnShip").first().click();
   await expect(page.locator("#tutorialStep")).toHaveText("Step 2 of 12");
   await expect(page.locator("#tutorialActionTitle")).toHaveText("Approach Earth");
+  await expect(page.locator('[data-tutorial-target="true"]')).toHaveId("infoForward");
+  await expect(page.locator("#infoForward")).toBeInViewport();
   await page.locator("#infoForward").click();
   await expect(page.locator("#tutorialStep")).toHaveText("Step 3 of 12");
   await page.locator("#infoForward").click();
   await expect(page.locator("#tutorialStep")).toHaveText("Step 4 of 12");
   await expect(page.locator("#tutorialActionTitle")).toHaveText("Conquer Earth");
+  await expect(page.locator('[data-tutorial-target="true"]')).toHaveId("infoConquer");
   await page.getByRole("button", { name: "Mechanics Library" }).click();
   await expect(page.locator(".tutorialGroup")).toHaveCount(5);
   await page.getByRole("button", { name: "Ships and Fleet Strength" }).click();
@@ -169,6 +174,38 @@ test("the strategic map keeps an intentional 2D fallback path", async ({ page })
   await expect(page.locator("#mapwrap3d")).toBeHidden();
   expect(sceneRequests).toEqual([]);
   expect(pageErrors).toEqual([]);
+});
+
+test("Set Course advances visibly one hex at a time", async ({ page }) => {
+  await page.goto("/map.html?renderer=2d");
+  await page.getByRole("button", { name: "Tutorial" }).click();
+
+  await page.getByRole("button", { name: /Fleet B1 Ready, 10 Ships/ }).click();
+  await page.locator("#infoForward").click();
+  await page.locator("#infoForward").click();
+  await page.getByRole("button", { name: /Conquer Earth/ }).click();
+
+  await page.getByRole("button", { name: /Fleet B2 Ready, 10 Ships/ }).click();
+  await page.locator("#infoTurnL").click();
+  await page.locator("#infoForward").click();
+  await page.locator("#infoEnd").click();
+
+  await page.getByRole("button", { name: /Fleet B3 Ready, 10 Ships/ }).click();
+  await page.locator("#infoTravel").click();
+  const canvas = page.locator("#starmapCv");
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.click(box.x + box.width * 0.75, box.y + box.height * 0.5);
+  await expect(page.locator("#tutorialActionTitle")).toHaveText("End the final activation");
+  await page.locator("#infoEnd").click();
+
+  const mapArea = page.locator("#mapArea");
+  await expect(mapArea).toHaveAttribute("data-course-animation", "active");
+  await expect(mapArea).toHaveAttribute("data-course-step", "1");
+  await page.waitForTimeout(100);
+  await expect(mapArea).toHaveAttribute("data-course-step", "1");
+  await expect.poll(async () => Number(await mapArea.getAttribute("data-course-step"))).toBeGreaterThan(1);
+  await expect(mapArea).toHaveAttribute("data-course-animation", "idle");
 });
 
 test("split Fleets can merge back into an already-acted flagship Fleet", async ({ page }) => {

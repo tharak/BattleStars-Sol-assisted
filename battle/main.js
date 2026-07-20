@@ -32,6 +32,7 @@ function buildMenu(state, battleOrchestrator) {
       state.SIZE = +document.querySelector('input[name="fsize"]:checked').value;
       state.moveMode = +document.querySelector('input[name="movemode"]:checked').value;
       state.deployMode = +document.querySelector('input[name="deploymode"]:checked').value;
+      state.captainSeed = Number(document.getElementById("captainSeed").value) || 1;
       document.getElementById("menu").style.display = "none";
       document.getElementById("battle").style.display = "block";
       const spect = state.ctrlMode === ControlMode.SPECTATE;

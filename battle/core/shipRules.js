@@ -60,6 +60,8 @@ export const setFlagshipCount = (world, e, count) => {
   return normalized;
 };
 export const isFlagship = (world, e) => flagshipCountOf(world, e) > 0;
+export const captainOf = (world, e) => world.get(e, C.Captain) || null;
+export const hasCaptainAbility = (world, e, abilityId) => captainOf(world, e)?.abilityId === abilityId;
 export const isMainFleet = isFlagship;
 export const isAlive = (world, e) => world.has(e, C.Alive);
 const setPos = (world, e, pos) => { const p = world.get(e, C.Position); p.c = pos[0]; p.r = pos[1]; };
@@ -74,7 +76,7 @@ export function setPosition(world, e, c, r) { setPos(world, e, [c, r]); }
 export function spawnFleet(world, {
   faction, c, r, dir, isFlagship = false, isMainFleet = isFlagship,
   flagshipCount = isMainFleet ? 1 : 0,
-  label, formation = "sphere", strength = 4, moraleState = MoraleState.STEADY,
+  label, formation = "sphere", strength = 4, moraleState = MoraleState.STEADY, captain = null,
 }) {
   const e = world.createEntity();
   world.add(e, C.Position, { c, r });
@@ -86,6 +88,7 @@ export function spawnFleet(world, {
   world.add(e, C.Label, { id: label });
   world.add(e, C.Alive, true);
   setFlagshipCount(world, e, flagshipCount);
+  if (captain) world.add(e, C.Captain, { ...captain });
   return e;
 }
 // Compatibility alias for headless callers while the game-wide Armada/Fleet
@@ -125,8 +128,8 @@ export function recoverMoraleAfterEnemyDestroyed(world, faction) {
 }
 
 export function inCommand(world, e) {
-  const fl = flagshipOf(world, factionOf(world, e));
-  return fl !== null && hexDist(posOf(world, e), posOf(world, fl)) <= CMD_R;
+  return fleetsOfFaction(world, factionOf(world, e)).some(flagship => isFlagship(world, flagship)
+    && hexDist(posOf(world, e), posOf(world, flagship)) <= CMD_R + (hasCaptainAbility(world, flagship, "command_expert") ? 1 : 0));
 }
 export function occupiedSet(world) {
   const s = new Set();
@@ -228,6 +231,7 @@ export function moraleCheck(world, e, random, {
     fromFlankOrRear,
     supplyState,
     flagshipLost,
+    captainBonus: hasCaptainAbility(world, e, "steadfast") ? 1 : 0,
   }, random);
   onChecked?.(e, result);
   if (!result.passed) {
@@ -289,12 +293,17 @@ export function fire(world, e, tgt, random, {
   onFlagshipLost,
 } = {}) {
   const strength = strengthOf(world, e);
+  const captainAbility = captainOf(world, e)?.abilityId;
   const arc = incomingArc(posOf(world, tgt), facingOf(world, tgt), posOf(world, e));
+  const extraDice = (arc === FiringArc.FRONT && captainAbility === "front_gunnery")
+    || (arc === FiringArc.FLANK && captainAbility === "flank_gunnery")
+    || (arc === FiringArc.REAR && captainAbility === "rear_gunnery") ? 1 : 0;
   const { hits, rolls, need } = resolveCombat({
     strength,
     moraleState: moraleOf(world, e),
-    targetArc: arc,
+    targetArc: arc, extraDice,
     supplyState,
+    ignoreCriticalSupply: captainAbility === "supply_officer",
   }, random);
   const from = posOf(world, e), to = posOf(world, tgt);
   onResolved?.({ hits, rolls, arc, need, from, to });

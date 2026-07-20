@@ -6,12 +6,14 @@ export function moraleModifier({
   fromFlankOrRear = false,
   supplyState = SupplyState.NORMAL,
   flagshipLost = false,
+  captainBonus = 0,
 } = {}) {
   return (steadyFriendAdjacent ? 1 : 0)
     + (inCommand ? 1 : 0)
     - (fromFlankOrRear ? 1 : 0)
     - (supplyState === SupplyState.NORMAL ? 0 : 1)
-    - (flagshipLost ? 1 : 0);
+    - (flagshipLost ? 1 : 0)
+    + captainBonus;
 }
 
 export function resolveMorale(options, random) {
@@ -45,9 +47,9 @@ export function moraleStateAfterEnemyDestroyed(currentState) {
   return MoraleState.STEADY;
 }
 
-export function resolveRally({ inCommand = false } = {}, random) {
+export function resolveRally({ inCommand = false, captainBonus = 0 } = {}, random) {
   if (!random?.d6) throw new TypeError("resolveRally requires a random source");
   const roll = random.d6();
-  const bonus = inCommand ? 1 : 0;
+  const bonus = (inCommand ? 1 : 0) + captainBonus;
   return { roll, bonus, passed: roll + bonus >= 4 };
 }

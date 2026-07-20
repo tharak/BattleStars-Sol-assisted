@@ -1,5 +1,6 @@
 import { deployFormation } from "../formations.js";
 import { breakThreshold } from "../domain/victoryRules.js";
+import { draftCaptains } from "../domain/captainRules.js";
 import {
   BattlePhase, DeploymentMode, Side, SupplyState, ControlMode,
 } from "../domain/constants.js";
@@ -8,8 +9,8 @@ export function initializeBattle(context) {
   context.beginBattle();
   context.BREAK_AT = breakThreshold(context.SIZE);
   const armadas = [
-    { name: null, supply: context.scen.supA || SupplyState.NORMAL, flagLost: false, roster: [] },
-    { name: null, supply: context.scen.supB || SupplyState.NORMAL, flagLost: false, roster: [] },
+    { name: null, supply: context.scen.supA || SupplyState.NORMAL, flagLost: false, roster: [], captains: draftCaptains("blue", context.captainSeed) },
+    { name: null, supply: context.scen.supB || SupplyState.NORMAL, flagLost: false, roster: [], captains: draftCaptains("red", context.captainSeed) },
   ];
   context.G = {
     turn: 0,

@@ -330,6 +330,51 @@ export function executeStrategicRoute(route, {
   return { ok: true };
 }
 
+/**
+ * Execute the same validated route while yielding after each visible move.
+ * Timing and presentation stay injected so this headless module owns no
+ * clocks, DOM, or renderer state.
+ */
+export async function executeStrategicRouteStepwise(route, {
+  activation = null,
+  turnLeft,
+  turnRight,
+  moveForward,
+  moveBackward,
+  applyForcedStep = () => {},
+  afterMovement = () => {},
+  waitForNextMovement = () => Promise.resolve(),
+}) {
+  if (!route) return { ok: false, reason: "missing_route" };
+  let movementIndex = 0;
+  for (let actionIndex = 0; actionIndex < route.actions.length; actionIndex++) {
+    const action = route.actions[actionIndex];
+    if (action === StrategicMoveAction.TURN_LEFT) {
+      turnLeft();
+      continue;
+    }
+    if (action === StrategicMoveAction.TURN_RIGHT) {
+      turnRight();
+      continue;
+    }
+    const result = action === StrategicMoveAction.FORWARD ? moveForward() : moveBackward();
+    if (!result?.ok) return result || { ok: false, reason: "step_failed" };
+    const drift = route.forcedSteps?.find(step => step.actionIndex === actionIndex);
+    if (drift) applyForcedStep(drift);
+    await afterMovement({ action, actionIndex, movementIndex, drift });
+    movementIndex++;
+    await waitForNextMovement({ action, actionIndex, movementIndex, drift });
+  }
+  if (activation) {
+    activation.mp = route.remainingMp;
+    activation.turns = route.turns;
+    if (activation.turnsByShip) activation.turnsByShip[activation.u] = route.turns;
+    activation.moved = true;
+    activation.fireMode = false;
+  }
+  return { ok: true, movements: movementIndex };
+}
+
 /** Execute every prevalidated member route, then commit activation once. */
 export function executeStrategicGroupRoute(groupRoute, { activation = null, actionsFor }) {
   if (!groupRoute?.memberRoutes?.length) return { ok: false, reason: "missing_group_route" };

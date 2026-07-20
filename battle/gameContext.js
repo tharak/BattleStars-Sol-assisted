@@ -23,6 +23,7 @@ export class GameContext {
     this.act = null;
     this.setup = null;
     this.setupQueue = [];
+    this.captainSeed = 1;
   }
 
   beginBattle() {

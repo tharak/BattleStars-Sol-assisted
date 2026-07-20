@@ -9,6 +9,7 @@ export const FleetFormation = "FleetFormation"; // {name}          compact in-he
 export const Morale = "Morale";                // {state}          MoraleState.STEADY|SHAKEN|ROUTED
 export const Label = "Label";                  // {id}             display id, e.g. "B3"
 export const Flagship = "Flagship";            // {count}; legacy truthy tags count as one
+export const Captain = "Captain";              // {id, abilityId, name}; captain flagship only
 // Main Fleet is the player-facing name; Flagship remains the compatibility
 // component key for existing saves, scenarios, and headless callers.
 export const MainFleet = Flagship;

@@ -23,6 +23,8 @@ test("playable tutorial is a short, ordered sequence of player actions", () => {
   assert.equal(PLAYABLE_TUTORIAL_STEPS.at(-1).event, "ended");
   assert.equal(new Set(PLAYABLE_TUTORIAL_STEPS.map(step => step.id)).size, PLAYABLE_TUTORIAL_STEPS.length);
   assert.ok(PLAYABLE_TUTORIAL_STEPS.every(step => step.message.length <= 32));
+  assert.ok(PLAYABLE_TUTORIAL_STEPS.every(step => step.event === "course-set" || step.target));
+  assert.deepEqual(PLAYABLE_TUTORIAL_STEPS.filter(step => step.event === "turned").map(step => step.target), ["turn"]);
 });
 
 test("playable tutorial advances only when the requested action succeeds", () => {

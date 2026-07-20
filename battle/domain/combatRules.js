@@ -6,17 +6,18 @@ const BASE_TARGET_NUMBER = Object.freeze({
   [FiringArc.REAR]: 3,
 });
 
-export function combatDice({ strength, moraleState }) {
+export function combatDice({ strength, moraleState, extraDice = 0 }) {
   const availableStrength = Math.max(0, strength);
-  return moraleState === MoraleState.STEADY
+  const base = moraleState === MoraleState.STEADY
     ? availableStrength
     : Math.ceil(availableStrength / 2);
+  return base + Math.max(0, extraDice);
 }
 
-export function targetNumber({ targetArc, supplyState = SupplyState.NORMAL }) {
+export function targetNumber({ targetArc, supplyState = SupplyState.NORMAL, ignoreCriticalSupply = false }) {
   const base = BASE_TARGET_NUMBER[targetArc];
   if (base == null) throw new RangeError(`Unknown firing arc: ${targetArc}`);
-  return base + (supplyState === SupplyState.CRITICAL ? 1 : 0);
+  return base + (supplyState === SupplyState.CRITICAL && !ignoreCriticalSupply ? 1 : 0);
 }
 
 export function resolveCombat(options, random) {

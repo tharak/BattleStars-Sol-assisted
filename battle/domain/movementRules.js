@@ -8,11 +8,11 @@ export function canMoveDuringActivation(activation) {
 }
 
 export function canTurnDuringActivation(activation) {
-  return canMoveDuringActivation(activation) && (activation.turns || 0) < MAX_TURNS_PER_ACTIVATION;
+  return canMoveDuringActivation(activation) && (activation.turns || 0) < (activation.maxTurns || MAX_TURNS_PER_ACTIVATION);
 }
 
 export function canMoveBackwardDuringActivation(activation) {
-  return canMoveDuringActivation(activation) && activation.mp >= MAX_MOVEMENT_POINTS;
+  return canMoveDuringActivation(activation) && activation.mp >= (activation.backwardCost || MAX_MOVEMENT_POINTS);
 }
 
 export function forwardMovementCost({

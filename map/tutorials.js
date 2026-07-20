@@ -179,18 +179,18 @@ export function createPlayableTutorialMap(earthPosition) {
 // Its three activations use the three starting Fleets in turn, teaching the
 // round rhythm without requiring hidden tutorial-only turn exceptions.
 export const PLAYABLE_TUTORIAL_STEPS = Object.freeze([
-  Object.freeze({ id: "select-first", event: "fleet-selected", title: "Select your Fleet", message: "Click a Fleet near Earth." }),
-  Object.freeze({ id: "approach-one", event: "forward", title: "Approach Earth", message: "Move Forward toward Earth." }),
-  Object.freeze({ id: "approach-two", event: "forward", title: "Close with Earth", message: "Move Forward once more." }),
-  Object.freeze({ id: "conquer", event: "conquered", title: "Conquer Earth", message: "Click Conquer Earth." }),
-  Object.freeze({ id: "select-second", event: "fleet-selected", title: "Select another Fleet", message: "Choose a ready Fleet." }),
-  Object.freeze({ id: "turn", event: "turned", title: "Turn the Fleet", message: "Click either Turn button." }),
-  Object.freeze({ id: "forward", event: "forward", title: "Move forward", message: "Click Forward." }),
-  Object.freeze({ id: "end-second", event: "ended", title: "End the activation", message: "Click End Activation." }),
-  Object.freeze({ id: "select-third", event: "fleet-selected", title: "Select the last Fleet", message: "Choose the final ready Fleet." }),
-  Object.freeze({ id: "course-arm", event: "course-armed", title: "Set a course", message: "Click Set Course." }),
+  Object.freeze({ id: "select-first", event: "fleet-selected", target: "ready-fleet", title: "Select your Fleet", message: "Click a Fleet near Earth." }),
+  Object.freeze({ id: "approach-one", event: "forward", target: "forward", title: "Approach Earth", message: "Move Forward toward Earth." }),
+  Object.freeze({ id: "approach-two", event: "forward", target: "forward", title: "Close with Earth", message: "Move Forward once more." }),
+  Object.freeze({ id: "conquer", event: "conquered", target: "conquer", title: "Conquer Earth", message: "Click Conquer Earth." }),
+  Object.freeze({ id: "select-second", event: "fleet-selected", target: "ready-fleet", title: "Select another Fleet", message: "Choose a ready Fleet." }),
+  Object.freeze({ id: "turn", event: "turned", target: "turn", title: "Turn the Fleet", message: "Click either Turn button." }),
+  Object.freeze({ id: "forward", event: "forward", target: "forward", title: "Move forward", message: "Click Forward." }),
+  Object.freeze({ id: "end-second", event: "ended", target: "end", title: "End the activation", message: "Click End Activation." }),
+  Object.freeze({ id: "select-third", event: "fleet-selected", target: "ready-fleet", title: "Select the last Fleet", message: "Choose the final ready Fleet." }),
+  Object.freeze({ id: "course-arm", event: "course-armed", target: "course", title: "Set a course", message: "Click Set Course." }),
   Object.freeze({ id: "course-target", event: "course-set", title: "Choose a destination", message: "Click any distant hex." }),
-  Object.freeze({ id: "end", event: "ended", title: "End the final activation", message: "Click End Activation." }),
+  Object.freeze({ id: "end", event: "ended", target: "end", title: "End the final activation", message: "Click End Activation." }),
 ]);
 
 export function nextPlayableTutorialStep(steps, index, event) {

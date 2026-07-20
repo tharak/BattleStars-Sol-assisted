@@ -15,12 +15,14 @@ import { CMD_R, MP_MAX, MAX_TURNS_PER_ACTIVATION } from "../battle/config.js";
 import * as SC from "../battle/core/shipRules.js";
 import { fleetShipPositions } from "../battle/fleetShips.js";
 import { MathRandomSource } from "../battle/core/random.js";
+import { captainAbility, draftCaptains } from "../battle/domain/captainRules.js";
 import { resolveMorale, resolveRally } from "../battle/domain/moraleRules.js";
 import { FiringArc } from "../battle/domain/constants.js";
 import { forwardMovementCost } from "../battle/domain/movementRules.js";
 import { makeEffectLoop } from "../battle/core/effectLoop.js";
 import {
-  chooseCourseRoute, executeStrategicGroupRoute, executeStrategicGroupTurn, executeStrategicRoute, findGroupReachableDestinations,
+  chooseCourseRoute, executeStrategicGroupRoute, executeStrategicGroupTurn,
+  executeStrategicRoute, executeStrategicRouteStepwise, findGroupReachableDestinations,
   findReachableDestinations, hexPatch, membersWithinCommand, resolveStrategicClick, StrategicClickAction,
 } from "./strategicMovement.js";
 import {
@@ -93,6 +95,7 @@ const tutorialLessonTitle = document.getElementById("tutorialLessonTitle");
 const tutorialMechanics = document.getElementById("tutorialMechanics");
 const playerCountSelect = document.getElementById("playerCount");
 const npcCountSelect = document.getElementById("npcCount");
+const captainSeedInput = document.getElementById("captainSeed");
 const setupSummary = document.getElementById("setupSummary");
 const tutorialGuide = document.getElementById("tutorialGuide");
 const tutorialLibraryBtn = document.getElementById("tutorialLibraryBtn");
@@ -149,6 +152,7 @@ let nextStrategicMemberId = 1;
 const planetEconomy = new Map();
 const configuredFactions = [];
 const factionControllers = new Map();
+const captainsByFaction = new Map();
 let npcTurnTimer = null;
 let tutorialMode = false;
 let tutorialMap = null;
@@ -172,6 +176,12 @@ const groupMovePreferences = new Set();
 const shipCourses = new Map();
 const shipTurnMp = new Map();
 const shipTurnTurns = new Map();
+const COURSE_MOVEMENT_DELAY_MS = 260;
+let courseAnimationActive = false;
+let courseAnimationPromise = null;
+let courseAnimationStep = 0;
+mapArea.dataset.courseAnimation = "idle";
+mapArea.dataset.courseStep = "0";
 // Fire's own transient shot-line records, derived here from fire results
 // -- a parallel, map-local array to battle's own presentation effects (not
 // shared with it), each with a start timestamp/duration so ensureEffectLoop
@@ -340,12 +350,39 @@ function renderPlayableTutorialStep() {
   tutorialActionMessage.textContent = current.message;
 }
 
+const TUTORIAL_TARGET_SELECTORS = Object.freeze({
+  "ready-fleet": ".turnShip.ready",
+  forward: "#infoForward",
+  conquer: "#infoConquer",
+  turn: "#infoTurnL, #infoTurnR",
+  end: "#infoEnd",
+  course: "#infoTravel",
+});
+
+function updateTutorialActionHighlight() {
+  for (const button of document.querySelectorAll('[data-tutorial-target="true"]')) {
+    button.removeAttribute("data-tutorial-target");
+    button.removeAttribute("aria-describedby");
+  }
+  if (!tutorialMode || tutorialGuide.hidden) return;
+  const target = PLAYABLE_TUTORIAL_STEPS[tutorialStepIndex]?.target;
+  const selector = TUTORIAL_TARGET_SELECTORS[target];
+  if (!selector) return;
+  const buttons = [...document.querySelectorAll(selector)];
+  for (const button of buttons) {
+    button.dataset.tutorialTarget = "true";
+    button.setAttribute("aria-describedby", "tutorialActionMessage");
+  }
+  buttons.find(button => button.offsetParent !== null)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
 function advancePlayableTutorial(event) {
   if (!tutorialMode) return;
   const nextIndex = nextPlayableTutorialStep(PLAYABLE_TUTORIAL_STEPS, tutorialStepIndex, event);
   if (nextIndex === tutorialStepIndex) return;
   tutorialStepIndex = nextIndex;
   renderPlayableTutorialStep();
+  updateTutorialActionHighlight();
 }
 
 function updateSetupCounts(changed = null) {
@@ -378,6 +415,7 @@ tutorialLibraryBtn.onclick = () => {
   tutorialLibraryExitBtn.hidden = false;
   startOverlay.hidden = false;
   showTutorialMenu();
+  updateTutorialActionHighlight();
 };
 tutorialExitBtn.onclick = exitPlayableTutorial;
 tutorialLibraryExitBtn.onclick = exitPlayableTutorial;
@@ -407,9 +445,10 @@ function infoFor(hit) {
     const course = shipCourses.get(hit.id);
     const flagshipCount = SC.flagshipCountOf(world, hit.id);
     const states = stateCounts(hit.id);
+    const captain = SC.captainOf(world, hit.id);
     return {
       name: `Fleet ${SC.labelOf(world, hit.id)}${flagshipCount ? ` ★${flagshipCount > 1 ? `×${flagshipCount}` : ""}` : ""}`,
-      detail: `${FACTIONS[hit.faction].label} Armada — ${memberCount(hit.id)} Ships, Strength ${fleetStrength(hit.id).toFixed(1)} (${states.ready} Ready, ${states.shaken} Shaken, ${states.routed} Routed).${course ? ` Course: ${course.join(",")}.` : ""}`,
+      detail: `${FACTIONS[hit.faction].label} Armada — ${memberCount(hit.id)} Ships, Strength ${fleetStrength(hit.id).toFixed(1)} (${states.ready} Ready, ${states.shaken} Shaken, ${states.routed} Routed).${captain ? ` ${captain.name}: ${captainAbility(captain.abilityId)?.description}.` : ""}${course ? ` Course: ${course.join(",")}.` : ""}`,
     };
   }
   return null;
@@ -475,6 +514,10 @@ function activationCommitted() {
 // battle/lifecycle/activationLifecycle.js:selectUnit). Strategic turns add
 // the active-faction and already-acted gates around the shared ship rules.
 function selectShip(e, { npc = false } = {}) {
+  if (courseAnimationActive) {
+    setHint("Fleets are advancing along their plotted courses.");
+    return false;
+  }
   const shipFaction = SC.factionOf(world, e);
   if (isNpcFaction(shipFaction) && !npc) {
     setHint(`${FACTIONS[shipFaction].label} Armada is controlled by an NPC commander.`);
@@ -493,8 +536,12 @@ function selectShip(e, { npc = false } = {}) {
   }
   selectedShip = e;
   const turns = shipTurnTurns.get(e) ?? 0;
+  const captain = SC.captainOf(world, e);
   activation = {
-    u: e, mp: shipTurnMp.get(e) ?? MP_MAX, turns, turnsByShip: { [e]: turns }, moved: false, fired: false, fireMode: false,
+    u: e, mp: shipTurnMp.get(e) ?? MP_MAX + (captain?.abilityId === "full_throttle" ? 1 : 0), turns,
+    maxTurns: captain?.abilityId === "master_helmsman" ? 3 : undefined,
+    backwardCost: captain?.abilityId === "retro_thrusters" ? 2 : undefined,
+    turnsByShip: { [e]: turns }, moved: false, fired: false, fireMode: false,
     cmd: SC.inCommand(world, e), participantShipIds: [e],
   };
   travelArmed = false;
@@ -577,6 +624,10 @@ function finishActionRender() {
 function scheduleNpcTurn() {
   if (npcTurnTimer != null) window.clearTimeout(npcTurnTimer);
   npcTurnTimer = null;
+  if (courseAnimationActive && courseAnimationPromise) {
+    courseAnimationPromise.then(() => scheduleNpcTurn());
+    return;
+  }
   if (!shipsSpawned || !isNpcFaction(activeStrategicFaction(strategicTurn))) return;
   npcTurnTimer = window.setTimeout(runNpcActivation, 320);
 }
@@ -642,7 +693,10 @@ function moveResultHint(res) {
 // so a future per-ship move cost (e.g. a heavier hull that costs more
 // than 1 AP/hex even in open space) is a one-line swap to a lookup here.
 // Gravity is a positional hazard whose automatic drift does not add AP cost.
-function hexMoveCost() { return forwardMovementCost(); }
+function hexMoveCost() {
+  const cost = forwardMovementCost();
+  return SC.captainOf(world, activation?.u)?.abilityId === "gravity_navigator" ? Math.max(1, cost - 1) : cost;
+}
 
 function movementBlocker(movingShips) {
   const moving = new Set(movingShips);
@@ -676,8 +730,7 @@ function originalFlagshipFleet(faction) {
 }
 
 function inOriginalFlagshipCommand(fleet) {
-  const flagship = originalFlagshipFleet(SC.factionOf(world, fleet));
-  return flagship != null && hexDist(SC.posOf(world, fleet), SC.posOf(world, flagship)) <= CMD_R;
+  return SC.inCommand(world, fleet);
 }
 
 function spawnMemberFleet(sourceFleet, members, { state = null } = {}) {
@@ -837,13 +890,18 @@ function processMemberTurnStart(faction) {
   return { rallied, retreated };
 }
 
-function advanceFactionCourses(faction) {
+function resetFactionMovement(faction) {
   const living = SC.shipsOfFaction(world, faction);
   for (const ship of living) {
     if (isRoutedFleet(ship)) continue;
     shipTurnMp.set(ship, MP_MAX);
     shipTurnTurns.set(ship, 0);
   }
+  return living;
+}
+
+async function advanceFactionCourses(faction) {
+  const living = SC.shipsOfFaction(world, faction);
   let moved = 0;
   let arrived = 0;
   for (const ship of living) {
@@ -869,13 +927,19 @@ function advanceFactionCourses(faction) {
     });
     const route = chooseCourseRoute(routes, position, target);
     if (!route) continue;
-    const result = executeStrategicRoute(route, {
+    const result = await executeStrategicRouteStepwise(route, {
       activation: courseActivation,
       turnLeft: () => SC.turn(world, ship, 1),
       turnRight: () => SC.turn(world, ship, -1),
       moveForward: () => SC.moveForward(world, ship, { isBlocked: movementBlocker([ship]) }),
       moveBackward: () => SC.moveBackward(world, ship, { isBlocked: movementBlocker([ship]) }),
       applyForcedStep: drift => SC.setPosition(world, ship, ...drift.to),
+      afterMovement: () => {
+        courseAnimationStep++;
+        mapArea.dataset.courseStep = String(courseAnimationStep);
+        render();
+      },
+      waitForNextMovement: () => new Promise(resolve => window.setTimeout(resolve, COURSE_MOVEMENT_DELAY_MS)),
     });
     if (!result.ok) continue;
     shipTurnMp.set(ship, courseActivation.mp);
@@ -889,6 +953,41 @@ function advanceFactionCourses(faction) {
     }
   }
   return { moved, arrived };
+}
+
+function courseAdvanceSummary(courses) {
+  return courses.moved
+    ? `${courses.moved} Fleet${courses.moved === 1 ? "" : "s"} advance on course${courses.arrived ? `; ${courses.arrived} arrived` : ""}`
+    : "";
+}
+
+function beginFactionCourseAnimation(faction) {
+  if (!SC.shipsOfFaction(world, faction).some(ship => !isRoutedFleet(ship) && shipCourses.has(ship))) return null;
+  courseAnimationActive = true;
+  courseAnimationStep = 0;
+  mapArea.dataset.courseAnimation = "active";
+  mapArea.dataset.courseStep = "0";
+  const pending = Promise.resolve()
+    .then(() => advanceFactionCourses(faction))
+    .then(courses => {
+      const summary = courseAdvanceSummary(courses);
+      if (summary) setHint(persistentHint ? `${persistentHint} ${summary}.` : `${summary}.`);
+      return courses;
+    })
+    .catch(error => {
+      console.error("Automatic course movement failed:", error);
+      setHint("Automatic course movement stopped after an unexpected error.");
+      return { moved: 0, arrived: 0 };
+    })
+    .finally(() => {
+      if (courseAnimationPromise !== pending) return;
+      courseAnimationActive = false;
+      courseAnimationPromise = null;
+      mapArea.dataset.courseAnimation = "idle";
+      render();
+    });
+  courseAnimationPromise = pending;
+  return pending;
 }
 
 function syncPlanetEconomy(layout) {
@@ -917,6 +1016,7 @@ function mergeCandidates(ship = activation?.u) {
   ));
   let combinedStrength = memberCount(ship);
   return coLocated.filter(other => {
+    if (SC.captainOf(world, ship) && SC.captainOf(world, other)) return false;
     if (isRoutedFleet(other)) return false;
     const nextStrength = combinedStrength + memberCount(other);
     if (nextStrength > MAX_FLEET_STRENGTH) return false;
@@ -1076,6 +1176,7 @@ function produceFleet(planet, faction) {
 
 function startFactionEconomyTurn(layout, faction, round) {
   syncPlanetEconomy(layout);
+  resetFactionMovement(faction);
   const morale = processMemberTurnStart(faction);
   const completed = [];
   for (const planet of layout.planets) {
@@ -1099,13 +1200,12 @@ function startFactionEconomyTurn(layout, faction, round) {
     }
     economy.lastProducedTurn = turnKey;
   }
-  const courses = advanceFactionCourses(faction);
+  beginFactionCourseAnimation(faction);
   return [
     ...completed,
     morale.rallied ? `${morale.rallied} Ship${morale.rallied === 1 ? "" : "s"} rallied` : "",
     morale.retreated ? `${morale.retreated} routed Fleet${morale.retreated === 1 ? "" : "s"} retreated` : "",
     produced ? `${FACTIONS[faction].label} produces ${produced} Fleet${produced === 1 ? "" : "s"}` : "",
-    courses.moved ? `${courses.moved} Fleet${courses.moved === 1 ? "" : "s"} advance on course${courses.arrived ? `; ${courses.arrived} arrived` : ""}` : "",
   ]
     .filter(Boolean).join(". ");
 }
@@ -1262,7 +1362,7 @@ function doBackward() {
   if (!SC.canBack(activation)) return;
   const res = SC.moveBackward(world, activation.u, { isBlocked: movementBlocker([activation.u]) });
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
-  activation.mp = 0; activation.moved = true; activation.fireMode = false;
+  activation.mp -= activation.backwardCost || MP_MAX; activation.moved = true; activation.fireMode = false;
   rememberActivationMp();
   const drift = gravityDrift(SC.posOf(world, activation.u));
   if (drift) SC.setPosition(world, activation.u, ...drift.to);
@@ -1459,7 +1559,9 @@ function renderInfoPanel() {
   }
   if (selectedShip != null) {
     const u = selectedShip;
+    const captain = SC.captainOf(world, u);
     infoPanel.style.display = "block";
+    infoPanel.dataset.captain = captain ? `${captain.name}: ${captainAbility(captain.abilityId)?.description || captain.abilityId}` : "";
     const commandedShips = commandGroupShips();
     const groupMoveSaved = SC.isFlagship(world, u) && groupMovePreferences.has(u);
     const groupMoveEnabled = groupMoveArmed || groupMoveSaved;
@@ -1589,6 +1691,7 @@ function renderTurnPanel(nowMs = performance.now()) {
     acted: strategicTurn.actedShipIds,
     forfeited: strategicTurn.forfeitedShipIds,
     selectedShip,
+    courseAnimationActive,
     participants: [...participantSet],
     alive: [...armadaRoster.values()].flat().map(ship => SC.isAlive(world, ship)),
     members: [...armadaRoster.values()].flat().map(ship => memberCount(ship)),
@@ -1628,6 +1731,7 @@ function renderTurnPanel(nowMs = performance.now()) {
       button.title = `Fleet ${SC.labelOf(world, ship)} — ${shipCount} Ships, ${displayState.label}. Pan to this Fleet.`;
       button.setAttribute("aria-label", `Fleet ${SC.labelOf(world, ship)} ${displayState.label}, ${shipCount} Ships`);
       button.setAttribute("aria-pressed", String(selectedShip === ship));
+      button.disabled = courseAnimationActive;
       const label = document.createElement("span");
       const flagshipCount = SC.flagshipCountOf(world, ship);
       label.textContent = `Fleet ${SC.labelOf(world, ship)}${flagshipCount ? ` ★${flagshipCount > 1 ? `×${flagshipCount}` : ""}` : ""}`;
@@ -1645,6 +1749,7 @@ function renderTurnPanel(nowMs = performance.now()) {
 
 function tickStrategicTurn(nowMs = performance.now()) {
   if (!shipsSpawned) return;
+  if (courseAnimationActive) return;
   if (!strategicTurnUsesTimer(factionControllers)) {
     if (!turnClock.hidden) renderTurnClock(nowMs);
     return;
@@ -1969,16 +2074,18 @@ function spawnInitialShips(layout) {
     const angle = Math.atan2(pos.yKm, pos.xKm);
     const r = layout.dist.toPixel(distanceKm);
     const [anchorX, anchorY] = snapToHexGrid(r * Math.cos(angle), r * Math.sin(angle));
-    const { u, flag } = formationLayout(ARMADA_DEPLOYMENT_FORMATIONS[faction], FLEETS_PER_ARMADA);
+    const { u } = formationLayout(ARMADA_DEPLOYMENT_FORMATIONS[faction], FLEETS_PER_ARMADA);
+    const flagshipIndices = [0, Math.floor((u.length - 1) / 2), u.length - 1];
     u.forEach(([fwd, lat], i) => {
       const [dx, dy] = shipHexOffset(fwd, lat);
       const [c, rIdx] = pixelToHexIndex(anchorX + dx, anchorY + dy);
+      const captain = flagshipIndices.includes(i) ? captainsByFaction.get(faction)?.[flagshipIndices.indexOf(i)] : null;
       const ship = SC.spawnFleet(world, {
-        faction, c, r: rIdx, dir: directionToward([c, rIdx], [0, 0]), isFlagship: i === flag,
+        faction, c, r: rIdx, dir: directionToward([c, rIdx], [0, 0]), isFlagship: !!captain, captain,
         label: `${faction[0].toUpperCase()}${i + 1}`, strength: INITIAL_FLEET_STRENGTH,
       });
       armadaRoster.get(faction).push(ship);
-      attachFreshMembers(ship, INITIAL_FLEET_STRENGTH, i === flag ? 1 : 0);
+      attachFreshMembers(ship, INITIAL_FLEET_STRENGTH, captain ? 1 : 0);
       shipTurnMp.set(ship, MP_MAX);
       shipTurnTurns.set(ship, 0);
     });
@@ -2059,6 +2166,9 @@ function startNewGame() {
   const setup = strategicFactionSetup(Object.keys(FACTIONS), { playerCount, npcCount });
   if (!setup) return;
   configuredFactions.splice(0, configuredFactions.length, ...setup.factions);
+  const seed = Number(captainSeedInput.value) || 1;
+  captainsByFaction.clear();
+  for (const faction of setup.factions) captainsByFaction.set(faction, draftCaptains(faction, seed));
   factionControllers.clear();
   for (const [faction, controller] of setup.controllers) factionControllers.set(faction, controller);
   for (const [faction, config] of Object.entries(FACTIONS)) {
@@ -2927,6 +3037,7 @@ function render() {
     renderSystem(entry, data);
     renderTurnPanel();
   } else renderUniverse(entry, data);
+  updateTutorialActionHighlight();
   // Mirrors battle/render.js's own draw()/ensureEffectLoop split: render()
   // paints one frame (reading whatever's left in `effects`, each already
   // carrying its own alpha-implying start/dur), and whenever a laser is
