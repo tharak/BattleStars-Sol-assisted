@@ -1,4 +1,4 @@
-import { directionToward, fromAxial, hexDist, key, neighbor, toAxial } from "../battle/hexmath.js";
+import { fromAxial, hexDist, key, toAxial } from "../battle/hexmath.js";
 
 export const WARP_GATE_DISTANCE = 6;
 export const WARP_GATE_RADIUS = 1;
@@ -16,10 +16,44 @@ export function warpGateDestination(position, gate) {
   return fromAxial(destinationQ + positionQ - sourceQ, destinationR + positionR - sourceR);
 }
 
-function offset(position, direction, distance) {
-  let result = [...position];
-  for (let step = 0; step < distance; step++) result = neighbor(result, direction);
-  return result;
+function cartesian(position) {
+  return [position[0] + 0.5 * (position[1] & 1), position[1] * (Math.sqrt(3) / 2)];
+}
+
+function ring(center, distance) {
+  const [centerQ, centerR] = toAxial(center[0], center[1]);
+  const cells = [];
+  for (let q = -distance; q <= distance; q++) {
+    for (let r = Math.max(-distance, -q - distance); r <= Math.min(distance, -q + distance); r++) {
+      if (Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r)) === distance) {
+        cells.push(fromAxial(centerQ + q, centerR + r));
+      }
+    }
+  }
+  return cells;
+}
+
+function gatePositions(a, b) {
+  const aCart = cartesian(a), bCart = cartesian(b);
+  const dx = bCart[0] - aCart[0], dy = bCart[1] - aCart[1];
+  const length = Math.hypot(dx, dy) || 1;
+  const unit = [dx / length, dy / length];
+  const targetA = [aCart[0] + unit[0] * WARP_GATE_DISTANCE, aCart[1] + unit[1] * WARP_GATE_DISTANCE];
+  const targetB = [bCart[0] - unit[0] * WARP_GATE_DISTANCE, bCart[1] - unit[1] * WARP_GATE_DISTANCE];
+  let best = null;
+  for (const aPosition of ring(a, WARP_GATE_DISTANCE)) {
+    const aPoint = cartesian(aPosition);
+    for (const bPosition of ring(b, WARP_GATE_DISTANCE)) {
+      const bPoint = cartesian(bPosition);
+      const aError = Math.hypot(aPoint[0] - targetA[0], aPoint[1] - targetA[1]);
+      const bError = Math.hypot(bPoint[0] - targetB[0], bPoint[1] - targetB[1]);
+      const lineError = Math.abs((aPoint[0] - aCart[0]) * dy - (aPoint[1] - aCart[1]) * dx)
+        + Math.abs((bPoint[0] - aCart[0]) * dy - (bPoint[1] - aCart[1]) * dx);
+      const score = aError + bError + lineError;
+      if (!best || score < best.score) best = { aPosition, bPosition, score };
+    }
+  }
+  return [best.aPosition, best.bPosition];
 }
 
 export function buildWarpGates(bodies = []) {
@@ -44,10 +78,7 @@ export function buildWarpGates(bodies = []) {
     const [aIndex, bIndex] = pairKey.split(":").map(Number);
     const a = bodies[aIndex], b = bodies[bIndex];
     if (replacedPairs.has([a.id, b.id].sort().join(":"))) continue;
-    const aDirection = directionToward(a.position, b.position);
-    const bDirection = directionToward(b.position, a.position);
-    const aPosition = offset(a.position, aDirection, WARP_GATE_DISTANCE);
-    const bPosition = offset(b.position, bDirection, WARP_GATE_DISTANCE);
+    const [aPosition, bPosition] = gatePositions(a.position, b.position);
     if (hexDist(aPosition, bPosition) < MIN_WARP_LINK_DISTANCE) continue;
     if (gates.has(key(...aPosition)) || gates.has(key(...bPosition))) continue;
     const id = `${a.id}-${b.id}`;
