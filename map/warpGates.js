@@ -56,6 +56,10 @@ function gatePositions(a, b) {
   return [best.aPosition, best.bPosition];
 }
 
+function overlapsExistingGate(position, gates) {
+  return [...gates.values()].some(gate => hexDist(position, gate.position) <= WARP_GATE_RADIUS * 2);
+}
+
 export function buildWarpGates(bodies = []) {
   const pairs = [];
   const gates = new Map();
@@ -80,7 +84,7 @@ export function buildWarpGates(bodies = []) {
     if (replacedPairs.has([a.id, b.id].sort().join(":"))) continue;
     const [aPosition, bPosition] = gatePositions(a.position, b.position);
     if (hexDist(aPosition, bPosition) < MIN_WARP_LINK_DISTANCE) continue;
-    if (gates.has(key(...aPosition)) || gates.has(key(...bPosition))) continue;
+    if (overlapsExistingGate(aPosition, gates) || overlapsExistingGate(bPosition, gates)) continue;
     const id = `${a.id}-${b.id}`;
     pairs.push({ id, bodies: [a.id, b.id], positions: [aPosition, bPosition] });
     gates.set(key(...aPosition), { id, position: aPosition, destination: bPosition, bodyId: a.id });

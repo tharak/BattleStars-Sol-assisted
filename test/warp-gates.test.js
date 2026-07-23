@@ -24,6 +24,12 @@ test("warp gates pair nearby planetary cells six hexes from each planet", () => 
   }
   assert.equal(WARP_GATE_DISTANCE, 6);
   assert.equal(WARP_GATE_RADIUS, 1);
+  const gatePositions = [...network.gates.values()].map(gate => gate.position);
+  for (let index = 0; index < gatePositions.length; index++) {
+    for (let other = index + 1; other < gatePositions.length; other++) {
+      assert.ok(hexDist(gatePositions[index], gatePositions[other]) > WARP_GATE_RADIUS * 2);
+    }
+  }
   const gate = network.gates.values().next().value;
   assert.equal(warpGateAt(gate.position, network.gates).id, gate.id);
   const offsetPosition = [gate.position[0] + 1, gate.position[1]];
