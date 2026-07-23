@@ -314,6 +314,25 @@ export function createSystemScene({
         new THREE.Vector3(Math.cos(rad), 0, Math.sin(rad)),
       );
       group.add(ship);
+      const labelCanvas = document.createElement("canvas");
+      labelCanvas.width = 64;
+      labelCanvas.height = 64;
+      const labelContext = labelCanvas.getContext("2d");
+      labelContext.font = "bold 34px sans-serif";
+      labelContext.textAlign = "center";
+      labelContext.textBaseline = "middle";
+      labelContext.fillStyle = "#ffffff";
+      labelContext.strokeStyle = "#101018";
+      labelContext.lineWidth = 7;
+      const slotLabel = String(slot.slotIndex + 1);
+      labelContext.strokeText(slotLabel, 32, 32);
+      labelContext.fillText(slotLabel, 32, 32);
+      const label = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: new THREE.CanvasTexture(labelCanvas), transparent: true, depthTest: false,
+      }));
+      label.scale.set(0.72, 0.72, 1);
+      label.position.set(shipX, shipY + 0.72, shipZ);
+      group.add(label);
       if (i === 0) leadShip = ship;
     }
     // Selection outline takes priority over the target outline (a ship

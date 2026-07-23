@@ -2888,6 +2888,14 @@ function renderSystem2D(entry, data, refreshUi = true) {
       ctx.strokeStyle = hexToRgba("#ffffff", 0.35);
       ctx.lineWidth = Math.max(0.6, miniSize * 0.2);
       ctx.stroke();
+      ctx.font = `bold ${Math.max(7, miniSize * 1.8)}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = Math.max(1, miniSize * 0.55);
+      ctx.strokeStyle = "rgba(16, 16, 24, 0.9)";
+      ctx.strokeText(String(slot.slotIndex + 1), mx, my);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(String(slot.slotIndex + 1), mx, my);
     }
     // A legal fire target for the currently-selected ship (see
     // shipsSnapshot) -- outlined in the *attacker's* own color (not
