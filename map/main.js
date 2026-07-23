@@ -30,7 +30,7 @@ import {
   createStrategicTurnState, expireStrategicTurn, hasStrategicShipActed,
   isStrategicActivationExhausted, strategicTurnRemainingMs,
 } from "./strategicTurns.js";
-import { buildGravityFieldGroups, warpGravityPoint } from "./gravityField.js";
+import { buildGravityFieldGroups, gravityHexRadius, hexDiskCells, warpGravityPoint } from "./gravityField.js";
 import { gravitySpinDirection, resolveGravityDrift } from "./gravityDynamics.js";
 import {
   scaledStrategicShipIconRadius, strategicFleetTone, strategicLaserColor, STRATEGIC_FACTION_COLORS,
@@ -2290,7 +2290,7 @@ function gravityHexIntensity(cost) {
   return Math.min(1, GRAVITY_HEX_MIN_INTENSITY + cost * GRAVITY_HEX_INTENSITY_PER_COST);
 }
 
-// Every hex within reach of the Sun or a planet's gravity, painted that
+// Every normal hex within the hexagonal reach of the Sun or a planet's gravity, painted that
 // body's own color. Where two wells' reach overlaps, a hex takes
 // whichever well demands the *most* AP (worst case); a tie keeps
 // whichever well was found first (arbitrary but stable within one
@@ -2300,20 +2300,19 @@ function gravityHexIntensity(cost) {
 function gravityHexes(layout) {
   const cells = new Map(); // "c,r" -> {cost, colorHex, x, y}
   for (const well of gravityWells(layout)) {
-    const radius = well.rPx * GRAVITY_INFLUENCE_RADIUS_FACTOR;
-    if (radius < GRID_HEX_SIZE_PX) continue;
-    const rMax = Math.ceil(radius / (GRID_HEX_SIZE_PX * 1.5)) + 1;
+    const radius = gravityHexRadius({
+      bodyRadiusPx: well.rPx,
+      hexSizePx: GRID_HEX_SIZE_PX,
+      factor: GRAVITY_INFLUENCE_RADIUS_FACTOR,
+    });
     const [centerC, centerR] = pixelToHexIndex(well.x, well.z);
-    for (let r = centerR - rMax; r <= centerR + rMax; r++) {
-      for (let c = centerC - rMax; c <= centerC + rMax; c++) {
-        const [x, y] = shipHexOffset(c, r);
-        const dist = Math.hypot(x - well.x, y - well.z);
-        if (dist > radius) continue;
-        const cost = gravityHexCost(dist, well);
-        const k = hexKey(c, r);
-        const existing = cells.get(k);
-        if (!existing || cost > existing.cost) cells.set(k, { c, r, cost, colorHex: well.colorHex, x, y, well });
-      }
+    for (const [c, r] of hexDiskCells([centerC, centerR], radius)) {
+      const [x, y] = shipHexOffset(c, r);
+      const dist = Math.hypot(x - well.x, y - well.z);
+      const cost = gravityHexCost(dist, well);
+      const k = hexKey(c, r);
+      const existing = cells.get(k);
+      if (!existing || cost > existing.cost) cells.set(k, { c, r, cost, colorHex: well.colorHex, x, y, well });
     }
   }
   return cells;

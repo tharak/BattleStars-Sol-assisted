@@ -1,4 +1,20 @@
-import { hexCorners } from "../battle/hexmath.js";
+import { hexCorners, hexDist } from "../battle/hexmath.js";
+
+export function gravityHexRadius({ bodyRadiusPx, hexSizePx, factor = 4 }) {
+  if (!Number.isFinite(bodyRadiusPx) || !Number.isFinite(hexSizePx) || hexSizePx <= 0) return 0;
+  return Math.max(1, Math.ceil(Math.max(0, bodyRadiusPx) * factor / hexSizePx));
+}
+
+export function hexDiskCells([centerC, centerR], radius) {
+  const normalizedRadius = Math.max(0, Math.floor(Number(radius) || 0));
+  const cells = [];
+  for (let row = centerR - normalizedRadius; row <= centerR + normalizedRadius; row++) {
+    for (let column = centerC - normalizedRadius; column <= centerC + normalizedRadius; column++) {
+      if (hexDist([centerC, centerR], [column, row]) <= normalizedRadius) cells.push([column, row]);
+    }
+  }
+  return cells;
+}
 
 const pointKey = ([x, z]) => `${x.toFixed(6)},${z.toFixed(6)}`;
 

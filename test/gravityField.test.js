@@ -1,9 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildGravityFieldGroups, warpGravityPoint } from "../map/gravityField.js";
+import {
+  buildGravityFieldGroups, gravityHexRadius, hexDiskCells, warpGravityPoint,
+} from "../map/gravityField.js";
 
 const HEX_SIZE = 5;
 const intensity = cost => cost / 10;
+
+test("gravity radius produces a disk of normal hex cells", () => {
+  assert.equal(gravityHexRadius({ bodyRadiusPx: 5, hexSizePx: 5 }), 4);
+  for (const radius of [0, 1, 2, 4]) {
+    const cells = hexDiskCells([10, 10], radius);
+    assert.equal(cells.length, 1 + 3 * radius * (radius + 1));
+    assert.ok(cells.every(cell => Math.max(Math.abs(cell[0] - 10), Math.abs(cell[1] - 10)) <= radius));
+  }
+});
+
+test("off-grid gravity centers snap to one deterministic logical hex", () => {
+  const first = hexDiskCells([3, 4], 2);
+  const second = hexDiskCells([3, 4], 2);
+  assert.deepEqual(first, second);
+  assert.ok(first.includes([3, 4]) || first.some(([c, r]) => c === 3 && r === 4));
+});
 
 test("gravity deformation bends line points into a spinning inward spiral", () => {
   const [x, z] = warpGravityPoint(10, 0, [{ x: 0, z: 0, rPx: 4, spinDirection: 1 }], HEX_SIZE);
