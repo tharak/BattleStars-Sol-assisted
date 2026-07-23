@@ -32,3 +32,13 @@ test("strategic Fleets start at one 19-Ship layer and cap at three layers", () =
   assert.equal(INITIAL_FLEET_STRENGTH, 19);
   assert.equal(MAX_FLEET_STRENGTH, 57);
 });
+
+test("every named formation supports arbitrary fleet counts", () => {
+  for (const name of ["line", "spindle", "crescent", "echelon", "sphere", "column"]) {
+    for (const size of [1, 2, 4, 7, 13]) {
+      const layout = formationLayout(name, size);
+      assert.equal(layout.u.length, size);
+      assert.equal(new Set(layout.u.map(position => position.slice(0, 2).join(","))).size, size);
+    }
+  }
+});

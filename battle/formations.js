@@ -48,6 +48,21 @@ export function formationLayout(name, size) {
                                         [2,0,0],[0,-2,0],[0,2,0]], flag: 0 };
     if (name === "column")  return { u: range(-2,3).flatMap(f => [[f,0,0],[f,1,0]]), flag: 4 };
   }
+  const count = Math.max(0, Math.floor(Number(size) || 0));
+  if (count === 0) return { u: [], flag: 0 };
+  const center = Math.floor((count - 1) / 2);
+  if (name === "line") return { u: range(0, count - 1).map(index => [0, index - center, 0]), flag: center };
+  if (name === "column") return { u: range(0, count - 1).map(index => [index - center, 0, 0]), flag: center };
+  const positions = [];
+  for (let radius = 0; positions.length < count; radius++) {
+    for (let fwd = -radius; fwd <= radius && positions.length < count; fwd++) {
+      for (let lat = -radius; lat <= radius && positions.length < count; lat++) {
+        if (Math.max(Math.abs(fwd), Math.abs(lat), Math.abs(fwd + lat)) !== radius) continue;
+        positions.push([fwd, lat, 0]);
+      }
+    }
+  }
+  return { u: positions, flag: Math.floor((positions.length - 1) / 2) };
 }
 
 export const randomFormationName = random => random.pick(FORMATION_NAMES);
