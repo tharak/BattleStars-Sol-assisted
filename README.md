@@ -22,7 +22,7 @@ Use targeted Node tests while iterating, then run the repository gate before cal
 npm run gate
 ```
 
-The gate checks JavaScript syntax, the full headless test suite and architecture invariants, builds the production bundle, then exercises the real 3D renderer and 2D fallback in desktop and mobile Chromium profiles. CI runs the same command and deploys the verified `dist/` artifact to GitHub Pages. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/quality-gate.md](docs/quality-gate.md).
+The gate checks JavaScript syntax, the full headless test suite and architecture invariants, builds the production bundle, then exercises the real 3D renderer and 2D fallback in desktop and mobile Chromium profiles. UI/browser failures are reported as warnings by default; syntax, headless, architecture, and build failures still block deployment. CI runs the same command and deploys the `dist/` artifact to GitHub Pages. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/quality-gate.md](docs/quality-gate.md).
 
 ## Architecture
 

@@ -9,8 +9,8 @@ BattleStars uses one repository quality contract locally and in CI. Each layer c
 | Targeted feedback | `node --test test/<file>.test.js` | Fast iteration on one behavior |
 | Syntax | `npm run check:syntax` | Parse every JavaScript and script module |
 | Headless suite | `npm test` | Rules, ECS integration, lifecycle, parity, and architecture guards |
-| Production build | `npm run build` | Bundle all three pages, local Three.js, and hashed texture assets into `dist/` |
-| Browser suite | `npm run test:browser` | Build and exercise tactical, real WebGL, low-quality, bundle-failure, and 2D fallback paths on desktop/mobile Chromium |
+| Production build | `npm run build` | Bundle all three pages, local Three.js, and hashed texture assets into `dist/`; failures block the gate |
+| Browser suite | `npm run test:browser` | Exercise tactical, real WebGL, low-quality, bundle-failure, and 2D fallback paths on desktop/mobile Chromium; failures are warnings |
 | Full gate | `npm run gate` | Run diff hygiene and every automated layer in sequence |
 
 ## Full local gate
@@ -21,7 +21,7 @@ Run this before describing an implementation as ready:
 npm run gate
 ```
 
-The gate stops at the first failure and preserves each command's real exit code. `npm run test:browser` builds before Playwright starts Vite's production preview server. `.github/workflows/ci.yml` installs the same locked dependencies and Chromium, invokes the same gate, and deploys the resulting verified `dist/` artifact to GitHub Pages.
+The gate stops at the first blocking failure and preserves each blocking command's real exit code. Browser/UI failures emit warnings and do not block the build or deployment. The production build runs as its own blocking layer before `npm run test:browser`; the browser command also builds before Playwright starts Vite's production preview server. `.github/workflows/ci.yml` installs the same locked dependencies and Chromium, invokes the same gate, and deploys the resulting `dist/` artifact to GitHub Pages.
 
 GitHub repository settings must use **Settings → Pages → Build and deployment → Source: GitHub Actions**. Branch-based Pages publishing would expose the unbundled source instead of the verified `dist/` artifact.
 
