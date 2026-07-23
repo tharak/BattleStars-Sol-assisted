@@ -6,6 +6,7 @@ export const DEFAULT_MAP_CONFIG = Object.freeze({
     green: Object.freeze({ label: "Green", startAt: "venus" }),
     red: Object.freeze({ label: "Red", startAt: "mars" }),
   }),
+  planetIds: Object.freeze(["mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune"]),
   fleetCount: 3,
   fleetFormation: "sphere",
   initialFleetStrength: 19,

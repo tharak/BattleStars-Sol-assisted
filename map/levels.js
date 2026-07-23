@@ -81,7 +81,8 @@ export function universeLevel() {
 // layoutSystemWithMoons for how a moon's position nests inside its planet's).
 export function systemLevel(systemId) {
   const def = SYSTEMS_DEF[systemId];
-  const bodies = def.planets.map(p => ({
+  const visiblePlanets = new Set(activeMapConfig().planetIds);
+  const bodies = def.planets.filter(p => visiblePlanets.has(p.id)).map(p => ({
       id: p.id, label: p.label, kind: "planet", radiusKm: BODY_RADIUS_KM[p.id],
       distanceKm: PLANET_AXIS_AU[p.id] * AU_KM, orbit: planetOrbit(p.id),
       moons: moonsOf(p.id),
