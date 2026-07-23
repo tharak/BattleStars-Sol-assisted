@@ -3,7 +3,7 @@ import {
   layoutSystemWithMoons, worldToScreen, screenToWorld, strokeFaintRing,
 } from "./orbitmap.js";
 import { voronoiCells } from "./voronoi.js";
-import { buildWarpGates, warpGateAt, WARP_GATE_RADIUS } from "./warpGates.js";
+import { buildWarpGates, warpGateAt, warpGateDestination, WARP_GATE_RADIUS } from "./warpGates.js";
 import {
   universeLevel, systemLevel,
   ARMADA_DEPLOYMENT_FORMATIONS, FACTIONS, FLEETS_PER_ARMADA,
@@ -520,7 +520,7 @@ function warpFactionFleets(faction) {
     if (!SC.isAlive(world, fleet)) continue;
     const gate = warpGateAt(SC.posOf(world, fleet), gates);
     if (!gate) continue;
-    SC.setPosition(world, fleet, ...gate.destination);
+    SC.setPosition(world, fleet, ...warpGateDestination(SC.posOf(world, fleet), gate));
     teleported++;
   }
   return teleported;
@@ -552,7 +552,7 @@ function selectShip(e, { npc = false } = {}) {
   }
   const warp = warpGateAt(SC.posOf(world, e), systemStaticCache?.warpGates?.gates);
   if (warp) {
-    SC.setPosition(world, e, ...warp.destination);
+    SC.setPosition(world, e, ...warpGateDestination(SC.posOf(world, e), warp));
     setHint(`${SC.labelOf(world, e)} entered Warp Gate ${warp.id} and emerged six hexes away.`);
   }
   selectedShip = e;

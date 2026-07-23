@@ -1,10 +1,18 @@
-import { directionToward, hexDist, key, neighbor } from "../battle/hexmath.js";
+import { directionToward, fromAxial, hexDist, key, neighbor, toAxial } from "../battle/hexmath.js";
 
 export const WARP_GATE_DISTANCE = 6;
 export const WARP_GATE_RADIUS = 1;
 
 export function warpGateAt(position, gates) {
   return [...(gates?.values() || [])].find(gate => hexDist(position, gate.position) <= WARP_GATE_RADIUS) || null;
+}
+
+export function warpGateDestination(position, gate) {
+  if (!gate) return null;
+  const [positionQ, positionR] = toAxial(position[0], position[1]);
+  const [sourceQ, sourceR] = toAxial(gate.position[0], gate.position[1]);
+  const [destinationQ, destinationR] = toAxial(gate.destination[0], gate.destination[1]);
+  return fromAxial(destinationQ + positionQ - sourceQ, destinationR + positionR - sourceR);
 }
 
 function offset(position, direction, distance) {
