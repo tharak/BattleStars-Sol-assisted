@@ -13,7 +13,6 @@ export default defineConfig({
       input: {
         index: resolve(import.meta.dirname, "index.html"),
         map: resolve(import.meta.dirname, "map.html"),
-        battle: resolve(import.meta.dirname, "battle.html"),
       },
     },
   },

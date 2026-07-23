@@ -1,22 +1,5 @@
 import { expect, test } from "@playwright/test";
 
-test("the tactical battle boots and starts a scenario", async ({ page }) => {
-  const pageErrors = [];
-  page.on("pageerror", error => pageErrors.push(error.message));
-
-  await page.goto("/battle.html");
-  await expect(page.locator("#menu")).toBeVisible();
-  await expect(page.locator("button.scenario").first()).toBeVisible();
-
-  await page.locator('input[name="deploymode"][value="1"]').check();
-  await page.locator("button.scenario").first().click();
-
-  await expect(page.locator("#battle")).toBeVisible();
-  await expect(page.locator("#cv")).toBeVisible();
-  await expect(page.locator("#status")).not.toBeEmpty();
-  expect(pageErrors).toEqual([]);
-});
-
 test("the strategic map boots the bundled Three.js renderer", async ({ page }, testInfo) => {
   const pageErrors = [];
   const runtimeCdnRequests = [];

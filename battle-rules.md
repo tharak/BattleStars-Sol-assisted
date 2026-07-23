@@ -284,8 +284,8 @@ hunting. Everything the sim can't do is precisely what the table playtest is for
 
 The sim can't test what only a human will find: deliberate flank hooks, feints, refusing
 a flank, flagship sniping, when to withdraw. These rules are playable in the browser —
-**https://tharak.github.io/BattleStars/battle.html**
-(source: `battle.html`, a single self-contained page implementing this
+**https://tharak.github.io/BattleStars/map.html**
+(source: `map.html`, the strategic page implementing this
 exact ruleset; its AI is the same dumb advance-and-shoot logic as the Python sim, and a
 headless port-validation test confirms the page reproduces the sim's win rates). The
 scenario menu is the §9 protocol. Play each test, use the "copy result line" button, and

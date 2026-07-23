@@ -542,7 +542,7 @@ function warpFactionFleets(faction) {
 }
 
 // Selecting a ship resets its activation fresh (mirrors
-// battle/lifecycle/activationLifecycle.js:selectUnit). Strategic turns add
+// the former tactical activation lifecycle's selectUnit shape. Strategic turns add
 // the active-faction and already-acted gates around the shared ship rules.
 function selectShip(e, { npc = false } = {}) {
   if (courseAnimationActive) {

@@ -1,5 +1,5 @@
-// Data for the three strategic zoom levels. Battle (the fourth level) is
-// battle.html/battle/* unchanged -- CelestialBody hexes link out to it.
+// Data for the three strategic zoom levels. CelestialBody hexes stay within
+// the strategic map; there is no separate tactical battle screen.
 //
 // Universe/System/Body are a real (to-scale, log-compressed for legibility)
 // orbital view: distance from parent, size, and angular position are

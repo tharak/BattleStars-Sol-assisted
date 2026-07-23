@@ -21,7 +21,7 @@
 
 ## Intentional differences
 
-| Area | Browser tactical battle | Python simulator | Reason |
+| Area | Shared JavaScript rules | Python simulator | Reason |
 |---|---|---|---|
 | Board | Radius-13 hexagon in a 27×27 bounding box | 24×18 rectangle | Web board was changed independently; published simulation baselines retain their original board |
 | Deployment anchors | Columns 7/19, row 13 | Columns 5/18, row 9 | Match each board geometry |

@@ -1,6 +1,6 @@
 # Contributing to BattleStars
 
-BattleStars is a browser-based strategic and tactical fleet-game prototype, backed by a headless rules engine and a Monte Carlo simulator. Focused fixes, tests, documentation, playtesting reports, and gameplay proposals are welcome.
+BattleStars is a browser-based strategic fleet-game prototype, backed by a headless rules engine and a Monte Carlo simulator. Focused fixes, tests, documentation, playtesting reports, and gameplay proposals are welcome.
 
 ## Set up the project
 
@@ -12,7 +12,7 @@ npx playwright install chromium
 npm run serve
 ```
 
-Open `http://localhost:8000/map.html` for the strategic map or `http://localhost:8000/battle.html` for the tactical test bench.
+Open `http://localhost:8000/map.html` for the strategic map.
 
 ## Make a change
 
