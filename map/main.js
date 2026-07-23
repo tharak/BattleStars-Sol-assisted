@@ -32,7 +32,6 @@ import {
 } from "./strategicTurns.js";
 import { buildGravityFieldGroups, gravityHexRadius, hexDiskCells, warpGravityPoint } from "./gravityField.js";
 import { gravitySpinDirection, resolveGravityDrift } from "./gravityDynamics.js";
-import { buildTransportNetwork, mergeTransportCells, transportJumpDestination, transportLanesAt } from "./transportNetwork.js";
 import {
   scaledStrategicShipIconRadius, strategicFleetTone, strategicLaserColor, STRATEGIC_FACTION_COLORS,
 } from "./shipAppearance.js";
@@ -924,7 +923,6 @@ async function advanceFactionCourses(faction) {
       movementCost: hexMoveCost,
       isBlocked: movementBlocker([ship]),
       resolveForcedMovement: () => null,
-      resolveTransportMovement: transportMoves,
     });
     const route = chooseCourseRoute(routes, position, target);
     if (!route) continue;
@@ -1276,7 +1274,6 @@ function recomputeReachableMoves() {
       movementCost: hexMoveCost,
       isBlocked: movementBlocker([activation.u]),
       resolveForcedMovement: () => null,
-      resolveTransportMovement: transportMoves,
     });
   }
   const hoveredRoute = pointerHex ? reachableMoves.get(hexKey(pointerHex[0], pointerHex[1])) : null;
@@ -2008,16 +2005,6 @@ function sparseOverlaySnapshot() {
     const [x, z] = shipHexOffset(c, r);
     return { c, r, x, z, key: hexKey(c, r) };
   };
-  const transportCells = [];
-  for (const lane of systemStaticCache?.transportNetwork?.lanes || []) {
-    const stride = Math.max(1, Math.ceil(lane.cells.length / 12));
-    const sampled = lane.cells.filter((_cell, index) => index % stride === 0 || index === lane.cells.length - 1);
-    for (const position of sampled) {
-      const cell = systemStaticCache.transportNetwork.cells.get(hexKey(...position));
-      const [x, z] = shipHexOffset(...position);
-      transportCells.push({ ...toCell(position), x, z, laneIds: cell?.laneIds || [lane.id], ambush: !!cell?.ambush });
-    }
-  }
   const commandCenter = selectedShip != null && SC.isAlive(world, selectedShip) && SC.isFlagship(world, selectedShip)
     ? SC.posOf(world, selectedShip)
     : null;
@@ -2032,7 +2019,6 @@ function sparseOverlaySnapshot() {
   });
   return {
     boardCells: (tutorialMap?.cells || []).map(toCell),
-    transportCells: mapArea.dataset.renderer === "3d" ? [] : transportCells,
     commandCells: commandCenter ? hexPatch(commandCenter, CMD_R).map(toCell) : [],
     hoverCells: hoverPatchCenter ? hexPatch(hoverPatchCenter).map(toCell) : [],
     reachableCells: [...reachableMoves.values()].map(route => ({ ...toCell(route.position), cost: route.cost })),
@@ -2330,30 +2316,6 @@ function gravityDrift(position) {
   return resolveGravityDrift(position, gravityHexCosts, hex => shipHexOffset(hex[0], hex[1]));
 }
 
-function transportMoves(position) {
-  const network = systemStaticCache?.transportNetwork;
-  return transportLanesAt(position, network).map(lane => transportJumpDestination(lane, position)).filter(Boolean);
-}
-
-function transportFieldGeometry(network) {
-  const segments = [];
-  const nodes = [];
-  for (const lane of network?.lanes || []) {
-    const stride = Math.max(1, Math.ceil(lane.cells.length / 24));
-    const sampled = lane.cells.filter((_cell, index) => index % stride === 0 || index === lane.cells.length - 1);
-    for (let index = 1; index < sampled.length; index++) {
-      const [x1, z1] = shipHexOffset(...sampled[index - 1]);
-      const [x2, z2] = shipHexOffset(...sampled[index]);
-      segments.push([x1, z1, x2, z2]);
-    }
-    for (const position of lane.ambushCells) {
-      const [x, z] = shipHexOffset(...position);
-      nodes.push({ ...sparseOverlayCell(position), x, z });
-    }
-  }
-  return { segments, nodes };
-}
-
 function sparseOverlayCell(position) {
   const [c, r] = position;
   const [x, z] = shipHexOffset(c, r);
@@ -2454,14 +2416,7 @@ function systemStaticData(data, sourceKey) {
   syncPlanetEconomy(layout);
   const wells = gravityWells(layout);
   const gravityCells = gravityHexes(layout);
-  const bodyCells = [];
-  if (layout.center) bodyCells.push({ id: layout.center.id, position: [0, 0], rotation: gravitySpinDirection(layout.center.id), gravityRadius: gravityHexRadius({ bodyRadiusPx: layout.center.rPx, hexSizePx: GRID_HEX_SIZE_PX, factor: GRAVITY_INFLUENCE_RADIUS_FACTOR }) });
-  for (const planet of layout.planets) {
-    bodyCells.push({ id: planet.id, parentId: layout.center?.id, position: planetHex(planet), rotation: gravitySpinDirection(planet.id), gravityRadius: gravityHexRadius({ bodyRadiusPx: planet.rPx, hexSizePx: GRID_HEX_SIZE_PX, factor: GRAVITY_INFLUENCE_RADIUS_FACTOR }) });
-  }
-  const transportNetwork = buildTransportNetwork(bodyCells);
-  const mergedGravityCells = mergeTransportCells(gravityCells, transportNetwork, (c, r) => shipHexOffset(c, r));
-  systemStaticCache = { sourceKey, layout, wells, gravityCells: mergedGravityCells, transportNetwork };
+  systemStaticCache = { sourceKey, layout, wells, gravityCells };
   return systemStaticCache;
 }
 
@@ -2471,13 +2426,13 @@ function renderSystem3D(entry, data, refreshUi = true) {
   mapArea.dataset.renderer = "3d";
   const scene = ensureScene3D();
   mapArea.dataset.rendererState = canvas3d.dataset.rendererState;
-  const { layout, wells, gravityCells, transportNetwork } = systemStaticData(data, entry.systemId);
+  const { layout, wells, gravityCells } = systemStaticData(data, entry.systemId);
   updateGravityHexes(gravityCells);
   recomputeReachableMoves();
   const ships = shipsSnapshot(wells);
 
   if (scene3dStaticSource !== entry.systemId) {
-    scene.rebuildStatic(({ addBody, addRing, addGravityField, addTransportField }) => {
+    scene.rebuildStatic(({ addBody, addRing, addGravityField }) => {
       const arrowsByColor = new Map();
       for (const arrow of gravityPullArrows(gravityCells, wells)) {
         if (!arrowsByColor.has(arrow.colorHex)) arrowsByColor.set(arrow.colorHex, []);
@@ -2488,7 +2443,6 @@ function renderSystem3D(entry, data, refreshUi = true) {
       )) {
         addGravityField({ ...group, colorHex, arrowSegments: arrowsByColor.get(colorHex) || [] });
       }
-      addTransportField(transportFieldGeometry(transportNetwork));
       if (layout.center) {
         addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center), spinDirection: -gravitySpinDirection(layout.center.id) });
       }
@@ -2686,13 +2640,6 @@ function renderSystem2D(entry, data, refreshUi = true) {
   const sparseOverlay = sparseOverlaySnapshot();
   for (const cell of sparseOverlay.boardCells) {
     drawOverlayHex(cell, { stroke: "rgba(83,97,124,0.34)" });
-  }
-  for (const cell of sparseOverlay.transportCells) {
-    drawOverlayHex(cell, {
-      fill: cell.ambush ? "rgba(255,176,46,0.1)" : null,
-      stroke: cell.ambush ? "rgba(255,176,46,0.7)" : "rgba(56,217,255,0.38)",
-      lineWidth: cell.ambush ? 1.25 : 1,
-    });
   }
   for (const line of sparseOverlay.courseLines) {
     const [fromX, fromY] = warpedGravityPoint(line.from.x, line.from.z, wells);
