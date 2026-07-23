@@ -2521,17 +2521,17 @@ function renderSystem3D(entry, data, refreshUi = true) {
       }
       addTransportField(transportFieldGeometry(transportNetwork));
       if (layout.center) {
-        addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center), spinDirection: gravitySpinDirection(layout.center.id) });
+        addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center), spinDirection: -gravitySpinDirection(layout.center.id) });
       }
       for (const p of layout.planets) {
-        addRing(0, 0, p.orbitRadiusPx, 0, colorsFor(p).fill, p.eccentricity, p.id);
+        addRing(0, 0, p.orbitRadiusPx, 0, colorsFor(p).fill, p.eccentricity, p.id, p.angleDeg);
         addBody({
           x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, data: p,
           textureUrl: textureFor(p), spinDirection: gravitySpinDirection(p.id),
           ownerColorHex: p.ownerFaction ? colorsFor({ faction: p.ownerFaction }).fill : null,
         });
         for (const m of p.moons) {
-          addRing(p.x, p.y, m.localRingPx, m.inclinationDeg, colorsFor(m).fill, 0, m.id);
+          addRing(p.x, p.y, m.localRingPx, m.inclinationDeg, colorsFor(m).fill, 0, m.id, m.angleDeg);
           addBody({ x: m.x, y: m.tiltHeight, z: m.tiltZ, radius: m.rPx, color: colorsFor(m).fill, data: m, textureUrl: textureFor(m) });
         }
       }
@@ -2767,7 +2767,7 @@ function renderSystem2D(entry, data, refreshUi = true) {
     ctx.stroke();
   }
 
-  const drawRing = (ringCx, ringCy, worldRadiusPx, colorHex, eccentricity = 0) => strokeFaintRing(ctx, ringCx, ringCy, worldRadiusPx * camera2d.zoom, colorHex, eccentricity);
+  const drawRing = (ringCx, ringCy, worldRadiusPx, colorHex, eccentricity = 0, angleDeg = 0) => strokeFaintRing(ctx, ringCx, ringCy, worldRadiusPx * camera2d.zoom, colorHex, eccentricity, angleDeg);
   const drawDot = (body, selected) => {
     const [sx, sy] = worldToScreen(camera2d, body.x, body.y);
     const rPx = screenRadius(body);
@@ -2878,10 +2878,10 @@ function renderSystem2D(entry, data, refreshUi = true) {
   };
   if (layout.center) drawDot(layout.center, false);
   for (const p of layout.planets) {
-    drawRing(...worldToScreen(camera2d, 0, 0), p.orbitRadiusPx, colorsFor(p).fill, p.eccentricity);
+    drawRing(...worldToScreen(camera2d, 0, 0), p.orbitRadiusPx, colorsFor(p).fill, p.eccentricity, p.angleDeg);
     const [px, py] = drawDot(p, false);
     for (const m of p.moons) {
-      drawRing(px, py, m.localRingPx, colorsFor(m).fill);
+      drawRing(px, py, m.localRingPx, colorsFor(m).fill, 0, m.angleDeg);
       drawDot(m, false);
     }
   }

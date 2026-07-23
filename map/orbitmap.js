@@ -47,10 +47,18 @@ export function pixelToKm(layout, x, y) {
 // center, for moon-around-planet rings, not just the board origin), so
 // the color/width and the "too small to bother drawing" cutoff can't
 // drift apart between the two.
-export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438", eccentricity = 0) {
+export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438", eccentricity = 0, angleDeg = 0, gapDeg = 10) {
   if (r < 1) return;
   ctx.beginPath();
-  ctx.ellipse(cx, cy, r, r * Math.sqrt(1 - eccentricity ** 2), 0, 0, Math.PI * 2);
+  const minor = r * Math.sqrt(1 - eccentricity ** 2);
+  const start = (angleDeg + gapDeg) * Math.PI / 180;
+  const end = angleDeg * Math.PI / 180 + Math.PI * 2;
+  const steps = 96;
+  for (let index = 0; index <= steps; index++) {
+    const angle = start + (end - start) * index / steps;
+    const x = cx + r * Math.cos(angle), y = cy + minor * Math.sin(angle);
+    if (!index) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
   const previousAlpha = ctx.globalAlpha;
   ctx.globalAlpha = previousAlpha * 0.65;
   ctx.strokeStyle = color;
@@ -62,7 +70,7 @@ export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438", eccentricity 
 export function drawOrbitalBoard(ctx, layout, { colorsFor, isSelected, labelMinPx = 0 }) {
   for (const b of layout.placed) {
     if (!b.orbit) continue;
-    strokeFaintRing(ctx, 0, 0, b.orbitRadiusPx, colorsFor(b).fill, b.eccentricity);
+    strokeFaintRing(ctx, 0, 0, b.orbitRadiusPx, colorsFor(b).fill, b.eccentricity, b.angleDeg);
   }
 
   const drawDot = b => {

@@ -253,12 +253,13 @@ export function createSystemScene({
   // `tiltDeg` (default 0, flat) draws the ring rotated around its own
   // local X axis, matching a real-inclination moon's tilted orbital plane
   // (see layoutSystemWithMoons in orbitmap.js) instead of always lying flat.
-  function addRing(cx, cz, radius, tiltDeg = 0, color = RING_COLOR, eccentricity = 0, id = null) {
+  function addRing(cx, cz, radius, tiltDeg = 0, color = RING_COLOR, eccentricity = 0, id = null, angleDeg = 0) {
     if (radius < 1) return;
     const tiltRad = tiltDeg * Math.PI / 180;
     const pts = [];
+    const gap = 10 * Math.PI / 180;
     for (let i = 0; i <= orbitSegments; i++) {
-      const a = (i / orbitSegments) * Math.PI * 2;
+      const a = gap + (Math.PI * 2 - gap) * i / orbitSegments;
       const localX = Math.cos(a) * radius, localZ = Math.sin(a) * radius * Math.sqrt(1 - eccentricity ** 2);
       pts.push(new THREE.Vector3(localX, ORBIT_RING_Y - localZ * Math.sin(tiltRad), localZ * Math.cos(tiltRad)));
     }
@@ -267,6 +268,7 @@ export function createSystemScene({
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.65 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(cx, 0, cz);
+    mesh.rotation.y = angleDeg * Math.PI / 180;
     buildGroup.add(mesh);
     if (id) orbitalRings.set(id, mesh);
   }
@@ -674,9 +676,13 @@ export function createSystemScene({
     updateOrbitalBodies(layout) {
       for (const body of layout?.planets || []) {
         orbitalMeshes.get(body.id)?.position.set(body.x, 0, body.y);
+        const bodyRing = orbitalRings.get(body.id);
+        if (bodyRing) bodyRing.rotation.y = body.angleDeg * Math.PI / 180;
         for (const moon of body.moons || []) {
           orbitalMeshes.get(moon.id)?.position.set(moon.x, moon.tiltHeight, moon.tiltZ);
           orbitalRings.get(moon.id)?.position.set(body.x, 0, body.y);
+          const moonRing = orbitalRings.get(moon.id);
+          if (moonRing) moonRing.rotation.y = moon.angleDeg * Math.PI / 180;
         }
       }
       renderFrame();
