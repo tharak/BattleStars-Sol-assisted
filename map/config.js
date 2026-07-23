@@ -15,6 +15,7 @@ export const DEFAULT_MAP_CONFIG = Object.freeze({
   planetHexPositions: Object.freeze({}),
   fleetCount: 3,
   fleetFormation: "sphere",
+  fleetFormations: Object.freeze(["sphere", "sphere", "sphere"]),
   initialFleetStrength: 19,
   maxFleetStrength: 57,
   maxShipsPerHex: 57,
@@ -26,4 +27,8 @@ export const DEFAULT_MAP_CONFIG = Object.freeze({
   spawnClearanceHexes: 1,
 });
 
-export const activeMapConfig = () => globalThis.__BATTLESTARS_MAP_CONFIG__ || DEFAULT_MAP_CONFIG;
+const testProfile = typeof window !== "undefined" && window.location.pathname.endsWith("/map-test.html")
+  ? (await import("../map-test/config.js")).MAP_TEST_CONFIG
+  : null;
+
+export const activeMapConfig = () => testProfile || globalThis.__BATTLESTARS_MAP_CONFIG__ || DEFAULT_MAP_CONFIG;

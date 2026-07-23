@@ -458,9 +458,10 @@ function infoFor(hit) {
     const flagshipCount = SC.flagshipCountOf(world, hit.id);
     const states = stateCounts(hit.id);
     const captain = SC.captainOf(world, hit.id);
+    const formation = SC.fleetFormationOf(world, hit.id);
     return {
       name: `Fleet ${SC.labelOf(world, hit.id)}${flagshipCount ? ` ★${flagshipCount > 1 ? `×${flagshipCount}` : ""}` : ""}`,
-      detail: `${FACTIONS[hit.faction].label} Armada — ${memberCount(hit.id)} Ships, Strength ${fleetStrength(hit.id).toFixed(1)} (${states.ready} Ready, ${states.shaken} Shaken, ${states.routed} Routed).${captain ? ` ${captain.name}: ${captainAbility(captain.abilityId)?.description}.` : ""}`,
+      detail: `${FACTIONS[hit.faction].label} Armada — ${formation} formation, ${memberCount(hit.id)} Ships, Strength ${fleetStrength(hit.id).toFixed(1)} (${states.ready} Ready, ${states.shaken} Shaken, ${states.routed} Routed).${captain ? ` ${captain.name}: ${captainAbility(captain.abilityId)?.description}.` : ""}`,
     };
   }
   return null;
@@ -1765,14 +1766,15 @@ function renderTurnPanel(nowMs = performance.now()) {
       const shipCount = memberCount(ship);
       const captain = SC.captainOf(world, ship);
       const ability = captainAbility(captain?.abilityId);
+      const formation = SC.fleetFormationOf(world, ship);
       const captainText = captain ? `${captain.name} — ${ability?.name || captain.abilityId}` : "No captain";
-      button.title = `Fleet ${SC.labelOf(world, ship)} — ${shipCount} Ships, ${displayState.label}. ${captainText}. Pan to this Fleet.`;
-      button.setAttribute("aria-label", `Fleet ${SC.labelOf(world, ship)} ${displayState.label}, ${shipCount} Ships, ${captainText}`);
+      button.title = `Fleet ${SC.labelOf(world, ship)} — ${shipCount} Ships, ${displayState.label}, ${formation} formation. ${captainText}. Pan to this Fleet.`;
+      button.setAttribute("aria-label", `Fleet ${SC.labelOf(world, ship)} ${displayState.label}, ${shipCount} Ships, ${formation} formation, ${captainText}`);
       button.setAttribute("aria-pressed", String(selectedShip === ship));
       button.disabled = courseAnimationActive;
       const label = document.createElement("span");
       const flagshipCount = SC.flagshipCountOf(world, ship);
-      label.textContent = `Fleet ${SC.labelOf(world, ship)}${flagshipCount ? ` ★${flagshipCount > 1 ? `×${flagshipCount}` : ""}` : ""}`;
+      label.textContent = `Fleet ${SC.labelOf(world, ship)} · ${formation}${flagshipCount ? ` ★${flagshipCount > 1 ? `×${flagshipCount}` : ""}` : ""}`;
       const status = document.createElement("span");
       status.className = "turnShipState";
       status.textContent = `${shipCount} Ships`;
@@ -2123,13 +2125,17 @@ function spawnInitialShips(layout) {
     const [anchorX, anchorY] = startHex
       ? shipHexOffset(...startHex)
       : snapToHexGrid(r * Math.cos(angle), r * Math.sin(angle));
-    const { u } = formationLayout(ARMADA_DEPLOYMENT_FORMATIONS[faction], FLEETS_PER_ARMADA);
+    const formationNames = activeMapConfig().fleetFormations?.length
+      ? activeMapConfig().fleetFormations
+      : Array.from({ length: FLEETS_PER_ARMADA }, () => ARMADA_DEPLOYMENT_FORMATIONS[faction]);
+    const { u } = formationLayout("sphere", formationNames.length);
     u.forEach(([fwd, lat], i) => {
       const [dx, dy] = shipHexOffset(fwd, lat);
       const [c, rIdx] = pixelToHexIndex(anchorX + dx, anchorY + dy);
       const captain = i === 0 ? captainsByFaction.get(faction)?.[0] : null;
       const ship = SC.spawnFleet(world, {
         faction, c, r: rIdx, dir: directionToward([c, rIdx], [0, 0]), isFlagship: !!captain, captain,
+        formation: formationNames[i],
         label: `${faction[0].toUpperCase()}${i + 1}`, strength: INITIAL_FLEET_STRENGTH,
       });
       armadaRoster.get(faction).push(ship);

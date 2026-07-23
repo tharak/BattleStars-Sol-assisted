@@ -1,7 +1,9 @@
 // Visual-only Ship layouts inside one Fleet hex.  A Fleet remains the one
 // rules entity; these offsets turn its current Strength into a grander
 // miniature formation without creating independently targetable ships.
-export const FLEET_FORMATION_NAMES = Object.freeze(["line", "wedge", "echelon", "sphere"]);
+export const FLEET_FORMATION_NAMES = Object.freeze([
+  "line", "wedge", "echelon", "sphere", "spindle", "crescent", "column",
+]);
 export const SHIPS_PER_3D_FLEET_LAYER = 19;
 
 const HEX_LAYER_RADIUS = 2;
@@ -31,6 +33,15 @@ const LAYOUTS = Object.freeze({
   sphere: [
     [[0, 0]], [[0.22, -0.42], [0.22, 0.42]], [[0.42, 0], [-0.28, -0.48], [-0.28, 0.48]], [[0.42, 0], [0, -0.48], [0, 0.48], [-0.42, 0]],
   ],
+  spindle: [
+    [[0, 0]], [[0.28, -0.28], [-0.28, 0.28]], [[0.38, 0], [0, 0], [-0.38, 0]], [[0.42, 0], [0, -0.42], [0, 0.42], [-0.42, 0]],
+  ],
+  crescent: [
+    [[0, 0]], [[0.22, -0.36], [0.34, 0.36]], [[0.42, -0.42], [0.18, 0], [0.42, 0.42]], [[0.48, -0.52], [0.28, -0.18], [0.28, 0.3], [0.48, 0.58]],
+  ],
+  column: [
+    [[0, 0]], [[-0.42, 0], [0.42, 0]], [[-0.52, 0], [0, 0], [0.52, 0]], [[-0.58, 0], [-0.2, 0], [0.2, 0], [0.58, 0]],
+  ],
 });
 
 export function fleetShipOffsets(formation = "sphere", strength = 4) {
@@ -40,6 +51,21 @@ export function fleetShipOffsets(formation = "sphere", strength = 4) {
 
   if (formation === "line") {
     return Array.from({ length: count }, (_, index) => [0, -0.95 + 1.9 * index / (count - 1)]);
+  }
+  if (formation === "column") {
+    return Array.from({ length: count }, (_, index) => [-0.95 + 1.9 * index / (count - 1), 0]);
+  }
+  if (formation === "crescent") {
+    return Array.from({ length: count }, (_, index) => {
+      const angle = -Math.PI * 0.72 + Math.PI * 1.44 * index / (count - 1);
+      return [0.72 * Math.cos(angle), 0.72 * Math.sin(angle)];
+    });
+  }
+  if (formation === "spindle") {
+    return Array.from({ length: count }, (_, index) => {
+      const t = index / (count - 1);
+      return [-0.95 + 1.9 * t, (index % 2 ? 0.55 : -0.55) * Math.sin(Math.PI * t)];
+    });
   }
   if (formation === "echelon") {
     return Array.from({ length: count }, (_, index) => {

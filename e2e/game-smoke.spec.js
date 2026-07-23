@@ -132,6 +132,15 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   await expect(page.locator("#cv3d")).toHaveAttribute("data-static-builds", "3");
 });
 
+test("the map-test profile shows every fleet formation for both factions", async ({ page }) => {
+  await page.goto("/map-test.html");
+  await page.getByRole("button", { name: "New Game" }).click();
+  await expect(page.locator(".turnShip")).toHaveCount(12);
+  for (const formation of ["sphere", "line", "spindle", "crescent", "echelon", "column"]) {
+    await expect(page.locator(`.turnShip[aria-label*="${formation} formation"]`)).toHaveCount(2);
+  }
+});
+
 test("the strategic map keeps an intentional 2D fallback path", async ({ page }) => {
   const pageErrors = [];
   const sceneRequests = [];
@@ -165,7 +174,7 @@ test("the strategic map keeps an intentional 2D fallback path", async ({ page })
 test("split Fleets can merge back into an already-acted flagship Fleet", async ({ page }) => {
   await page.goto("/map.html?renderer=2d");
   await page.getByRole("button", { name: "Tutorial" }).click();
-  await page.getByRole("button", { name: /Fleet B1 Ready, 10 Ships/ }).click();
+  await page.getByRole("button", { name: /Fleet B1 Ready, 10 Ships, sphere formation/ }).click();
   await page.locator("#infoForward").click();
   await page.locator("#infoForward").click();
   await page.getByRole("button", { name: /Conquer Earth/ }).click();

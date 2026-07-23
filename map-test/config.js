@@ -1,9 +1,6 @@
 // Isolated profile for map-test.html. Keep this explicit so experiments can
 // change balance, factions, or formations without touching production config.
-import { DEFAULT_MAP_CONFIG } from "../map/config.js";
-
 export const MAP_TEST_CONFIG = Object.freeze({
-  ...DEFAULT_MAP_CONFIG,
   factions: Object.freeze({
     blue: Object.freeze({ label: "Blue", startAt: "earth" }),
     red: Object.freeze({ label: "Red", startAt: "venus" }),
@@ -14,14 +11,20 @@ export const MAP_TEST_CONFIG = Object.freeze({
   }),
   planetIds: Object.freeze(["earth", "venus"]),
   planetAxisAu: Object.freeze({
-    ...DEFAULT_MAP_CONFIG.planetAxisAu,
-    earth: 0.42,
-    venus: 0.58,
+    mercury: 0.387, venus: 0.58, earth: 0.42, mars: 1.524,
+    jupiter: 5.203, saturn: 9.537, uranus: 19.191, neptune: 30.069,
   }),
   planetHexPositions: Object.freeze({ earth: Object.freeze([4, 8]), venus: Object.freeze([14, 8]) }),
-  fleetCount: DEFAULT_MAP_CONFIG.fleetCount,
-  fleetFormation: DEFAULT_MAP_CONFIG.fleetFormation,
-  initialFleetStrength: DEFAULT_MAP_CONFIG.initialFleetStrength,
+  fleetCount: 6,
+  fleetFormation: "sphere",
+  fleetFormations: Object.freeze(["sphere", "line", "spindle", "crescent", "echelon", "column"]),
+  initialFleetStrength: 19,
+  maxFleetStrength: 57,
+  maxShipsPerHex: 57,
+  strategicDamagePerHit: 0.1,
+  gravityInfluenceRadiusFactor: 4,
+  minBodyResourceValue: 1,
+  conquestTurnsPerResource: 10,
+  productionFleetsPerTurn: 1,
+  spawnClearanceHexes: 1,
 });
-
-globalThis.__BATTLESTARS_MAP_CONFIG__ = MAP_TEST_CONFIG;
