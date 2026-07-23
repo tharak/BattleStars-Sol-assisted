@@ -41,11 +41,11 @@ export function pixelToKm(layout, x, y) {
 // center, for moon-around-planet rings, not just the board origin), so
 // the color/width and the "too small to bother drawing" cutoff can't
 // drift apart between the two.
-export function strokeFaintRing(ctx, cx, cy, r) {
+export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438") {
   if (r < 1) return;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.strokeStyle = "#1d243855";
+  ctx.strokeStyle = color.startsWith("#") && color.length === 7 ? `${color}88` : color;
   ctx.lineWidth = 1;
   ctx.stroke();
 }
@@ -53,7 +53,7 @@ export function strokeFaintRing(ctx, cx, cy, r) {
 export function drawOrbitalBoard(ctx, layout, { colorsFor, isSelected, labelMinPx = 0 }) {
   for (const b of layout.placed) {
     if (!b.orbit) continue;
-    strokeFaintRing(ctx, 0, 0, Math.hypot(b.x, b.y));
+    strokeFaintRing(ctx, 0, 0, Math.hypot(b.x, b.y), colorsFor(b).fill);
   }
 
   const drawDot = b => {

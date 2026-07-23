@@ -2493,14 +2493,14 @@ function renderSystem3D(entry, data) {
         addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center), spinDirection: gravitySpinDirection(layout.center.id) });
       }
       for (const p of layout.planets) {
-        addRing(0, 0, Math.hypot(p.x, p.y));
+        addRing(0, 0, Math.hypot(p.x, p.y), 0, colorsFor(p).fill);
         addBody({
           x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, data: p,
           textureUrl: textureFor(p), spinDirection: gravitySpinDirection(p.id),
           ownerColorHex: p.ownerFaction ? colorsFor({ faction: p.ownerFaction }).fill : null,
         });
         for (const m of p.moons) {
-          addRing(p.x, p.y, m.localRingPx, m.inclinationDeg);
+          addRing(p.x, p.y, m.localRingPx, m.inclinationDeg, colorsFor(m).fill);
           addBody({ x: m.x, y: m.tiltHeight, z: m.tiltZ, radius: m.rPx, color: colorsFor(m).fill, data: m, textureUrl: textureFor(m) });
         }
       }
@@ -2734,7 +2734,7 @@ function renderSystem2D(entry, data) {
     ctx.stroke();
   }
 
-  const drawRing = (ringCx, ringCy, worldRadiusPx) => strokeFaintRing(ctx, ringCx, ringCy, worldRadiusPx * camera2d.zoom);
+  const drawRing = (ringCx, ringCy, worldRadiusPx, colorHex) => strokeFaintRing(ctx, ringCx, ringCy, worldRadiusPx * camera2d.zoom, colorHex);
   const drawDot = (body, selected) => {
     const [sx, sy] = worldToScreen(camera2d, body.x, body.y);
     const rPx = screenRadius(body);
@@ -2845,10 +2845,10 @@ function renderSystem2D(entry, data) {
   };
   if (layout.center) drawDot(layout.center, false);
   for (const p of layout.planets) {
-    drawRing(...worldToScreen(camera2d, 0, 0), Math.hypot(p.x, p.y));
+    drawRing(...worldToScreen(camera2d, 0, 0), Math.hypot(p.x, p.y), colorsFor(p).fill);
     const [px, py] = drawDot(p, false);
     for (const m of p.moons) {
-      drawRing(px, py, m.localRingPx);
+      drawRing(px, py, m.localRingPx, colorsFor(m).fill);
       drawDot(m, false);
     }
   }

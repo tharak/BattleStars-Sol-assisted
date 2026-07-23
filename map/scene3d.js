@@ -250,7 +250,7 @@ export function createSystemScene({
   // `tiltDeg` (default 0, flat) draws the ring rotated around its own
   // local X axis, matching a real-inclination moon's tilted orbital plane
   // (see layoutSystemWithMoons in orbitmap.js) instead of always lying flat.
-  function addRing(cx, cz, radius, tiltDeg = 0) {
+  function addRing(cx, cz, radius, tiltDeg = 0, color = RING_COLOR) {
     if (radius < 1) return;
     const tiltRad = tiltDeg * Math.PI / 180;
     const pts = [];
@@ -260,7 +260,7 @@ export function createSystemScene({
       pts.push(new THREE.Vector3(cx + localX, ORBIT_RING_Y - localZ * Math.sin(tiltRad), cz + localZ * Math.cos(tiltRad)));
     }
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE.LineBasicMaterial({ color: RING_COLOR, transparent: true, opacity: 0.4 });
+    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.4 });
     buildGroup.add(new THREE.Line(geo, mat));
   }
 
