@@ -293,6 +293,7 @@ export function createSystemScene({
       x: 0, z: 0, strength: memberSlots ? 57 : strength, spacing: 1.7,
       firstLayerHeight: SHIP_FIRST_LAYER_HEIGHT,
       layerSpacing: SHIP_LAYER_SPACING,
+      formation,
     });
     const slots = memberSlots || allShipPositions.map((_, slotIndex) => ({ slotIndex, member: null }));
     let leadShip = null;

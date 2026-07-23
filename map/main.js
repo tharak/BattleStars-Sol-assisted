@@ -2104,15 +2104,15 @@ function clearSystemHover(refreshOverlay) {
 }
 
 // One-time spawn into the shared `world` (see its declaration above) --
-// every faction's initial Fleets, placed at their formation-derived starting
-// hex exactly like the old (now-removed) placeShips computed fresh on
-// every render, but done exactly once here: from this point on a ship's
+// every faction's initial Fleets, placed at compact deployment hexes exactly
+// like the old (now-removed) placeShips computed fresh on every render, but
+// done exactly once here: from this point on a ship's
 // real Position/Facing components are the only source of truth for where
 // it is and which way it faces, never recomputed from
 // FLEET_POSITIONS/ARMADA_DEPLOYMENT_FORMATIONS again. Anchored on each faction's
 // single logical FLEET_POSITIONS point (the exact same log-distance scale
-// as every real body in this view) using the exact same
-// formationLayout()-relative-offset math the old placeShips used. Every
+// as every real body in this view) using the sphere deployment layout for the
+// Fleet tokens. Each Fleet's own formation is rendered inside its hex. Every
 // ship receives its own six-direction facing toward the Sun at hex [0,0].
 let shipsSpawned = false;
 function spawnInitialShips(layout) {
@@ -2128,6 +2128,8 @@ function spawnInitialShips(layout) {
     const formationNames = activeMapConfig().fleetFormations?.length
       ? activeMapConfig().fleetFormations
       : Array.from({ length: FLEETS_PER_ARMADA }, () => ARMADA_DEPLOYMENT_FORMATIONS[faction]);
+    // Formation belongs to each Fleet's internal Ships. Fleet tokens still
+    // deploy in a compact sphere so every Fleet occupies one strategic hex.
     const { u } = formationLayout("sphere", formationNames.length);
     u.forEach(([fwd, lat], i) => {
       const [dx, dy] = shipHexOffset(fwd, lat);
@@ -2869,7 +2871,7 @@ function renderSystem2D(entry, data, refreshUi = true) {
     const miniSize = Math.max(s * 0.3, 1.1);
     const miniSpacing = Math.max(s * 1.05, 3);
     const allSlots = fleetShipPositions({
-      x: sx, y: sy, facingDeg: 0, formation: "sphere",
+      x: sx, y: sy, facingDeg: 0, formation: ship.formation,
       strength: 57, spacing: miniSpacing,
     });
     for (let i = 0; i < ship.memberSlots.length; i++) {

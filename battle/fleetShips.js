@@ -113,9 +113,25 @@ export function fleetShipPositions({ x, y, facingDeg, formation, strength, spaci
 // Each layer is independently collision-free. Strategic rules cap Fleets at
 // three layers (57 Ships); further layers remain a defensive rendering path.
 export function layeredFleetShipPositions({
-  x, z, strength, spacing, firstLayerHeight, layerSpacing,
+  x, z, strength, spacing, firstLayerHeight, layerSpacing, formation,
 }) {
   const count = Math.max(1, Math.ceil(strength));
+  if (formation) {
+    const offsets = fleetShipOffsets(formation, count);
+    const alignmentAngle = Math.PI / 6;
+    const cosAlignment = Math.cos(alignmentAngle);
+    const sinAlignment = Math.sin(alignmentAngle);
+    return offsets.map(([localForward, localLateral], index) => {
+      const layer = Math.floor(index / SHIPS_PER_3D_FLEET_LAYER);
+      const alignedX = localForward * cosAlignment - localLateral * sinAlignment;
+      const alignedZ = localForward * sinAlignment + localLateral * cosAlignment;
+      return [
+        x + alignedX * spacing,
+        firstLayerHeight + layer * layerSpacing,
+        z + alignedZ * spacing,
+      ];
+    });
+  }
   const alignmentAngle = Math.PI / 6;
   const cosAlignment = Math.cos(alignmentAngle);
   const sinAlignment = Math.sin(alignmentAngle);
