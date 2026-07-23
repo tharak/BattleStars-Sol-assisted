@@ -45,9 +45,12 @@ export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438") {
   if (r < 1) return;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.strokeStyle = color.startsWith("#") && color.length === 7 ? `${color}88` : color;
+  const previousAlpha = ctx.globalAlpha;
+  ctx.globalAlpha = previousAlpha * 0.65;
+  ctx.strokeStyle = color;
   ctx.lineWidth = 1;
   ctx.stroke();
+  ctx.globalAlpha = previousAlpha;
 }
 
 export function drawOrbitalBoard(ctx, layout, { colorsFor, isSelected, labelMinPx = 0 }) {

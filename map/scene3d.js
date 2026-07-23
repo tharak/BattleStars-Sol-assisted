@@ -260,7 +260,7 @@ export function createSystemScene({
       pts.push(new THREE.Vector3(cx + localX, ORBIT_RING_Y - localZ * Math.sin(tiltRad), cz + localZ * Math.cos(tiltRad)));
     }
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.4 });
+    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.65 });
     buildGroup.add(new THREE.Line(geo, mat));
   }
 
