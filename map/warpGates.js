@@ -2,6 +2,7 @@ import { fromAxial, hexDist, key, toAxial } from "../battle/hexmath.js";
 
 export const WARP_GATE_DISTANCE = 6;
 export const WARP_GATE_RADIUS = 1;
+export const MIN_WARP_GATE_SEPARATION = 4;
 export const MIN_WARP_LINK_DISTANCE = 6;
 
 export function warpGateAt(position, gates) {
@@ -57,7 +58,7 @@ function gatePositions(a, b) {
 }
 
 function overlapsExistingGate(position, gates) {
-  return [...gates.values()].some(gate => hexDist(position, gate.position) <= WARP_GATE_RADIUS * 2);
+  return [...gates.values()].some(gate => hexDist(position, gate.position) <= MIN_WARP_GATE_SEPARATION);
 }
 
 export function buildWarpGates(bodies = []) {
