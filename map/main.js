@@ -485,6 +485,7 @@ function showHoverInfo(hit) {
   hoverId = id;
   hoverInfo = infoFor(hit);
   renderInfoPanel();
+  renderTurnPanel();
 }
 
 function livingShipIdsByFaction() {
@@ -1713,6 +1714,7 @@ function renderTurnPanel(nowMs = performance.now()) {
     forfeited: strategicTurn.forfeitedShipIds,
     selectedShip,
     courseAnimationActive,
+    hoverId,
     participants: [...participantSet],
     alive: [...armadaRoster.values()].flat().map(ship => SC.isAlive(world, ship)),
     members: [...armadaRoster.values()].flat().map(ship => memberCount(ship)),
@@ -1747,7 +1749,7 @@ function renderTurnPanel(nowMs = performance.now()) {
       const displayState = strategicShipDisplayState(ship, faction, participantSet);
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `turnShip ${displayState.className}`;
+      button.className = `turnShip ${displayState.className}${hoverId === ship ? " hovered" : ""}`;
       const shipCount = memberCount(ship);
       const captain = SC.captainOf(world, ship);
       const ability = captainAbility(captain?.abilityId);
