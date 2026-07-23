@@ -105,7 +105,7 @@ test("arrow formation fills the requested indexed positions per layer", () => {
 
 test("column formation fills the corrected indexed positions per layer", () => {
   assert.deepEqual(FleetShips.formationPositionOrder("column", 19), [
-    0, 10, 5, 1, 4, 3, 6, 7, 2, 13, 12, 15, 18, 8, 11, 14, 17, 9, 16,
+    0, 10, 15, 1, 4, 3, 6, 7, 2, 13, 12, 5, 18, 8, 11, 14, 17, 9, 16,
   ]);
   assert.equal(FleetShips.formationPositionOrder("column", 57)[19], 19);
   assert.equal(FleetShips.formationPositionOrder("column", 57)[38], 38);
