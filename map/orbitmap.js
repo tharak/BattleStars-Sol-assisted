@@ -48,7 +48,7 @@ export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438") {
   const previousAlpha = ctx.globalAlpha;
   ctx.globalAlpha = previousAlpha * 0.65;
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 2;
   ctx.stroke();
   ctx.globalAlpha = previousAlpha;
 }

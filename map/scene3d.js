@@ -259,9 +259,10 @@ export function createSystemScene({
       const localX = Math.cos(a) * radius, localZ = Math.sin(a) * radius;
       pts.push(new THREE.Vector3(cx + localX, ORBIT_RING_Y - localZ * Math.sin(tiltRad), cz + localZ * Math.cos(tiltRad)));
     }
-    const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.65 });
-    buildGroup.add(new THREE.Line(geo, mat));
+    const curve = new THREE.CatmullRomCurve3(pts, true);
+    const geo = new THREE.TubeGeometry(curve, orbitSegments, Math.max(0.35, radius * 0.006), 6, true);
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.65 });
+    buildGroup.add(new THREE.Mesh(geo, mat));
   }
 
   // A Fleet is one strategic entity and one selectable hex token. Its
