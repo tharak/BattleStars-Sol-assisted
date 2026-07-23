@@ -111,6 +111,14 @@ test("column formation fills the corrected indexed positions per layer", () => {
   assert.equal(FleetShips.formationPositionOrder("column", 57)[38], 38);
 });
 
+test("wedge formation inverses the arrow position order", () => {
+  assert.deepEqual(FleetShips.formationPositionOrder("wedge", 19), [
+    16, 9, 14, 8, 12, 7, 15, 18, 13, 6, 4, 0, 17, 11, 5, 2, 3, 1, 10,
+  ]);
+  assert.equal(FleetShips.formationPositionOrder("wedge", 57)[19], 35);
+  assert.equal(FleetShips.formationPositionOrder("wedge", 57)[38], 54);
+});
+
 test("Fleet formation state defaults to sphere and only accepts supported formations", () => {
   const world = new World();
   const fleet = ShipRules.spawnFleet(world, { faction: "blue", c: 0, r: 0, dir: 0, label: "B1" });
