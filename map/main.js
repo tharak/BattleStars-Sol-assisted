@@ -494,7 +494,12 @@ function livingShipIdsByFaction() {
 }
 
 function economicallyEligibleFactions() {
-  return [...new Set([...planetEconomy.values()].map(economy => economy.owner).filter(Boolean))];
+  const livingFactions = new Set(Object.entries(livingShipIdsByFaction())
+    .filter(([, ships]) => ships.length > 0)
+    .map(([faction]) => faction));
+  return [...new Set([...planetEconomy.values()]
+    .map(economy => economy.owner)
+    .filter(faction => faction && livingFactions.has(faction)))];
 }
 
 const controllerOfFaction = faction => factionControllers.get(faction) || "player";
