@@ -3,6 +3,7 @@ import {
   layoutSystemWithMoons, worldToScreen, screenToWorld, strokeFaintRing,
 } from "./orbitmap.js";
 import { voronoiCells } from "./voronoi.js";
+import { buildWarpGates } from "./warpGates.js";
 import {
   universeLevel, systemLevel,
   ARMADA_DEPLOYMENT_FORMATIONS, FACTIONS, FLEETS_PER_ARMADA,
@@ -534,6 +535,11 @@ function selectShip(e, { npc = false } = {}) {
   if (activation && activationCommitted()) {
     setHint(`End ${SC.labelOf(world, activation.u)}'s activation before selecting another ship.`);
     return false;
+  }
+  const warp = systemStaticCache?.warpGates?.gates.get(hexKey(...SC.posOf(world, e)));
+  if (warp) {
+    SC.setPosition(world, e, ...warp.destination);
+    setHint(`${SC.labelOf(world, e)} entered Warp Gate ${warp.id} and emerged six hexes away.`);
   }
   selectedShip = e;
   const turns = shipTurnTurns.get(e) ?? 0;
@@ -2010,6 +2016,8 @@ function sparseOverlaySnapshot() {
     ? SC.posOf(world, selectedShip)
     : null;
   const courseTarget = selectedShip != null ? shipCourses.get(selectedShip) : null;
+  const warpGateCells = [...(systemStaticCache?.warpGates?.gates.values() || [])]
+    .map(gate => toCell(gate.position));
   const courseLines = [...shipCourses].flatMap(([ship, target]) => {
     if (!SC.isAlive(world, ship)) return [];
     return [{
@@ -2020,6 +2028,7 @@ function sparseOverlaySnapshot() {
   });
   return {
     boardCells: (tutorialMap?.cells || []).map(toCell),
+    warpGateCells,
     commandCells: commandCenter ? hexPatch(commandCenter, CMD_R).map(toCell) : [],
     hoverCells: hoverPatchCenter ? hexPatch(hoverPatchCenter).map(toCell) : [],
     reachableCells: [...reachableMoves.values()].map(route => ({ ...toCell(route.position), cost: route.cost })),
@@ -2421,7 +2430,9 @@ function systemStaticData(data, sourceKey) {
   const voronoiExtent = ORBIT_MAX_PX + ORBIT_MARGIN;
   const polygons = voronoiCells(sites.map(site => [site.x, site.y]), [-voronoiExtent, -voronoiExtent, voronoiExtent, voronoiExtent]);
   const voronoi = sites.map((site, index) => ({ polygon: polygons[index], color: colorsFor(site).fill }));
-  systemStaticCache = { sourceKey, layout, wells, gravityCells, voronoi };
+  const warpBodies = layout.planets.map(planet => ({ id: planet.id, position: planetHex(planet) }));
+  const warpGates = buildWarpGates(warpBodies);
+  systemStaticCache = { sourceKey, layout, wells, gravityCells, voronoi, warpGates };
   return systemStaticCache;
 }
 
@@ -2658,6 +2669,9 @@ function renderSystem2D(entry, data, refreshUi = true) {
   const sparseOverlay = sparseOverlaySnapshot();
   for (const cell of sparseOverlay.boardCells) {
     drawOverlayHex(cell, { stroke: "rgba(83,97,124,0.34)" });
+  }
+  for (const cell of sparseOverlay.warpGateCells) {
+    drawOverlayHex(cell, { fill: "rgba(210,110,255,0.18)", stroke: "#d66dff", lineWidth: 2 });
   }
   for (const line of sparseOverlay.courseLines) {
     const [fromX, fromY] = warpedGravityPoint(line.from.x, line.from.z, wells);
