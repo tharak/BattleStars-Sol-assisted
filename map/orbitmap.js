@@ -70,9 +70,10 @@ export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438", eccentricity 
 
 export function drawOrbitalBoard(ctx, layout, { colorsFor, isSelected, labelMinPx = 0 }) {
   const bounds = [-layout.maxPixel, -layout.maxPixel, layout.maxPixel, layout.maxPixel];
-  const cells = voronoiCells(layout.placed.map(body => [body.x, body.y]), bounds);
+  const sites = layout.center ? [layout.center, ...layout.placed] : layout.placed;
+  const cells = voronoiCells(sites.map(body => [body.x, body.y]), bounds);
   for (let index = 0; index < cells.length; index++) {
-    const body = layout.placed[index];
+    const body = sites[index];
     const polygon = cells[index];
     if (!polygon.length) continue;
     ctx.beginPath();

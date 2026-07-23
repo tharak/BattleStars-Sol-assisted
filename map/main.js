@@ -2417,8 +2417,9 @@ function systemStaticData(data, sourceKey) {
   syncPlanetEconomy(layout);
   const wells = gravityWells(layout);
   const gravityCells = gravityHexes(layout);
-  const polygons = voronoiCells(layout.planets.map(planet => [planet.x, planet.y]), [-ORBIT_MAX_PX, -ORBIT_MAX_PX, ORBIT_MAX_PX, ORBIT_MAX_PX]);
-  const voronoi = layout.planets.map((planet, index) => ({ polygon: polygons[index], color: colorsFor(planet).fill }));
+  const sites = layout.center ? [layout.center, ...layout.planets] : layout.planets;
+  const polygons = voronoiCells(sites.map(site => [site.x, site.y]), [-ORBIT_MAX_PX, -ORBIT_MAX_PX, ORBIT_MAX_PX, ORBIT_MAX_PX]);
+  const voronoi = sites.map((site, index) => ({ polygon: polygons[index], color: colorsFor(site).fill }));
   systemStaticCache = { sourceKey, layout, wells, gravityCells, voronoi };
   return systemStaticCache;
 }
