@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { hexDist, key } from "../battle/hexmath.js";
-import { buildWarpGates, warpGateAt, warpGateDestination, WARP_GATE_DISTANCE, WARP_GATE_RADIUS } from "../map/warpGates.js";
+import { buildWarpGates, warpGateAt, warpGateDestination, MIN_WARP_LINK_DISTANCE, WARP_GATE_DISTANCE, WARP_GATE_RADIUS } from "../map/warpGates.js";
 
 test("warp gates pair nearby planetary cells six hexes from each planet", () => {
   const network = buildWarpGates([
@@ -30,10 +30,11 @@ test("warp gates pair nearby planetary cells six hexes from each planet", () => 
   assert.notDeepEqual(warpGateDestination(offsetPosition, gate), gate.destination);
 });
 
-test("warp pairs under three hexes apart are omitted", () => {
+test("warp pairs under six hexes apart are omitted", () => {
   const network = buildWarpGates([
     { id: "a", position: [0, 0] },
     { id: "b", position: [10, 0] },
   ]);
   assert.equal(network.pairs.length, 0);
+  assert.equal(MIN_WARP_LINK_DISTANCE, 6);
 });
