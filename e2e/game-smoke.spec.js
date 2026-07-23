@@ -135,8 +135,8 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
 test("the map-test profile shows every fleet formation for both factions", async ({ page }) => {
   await page.goto("/map-test.html");
   await page.getByRole("button", { name: "New Game" }).click();
-  await expect(page.locator(".turnShip")).toHaveCount(12);
-  for (const formation of ["sphere", "line", "arrow", "column"]) {
+  await expect(page.locator(".turnShip")).toHaveCount(10);
+  for (const formation of ["sphere", "line", "arrow", "column", "wedge"]) {
     await expect(page.locator(`.turnShip[aria-label*="${formation} formation"]`)).toHaveCount(2);
   }
 });
