@@ -37,6 +37,9 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   await expect(page.locator("#turnPanel")).toBeHidden();
   await expect(page.locator(".turnShip")).toHaveCount(0);
   await expect(page.locator("#setupSummary")).toContainText("1 local player · 2 NPC commanders");
+  await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer", "3d", { timeout: 15000 });
+  await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer-state", "active", { timeout: 15000 });
+  await expect(page.getByRole("button", { name: "New Game" })).toBeEnabled();
   await page.getByRole("button", { name: "Tutorial" }).click();
   await expect(page.locator("#startOverlay")).toBeHidden();
   await expect(page.locator("#tutorialGuide")).toBeVisible();
