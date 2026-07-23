@@ -47,7 +47,7 @@ export function pixelToKm(layout, x, y) {
 // center, for moon-around-planet rings, not just the board origin), so
 // the color/width and the "too small to bother drawing" cutoff can't
 // drift apart between the two.
-export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438", eccentricity = 0, angleDeg = 0, gapDeg = 10) {
+export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438", eccentricity = 0, angleDeg = 0, gapDeg = 36) {
   if (r < 1) return;
   ctx.beginPath();
   const minor = r * Math.sqrt(1 - eccentricity ** 2);

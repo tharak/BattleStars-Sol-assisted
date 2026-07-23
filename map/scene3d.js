@@ -257,7 +257,7 @@ export function createSystemScene({
     if (radius < 1) return;
     const tiltRad = tiltDeg * Math.PI / 180;
     const pts = [];
-    const gap = 10 * Math.PI / 180;
+    const gap = 36 * Math.PI / 180;
     for (let i = 0; i <= orbitSegments; i++) {
       const a = gap + (Math.PI * 2 - gap) * i / orbitSegments;
       const localX = Math.cos(a) * radius, localZ = Math.sin(a) * radius * Math.sqrt(1 - eccentricity ** 2);
