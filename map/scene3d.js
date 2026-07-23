@@ -607,11 +607,22 @@ export function createSystemScene({
 
   // Pointer movement only replaces this tiny group; bodies, textures,
   // gravity fields, and ships stay in their retained groups.
-  function updateSparseOverlays({ boardCells = [], warpGateCells = [], commandCells = [], hoverCells = [], reachableCells = [], courseCells = [], courseLines = [], hoveredKey = null, colorHex, hexSize, projectPoint }) {
+  function updateSparseOverlays({ boardCells = [], warpGateCells = [], warpGateLinks = [], commandCells = [], hoverCells = [], reachableCells = [], courseCells = [], courseLines = [], hoveredKey = null, colorHex, hexSize, projectPoint }) {
     clearGroup(transientOverlayGroup);
     addHexLines(boardCells, hexSize, { color: 0x53617c, opacity: 0.34, linewidth: 1, projectPoint });
     addHexFills(warpGateCells, hexSize, { color: 0xd66dff, opacity: 0.18, projectPoint });
     addHexLines(warpGateCells, hexSize, { color: 0xd66dff, opacity: 0.95, linewidth: 2, projectPoint });
+    for (const link of warpGateLinks) {
+      const [fromX, fromZ] = projectPoint(link.from.x, link.from.z);
+      const [toX, toZ] = projectPoint(link.to.x, link.to.z);
+      const geometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(fromX, SPARSE_OVERLAY_Y, fromZ),
+        new THREE.Vector3(toX, SPARSE_OVERLAY_Y, toZ),
+      ]);
+      transientOverlayGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({
+        color: 0xd66dff, transparent: true, opacity: 0.75,
+      })));
+    }
     addCourseLines(courseLines, projectPoint);
     if (colorHex) {
       addHexFills(commandCells, hexSize, { color: colorHex, opacity: 0.035, projectPoint });

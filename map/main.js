@@ -2018,6 +2018,9 @@ function sparseOverlaySnapshot() {
   const courseTarget = selectedShip != null ? shipCourses.get(selectedShip) : null;
   const warpGateCells = [...(systemStaticCache?.warpGates?.gates.values() || [])]
     .map(gate => toCell(gate.position));
+  const warpGateLinks = (systemStaticCache?.warpGates?.pairs || []).map(pair => ({
+    from: toCell(pair.positions[0]), to: toCell(pair.positions[1]),
+  }));
   const courseLines = [...shipCourses].flatMap(([ship, target]) => {
     if (!SC.isAlive(world, ship)) return [];
     return [{
@@ -2029,6 +2032,7 @@ function sparseOverlaySnapshot() {
   return {
     boardCells: (tutorialMap?.cells || []).map(toCell),
     warpGateCells,
+    warpGateLinks,
     commandCells: commandCenter ? hexPatch(commandCenter, CMD_R).map(toCell) : [],
     hoverCells: hoverPatchCenter ? hexPatch(hoverPatchCenter).map(toCell) : [],
     reachableCells: [...reachableMoves.values()].map(route => ({ ...toCell(route.position), cost: route.cost })),
@@ -2672,6 +2676,18 @@ function renderSystem2D(entry, data, refreshUi = true) {
   }
   for (const cell of sparseOverlay.warpGateCells) {
     drawOverlayHex(cell, { fill: "rgba(210,110,255,0.18)", stroke: "#d66dff", lineWidth: 2 });
+  }
+  for (const link of sparseOverlay.warpGateLinks) {
+    const [fromX, fromY] = warpedGravityPoint(link.from.x, link.from.z, wells);
+    const [toX, toY] = warpedGravityPoint(link.to.x, link.to.z, wells);
+    ctx.beginPath();
+    ctx.moveTo(...worldToScreen(camera2d, fromX, fromY));
+    ctx.lineTo(...worldToScreen(camera2d, toX, toY));
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = "rgba(214,109,255,0.75)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
   for (const line of sparseOverlay.courseLines) {
     const [fromX, fromY] = warpedGravityPoint(line.from.x, line.from.z, wells);
