@@ -32,7 +32,7 @@ export const HOLD_FORMS = new Set(["sphere"]);
 export const sideName = s => s === Side.BLUE ? "Blue" : "Red";
 export const sideCls = s => s === Side.BLUE ? "b" : "r"; // matches the #log .b/.r CSS classes in styles.css
 
-export const FORMATION_NAMES = ["line", "arrow", "crescent", "echelon", "sphere", "column"];
+export const FORMATION_NAMES = ["line", "arrow", "sphere", "column"];
 
 // Deployment zones: each side may only place squadrons in its own half,
 // leaving a neutral no-man's-land in the middle columns.
@@ -53,14 +53,6 @@ export const OX = 26, OY = 26;
 export const SCENARIOS = [
  {t:"Arrow vs Wide Line", a:"arrow", b:"line",
   n:"THE key test. The dumb AI loses this 26/74 — it can't exploit a breakthrough. Can you pierce the line and win with maneuver?"},
- {t:"Wide Line vs Crescent", a:"line", b:"crescent",
-  n:"The wheel predicts the line's massed arcs win; the sim says crescent 64/36. Settle it."},
- {t:"Crescent vs Arrow", a:"crescent", b:"arrow",
-  n:"Wrap the wedge, rake its flanks. Sim: crescent 55/45 with dumb hands."},
- {t:"Echelon vs Arrow", a:"echelon", b:"arrow",
-  n:"Refuse a flank, deflect the punch into a flank trade. Sim: echelon 64/36."},
- {t:"Sphere vs Crescent", a:"sphere", b:"crescent",
-  n:"Survival formation in the wrong context on purpose. Score = turns survived, not wins."},
  {t:"Wide Line vs Column (sanity)", a:"line", b:"column",
   n:"Travel order should be slaughtered. If Column ever wins, something is broken."},
  {t:"Low-supply mirror", a:"line", b:"line", supB:SupplyState.LOW,
