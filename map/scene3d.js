@@ -624,12 +624,12 @@ export function createSystemScene({
       })));
       const dx = toX - fromX, dz = toZ - fromZ, length = Math.hypot(dx, dz) || 1;
       const ux = dx / length, uz = dz / length, px = -uz, pz = ux;
-      const midX = (fromX + toX) / 2, midZ = (fromZ + toZ) / 2;
       const chevronPositions = [];
-      for (const direction of [-1, 1]) {
-        const baseX = midX + ux * direction * 10, baseZ = midZ + uz * direction * 10;
-        chevronPositions.push(baseX + px * 4, SPARSE_OVERLAY_Y, baseZ + pz * 4, midX, SPARSE_OVERLAY_Y, midZ);
-        chevronPositions.push(midX, SPARSE_OVERLAY_Y, midZ, baseX - px * 4, SPARSE_OVERLAY_Y, baseZ - pz * 4);
+      for (const [t, direction] of [[0.22, 1], [0.38, 1], [0.62, -1], [0.78, -1]]) {
+        const centerX = fromX + dx * t, centerZ = fromZ + dz * t;
+        const baseX = centerX - ux * direction * 9, baseZ = centerZ - uz * direction * 9;
+        chevronPositions.push(baseX + px * 4, SPARSE_OVERLAY_Y, baseZ + pz * 4, centerX, SPARSE_OVERLAY_Y, centerZ);
+        chevronPositions.push(centerX, SPARSE_OVERLAY_Y, centerZ, baseX - px * 4, SPARSE_OVERLAY_Y, baseZ - pz * 4);
       }
       const chevronGeometry = new THREE.BufferGeometry();
       chevronGeometry.setAttribute("position", new THREE.Float32BufferAttribute(chevronPositions, 3));

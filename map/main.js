@@ -2690,12 +2690,12 @@ function renderSystem2D(entry, data, refreshUi = true) {
     ctx.setLineDash([]);
     const dx = toX - fromX, dy = toY - fromY, length = Math.hypot(dx, dy) || 1;
     const ux = dx / length, uy = dy / length, px = -uy, py = ux;
-    const midX = (fromX + toX) / 2, midY = (fromY + toY) / 2;
     ctx.beginPath();
-    for (const direction of [-1, 1]) {
-      const baseX = midX + ux * direction * 10, baseY = midY + uy * direction * 10;
+    for (const [t, direction] of [[0.22, 1], [0.38, 1], [0.62, -1], [0.78, -1]]) {
+      const centerX = fromX + dx * t, centerY = fromY + dy * t;
+      const baseX = centerX - ux * direction * 9, baseY = centerY - uy * direction * 9;
       ctx.moveTo(baseX + px * 4, baseY + py * 4);
-      ctx.lineTo(midX, midY);
+      ctx.lineTo(centerX, centerY);
       ctx.lineTo(baseX - px * 4, baseY - py * 4);
     }
     ctx.strokeStyle = "#e6a7ff";
