@@ -2720,9 +2720,9 @@ function renderSystem2D(entry, data, refreshUi = true) {
   }
   for (const cell of sparseOverlay.transportCells) {
     drawOverlayHex(cell, {
-      fill: cell.ambush ? "rgba(255,176,46,0.2)" : "rgba(56,217,255,0.08)",
-      stroke: cell.ambush ? "#ffb02e" : "rgba(56,217,255,0.8)",
-      lineWidth: cell.ambush ? 2.5 : 1.5,
+      fill: cell.ambush ? "rgba(255,176,46,0.1)" : null,
+      stroke: cell.ambush ? "rgba(255,176,46,0.7)" : "rgba(56,217,255,0.38)",
+      lineWidth: cell.ambush ? 1.25 : 1,
     });
   }
   for (const line of sparseOverlay.courseLines) {
