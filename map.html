@@ -41,6 +41,7 @@
   .turnShip.acting{border-color:#fff;color:#fff}
   .turnShip.spent,.turnShip.destroyed{opacity:.55}
   #infoPanel{display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+  #infoCaptain{margin-bottom:8px;padding:6px 8px;border:1px solid var(--gold);border-radius:5px;color:var(--gold);font-size:11px;line-height:1.35}
   #infoControls{display:flex;flex-direction:column;gap:6px}
   #infoControls>button{width:100%}
   #infoShipButtons{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0}
@@ -171,9 +172,10 @@
         <div id="turnHeading"></div>
         <button id="turnPanelToggle" type="button" aria-expanded="true" aria-controls="turnFactions">−</button>
       </div>
-      <div id="turnClock" role="timer"></div>
-      <div id="turnFactions"></div>
-      <div id="infoPanel" aria-label="Fleet controls">
+  <div id="turnClock" role="timer"></div>
+  <div id="turnFactions"></div>
+  <div id="infoPanel" aria-label="Fleet controls">
+          <div id="infoCaptain" aria-live="polite"></div>
           <div id="infoControls">
           <div id="infoShipButtons">
             <button id="infoTurnL">◄ Turn</button>
