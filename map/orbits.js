@@ -25,6 +25,15 @@ export const BODY_RADIUS_KM = {
   jupiter: 69911, saturn: 58232, uranus: 25362, neptune: 24622,
 };
 
+export const ORBIT_ECCENTRICITY = {
+  mercury: 0.2056, venus: 0.0068, earth: 0.0167, mars: 0.0934,
+  jupiter: 0.0489, saturn: 0.0565, uranus: 0.0463, neptune: 0.0097,
+};
+
+export function orbitEccentricity(id) {
+  return ORBIT_ECCENTRICITY[id] || 0;
+}
+
 // Real mean radius, km, for the ~17 "major" moons anyone's heard of --
 // solid, well-measured values. Minor/irregular moons don't get an entry
 // here (see MOONS/minorMoonRadiusKm in levels.js): most are small captured

@@ -4,7 +4,7 @@
 // them, and hit-tests clicks against them. Used for the Universe/System/
 // Body maps; Battle stays hex-based (battle/hexmath.js), unrelated.
 
-import { angleAtDeg, makeDistanceScale, makeSizeScale, hashAngleDeg } from "./orbits.js";
+import { angleAtDeg, makeDistanceScale, makeSizeScale, hashAngleDeg, orbitEccentricity } from "./orbits.js";
 
 export function layoutOrbitalBoard(data, { maxPixel = 420, nowMs = Date.now(), extraBodies = [] } = {}) {
   const centerRadiusKm = data.center?.radiusKm || 0;
@@ -18,7 +18,13 @@ export function layoutOrbitalBoard(data, { maxPixel = 420, nowMs = Date.now(), e
     const angleDeg = b.orbit ? angleAtDeg(nowMs, b.orbit) : (b.angleDeg || 0);
     const rad = angleDeg * Math.PI / 180;
     const r = dist.toPixel(b.distanceKm);
-    return { ...b, x: r * Math.cos(rad), y: r * Math.sin(rad), rPx: size(b.radiusKm || 0), angleDeg };
+    const eccentricity = orbitEccentricity(b.id);
+    return {
+      ...b,
+      x: r * Math.cos(rad),
+      y: r * Math.sqrt(1 - eccentricity ** 2) * Math.sin(rad),
+      rPx: size(b.radiusKm || 0), angleDeg, orbitRadiusPx: r, eccentricity,
+    };
   };
   const placed = data.bodies.map(place);
   const center = data.center ? { ...data.center, x: 0, y: 0, rPx: size(centerRadiusKm) } : null;
@@ -41,10 +47,10 @@ export function pixelToKm(layout, x, y) {
 // center, for moon-around-planet rings, not just the board origin), so
 // the color/width and the "too small to bother drawing" cutoff can't
 // drift apart between the two.
-export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438") {
+export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438", eccentricity = 0) {
   if (r < 1) return;
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, r, r * Math.sqrt(1 - eccentricity ** 2), 0, 0, Math.PI * 2);
   const previousAlpha = ctx.globalAlpha;
   ctx.globalAlpha = previousAlpha * 0.65;
   ctx.strokeStyle = color;
@@ -56,7 +62,7 @@ export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438") {
 export function drawOrbitalBoard(ctx, layout, { colorsFor, isSelected, labelMinPx = 0 }) {
   for (const b of layout.placed) {
     if (!b.orbit) continue;
-    strokeFaintRing(ctx, 0, 0, Math.hypot(b.x, b.y), colorsFor(b).fill);
+    strokeFaintRing(ctx, 0, 0, b.orbitRadiusPx, colorsFor(b).fill, b.eccentricity);
   }
 
   const drawDot = b => {
@@ -114,7 +120,8 @@ export function layoutSystemWithMoons(data, { maxPixel = 420, localMaxPixel = 22
     const angleDeg = b.orbit ? angleAtDeg(nowMs, b.orbit) : 0;
     const rad = angleDeg * Math.PI / 180;
     const r = dist.toPixel(b.distanceKm);
-    const x = r * Math.cos(rad), y = r * Math.sin(rad);
+    const eccentricity = orbitEccentricity(b.id);
+    const x = r * Math.cos(rad), y = r * Math.sqrt(1 - eccentricity ** 2) * Math.sin(rad);
     const rPx = size(b.radiusKm || 0);
 
     const moons = b.moons || [];
@@ -177,7 +184,7 @@ export function layoutSystemWithMoons(data, { maxPixel = 420, localMaxPixel = 22
         };
       });
     }
-    return { ...b, x, y, rPx, angleDeg, moons: placedMoons };
+    return { ...b, x, y, rPx, angleDeg, orbitRadiusPx: r, eccentricity, moons: placedMoons };
   });
 
   const center = data.center ? { ...data.center, x: 0, y: 0, rPx: size(centerRadiusKm) } : null;
