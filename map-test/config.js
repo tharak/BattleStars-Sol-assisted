@@ -18,7 +18,7 @@ export const MAP_TEST_CONFIG = Object.freeze({
   fleetCount: 6,
   fleetFormation: "sphere",
   fleetFormations: Object.freeze(["sphere", "line", "spindle", "crescent", "echelon", "column"]),
-  initialFleetStrength: 19,
+  initialFleetStrength: 10,
   maxFleetStrength: 57,
   maxShipsPerHex: 57,
   strategicDamagePerHit: 0.1,

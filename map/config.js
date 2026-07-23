@@ -16,7 +16,7 @@ export const DEFAULT_MAP_CONFIG = Object.freeze({
   fleetCount: 3,
   fleetFormation: "sphere",
   fleetFormations: Object.freeze(["sphere", "sphere", "sphere"]),
-  initialFleetStrength: 19,
+  initialFleetStrength: 10,
   maxFleetStrength: 57,
   maxShipsPerHex: 57,
   strategicDamagePerHit: 0.1,

@@ -26,10 +26,10 @@ test("every faction starts in sphere formation", () => {
   });
 });
 
-test("strategic Fleets start at one 19-Ship layer and cap at three layers", () => {
+test("strategic Fleets start at 10 Ships and cap at three layers", () => {
   assert.equal(FLEETS_PER_ARMADA, 3);
   assert.equal(formationLayout("sphere", FLEETS_PER_ARMADA).u.length, FLEETS_PER_ARMADA);
-  assert.equal(INITIAL_FLEET_STRENGTH, 19);
+  assert.equal(INITIAL_FLEET_STRENGTH, 10);
   assert.equal(MAX_FLEET_STRENGTH, 57);
 });
 

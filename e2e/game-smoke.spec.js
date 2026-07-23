@@ -66,8 +66,8 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   await expect(page.locator(".turnShip.ready")).toHaveCount(13);
   await expect(page.locator(".turnFaction")).toHaveCount(3);
   await expect(page.locator(".turnFactionHeader")).toContainText(["Player", "NPC", "NPC"]);
-  await expect(page.getByRole("button", { name: /Fleet B1 Ready, 19 Ships/ })).toBeVisible();
-  await expect(page.locator(".turnShipState").first()).toContainText("19 Ships");
+  await expect(page.getByRole("button", { name: /Fleet B1 Ready, 10 Ships/ })).toBeVisible();
+  await expect(page.locator(".turnShipState").first()).toContainText("10 Ships");
   await page.locator("#turnPanelToggle").click();
   await expect(page.locator("#turnPanelToggle")).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator("#turnFactions")).toBeHidden();
