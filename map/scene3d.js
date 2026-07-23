@@ -34,7 +34,7 @@ import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { hexEdgeWidths, hexCorners } from "../battle/hexmath.js";
-import { layeredFleetShipPositions } from "../battle/fleetShips.js";
+import { formationPositionOrder, layeredFleetShipPositions } from "../battle/fleetShips.js";
 import { ACCENT } from "../battle/colors.js";
 import { chooseGraphicsQuality, GraphicsQuality } from "./renderQuality.js";
 
@@ -296,7 +296,9 @@ export function createSystemScene({
       formation,
     });
     const slots = memberSlots || allShipPositions.map((_, slotIndex) => ({ slotIndex, member: null }));
-    const occupiedPositions = new Set(slots.map(slot => slot.positionIndex ?? slot.slotIndex));
+    const positionOrder = formationPositionOrder(formation, allShipPositions.length);
+    const visualPosition = rawPosition => positionOrder[rawPosition] ?? rawPosition;
+    const occupiedPositions = new Set(slots.map(slot => visualPosition(slot.positionIndex ?? slot.slotIndex)));
     const addPositionLabel = (positionIndex, shipX, shipY, shipZ, opacity = 1) => {
       const labelCanvas = document.createElement("canvas");
       labelCanvas.width = 64;
@@ -321,7 +323,7 @@ export function createSystemScene({
     let leadShip = null;
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i];
-      const positionIndex = slot.positionIndex ?? slot.slotIndex;
+      const positionIndex = visualPosition(slot.positionIndex ?? slot.slotIndex);
       const [shipX, shipY, shipZ] = allShipPositions[positionIndex];
       const memberColor = slot.member?.isOriginalFlagship ? ACCENT.flagshipArrow
         : slot.member?.state === "routed" ? "#ff3355"
@@ -343,7 +345,7 @@ export function createSystemScene({
       if (!occupiedPositions.has(positionIndex)) addPositionLabel(positionIndex, shipX, shipY, shipZ, 0.55);
     });
     slots.forEach(slot => {
-      const positionIndex = slot.positionIndex ?? slot.slotIndex;
+      const positionIndex = visualPosition(slot.positionIndex ?? slot.slotIndex);
       const [shipX, shipY, shipZ] = allShipPositions[positionIndex];
       addPositionLabel(positionIndex, shipX, shipY, shipZ);
     });

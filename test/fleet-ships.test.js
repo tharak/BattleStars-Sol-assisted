@@ -83,6 +83,14 @@ test("Fleet Ship formations rotate with the Fleet facing", () => {
   assert.deepEqual(south.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10]), [[15.5, 20], [4.5, 20]]);
 });
 
+test("line formation fills the requested indexed positions per layer", () => {
+  assert.deepEqual(FleetShips.formationPositionOrder("line", 19), [
+    0, 2, 5, 9, 16, 4, 6, 11, 17, 1, 3, 8, 14, 15, 13, 18, 10, 7, 12,
+  ]);
+  assert.equal(FleetShips.formationPositionOrder("line", 57)[19], 19);
+  assert.equal(FleetShips.formationPositionOrder("line", 57)[38], 38);
+});
+
 test("Fleet formation state defaults to sphere and only accepts supported formations", () => {
   const world = new World();
   const fleet = ShipRules.spawnFleet(world, { faction: "blue", c: 0, r: 0, dir: 0, label: "B1" });

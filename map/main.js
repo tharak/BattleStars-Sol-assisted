@@ -15,7 +15,7 @@ import { BOARD_TINT, ACCENT } from "../battle/colors.js";
 import { LINE_WIDTH, LASER_DURATION, LASER_HALO_ALPHA } from "../battle/dimensions.js";
 import { CMD_R, MP_MAX, MAX_TURNS_PER_ACTIVATION } from "../battle/config.js";
 import * as SC from "../battle/core/shipRules.js";
-import { fleetShipPositions } from "../battle/fleetShips.js";
+import { fleetShipPositions, formationPositionOrder } from "../battle/fleetShips.js";
 import { MathRandomSource } from "../battle/core/random.js";
 import { captainAbility, draftCaptains } from "../battle/domain/captainRules.js";
 import { resolveMorale, resolveRally } from "../battle/domain/moraleRules.js";
@@ -2874,7 +2874,9 @@ function renderSystem2D(entry, data, refreshUi = true) {
       x: sx, y: sy, facingDeg: 0, formation: "sphere",
       strength: 57, spacing: miniSpacing,
     });
-    const occupiedPositions = new Set(ship.memberSlots.map(slot => slot.positionIndex ?? slot.slotIndex));
+    const positionOrder = formationPositionOrder(ship.formation, allSlots.length);
+    const visualPosition = rawPosition => positionOrder[rawPosition] ?? rawPosition;
+    const occupiedPositions = new Set(ship.memberSlots.map(slot => visualPosition(slot.positionIndex ?? slot.slotIndex)));
     ctx.font = `bold ${Math.max(7, miniSize * 1.8)}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -2888,7 +2890,7 @@ function renderSystem2D(entry, data, refreshUi = true) {
     });
     for (let i = 0; i < ship.memberSlots.length; i++) {
       const slot = ship.memberSlots[i];
-      const positionIndex = slot.positionIndex ?? slot.slotIndex;
+      const positionIndex = visualPosition(slot.positionIndex ?? slot.slotIndex);
       const [mx, my] = allSlots[positionIndex];
       const [tip, base1, base2] = shipArrowPoints(mx, my, miniSize, ship.facingDeg);
       ctx.beginPath();

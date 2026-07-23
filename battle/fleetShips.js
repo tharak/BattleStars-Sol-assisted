@@ -5,6 +5,16 @@ export const FLEET_FORMATION_NAMES = Object.freeze([
   "line", "wedge", "echelon", "sphere", "spindle", "crescent", "column",
 ]);
 export const SHIPS_PER_3D_FLEET_LAYER = 19;
+const LINE_POSITION_ORDER = Object.freeze([0, 2, 5, 9, 16, 4, 6, 11, 17, 1, 3, 8, 14, 15, 13, 18, 10, 7, 12]);
+
+export function formationPositionOrder(formation = "sphere", count = 57) {
+  const positions = Array.from({ length: Math.max(0, count) }, (_, index) => index);
+  if (formation !== "line") return positions;
+  return positions.map(index => {
+    const layer = Math.floor(index / SHIPS_PER_3D_FLEET_LAYER);
+    return layer * SHIPS_PER_3D_FLEET_LAYER + LINE_POSITION_ORDER[index % SHIPS_PER_3D_FLEET_LAYER];
+  });
+}
 
 const HEX_LAYER_RADIUS = 2;
 const HEX_LAYER_SLOTS = (() => {
