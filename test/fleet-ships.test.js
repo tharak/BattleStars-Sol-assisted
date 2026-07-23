@@ -91,6 +91,10 @@ test("line formation fills the requested indexed positions per layer", () => {
   assert.equal(FleetShips.formationPositionOrder("line", 57)[38], 38);
 });
 
+test("sphere formation fills positions sequentially", () => {
+  assert.deepEqual(FleetShips.formationPositionOrder("sphere", 6), [0, 1, 2, 3, 4, 5]);
+});
+
 test("Fleet formation state defaults to sphere and only accepts supported formations", () => {
   const world = new World();
   const fleet = ShipRules.spawnFleet(world, { faction: "blue", c: 0, r: 0, dir: 0, label: "B1" });
