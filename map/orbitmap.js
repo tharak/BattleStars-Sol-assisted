@@ -5,6 +5,7 @@
 // Body maps; Battle stays hex-based (battle/hexmath.js), unrelated.
 
 import { angleAtDeg, makeDistanceScale, makeSizeScale, hashAngleDeg, orbitEccentricity } from "./orbits.js";
+import { voronoiCells } from "./voronoi.js";
 
 export function layoutOrbitalBoard(data, { maxPixel = 420, nowMs = Date.now(), extraBodies = [] } = {}) {
   const centerRadiusKm = data.center?.radiusKm || 0;
@@ -68,9 +69,21 @@ export function strokeFaintRing(ctx, cx, cy, r, color = "#1d2438", eccentricity 
 }
 
 export function drawOrbitalBoard(ctx, layout, { colorsFor, isSelected, labelMinPx = 0 }) {
-  for (const b of layout.placed) {
-    if (!b.orbit) continue;
-    strokeFaintRing(ctx, 0, 0, b.orbitRadiusPx, colorsFor(b).fill, b.eccentricity, b.angleDeg);
+  const bounds = [-layout.maxPixel, -layout.maxPixel, layout.maxPixel, layout.maxPixel];
+  const cells = voronoiCells(layout.placed.map(body => [body.x, body.y]), bounds);
+  for (let index = 0; index < cells.length; index++) {
+    const body = layout.placed[index];
+    const polygon = cells[index];
+    if (!polygon.length) continue;
+    ctx.beginPath();
+    polygon.forEach(([x, y], pointIndex) => pointIndex ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+    ctx.closePath();
+    const colors = colorsFor(body);
+    ctx.fillStyle = `${colors.fill}33`;
+    ctx.fill();
+    ctx.strokeStyle = `${colors.stroke}66`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 
   const drawDot = b => {

@@ -1886,8 +1886,6 @@ function colorsFor(cell) {
 const ORBIT_MAX_PX = 420;
 const ORBIT_MARGIN = 55;
 const CANVAS_PX = ORBIT_MAX_PX * 2 + ORBIT_MARGIN * 2;
-const EARTH_DAY_MS = 86400000;
-let orbitAnimationSimMs = Date.now();
 
 function renderUniverse(entry, data, nowMs = Date.now()) {
   mapwrap3d.style.display = "none";
@@ -2394,35 +2392,6 @@ let sceneDragging = false;
 let sceneJustDragged = false;
 let gravityAnimationFrame = null;
 let lastGravityAnimationRenderMs = 0;
-let orbitAnimationFrame = null;
-let lastOrbitAnimationRenderMs = 0;
-function ensureOrbitAnimation() {
-  if (orbitAnimationFrame != null) return;
-  const tick = now => {
-    orbitAnimationFrame = null;
-    const level = path[path.length - 1]?.level;
-    const overlayOpen = !startOverlay.hidden || !tutorialGuide.hidden;
-    if ((level === "universe" || level === "system") && !tutorialMode && !overlayOpen) {
-      if (now - lastOrbitAnimationRenderMs >= 125) {
-        lastOrbitAnimationRenderMs = now;
-        orbitAnimationSimMs += EARTH_DAY_MS;
-        const entry = path[path.length - 1];
-        const data = levelData(entry);
-        const simulatedNowMs = orbitAnimationSimMs;
-        if (entry.level === "universe") renderUniverse(entry, data, simulatedNowMs);
-        else if (mapArea.dataset.renderer === "3d" && scene3d) {
-          scene3d.updateOrbitalBodies(layoutSystemWithMoons(data, {
-            maxPixel: ORBIT_MAX_PX,
-            localMaxPixel: LOCAL_MAX_PX,
-            nowMs: simulatedNowMs,
-          }));
-        }
-      }
-      orbitAnimationFrame = requestAnimationFrame(tick);
-    }
-  };
-  orbitAnimationFrame = requestAnimationFrame(tick);
-}
 function ensureGravityAnimation() {
   if (gravityAnimationFrame != null) return;
   const tick = now => {
@@ -3111,7 +3080,6 @@ function render() {
     hasEffects: () => effects.length > 0,
     repaint: () => render(),
   });
-  ensureOrbitAnimation();
 }
 
 function zoomIn(enter, label) {
