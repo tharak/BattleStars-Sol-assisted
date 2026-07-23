@@ -7,11 +7,13 @@ export const FLEET_FORMATION_NAMES = Object.freeze([
 export const SHIPS_PER_3D_FLEET_LAYER = 19;
 const LINE_POSITION_ORDER = Object.freeze([0, 2, 5, 9, 16, 4, 6, 11, 17, 1, 3, 8, 14, 15, 13, 18, 10, 7, 12]);
 const ARROW_POSITION_ORDER = Object.freeze([10, 1, 3, 2, 5, 11, 17, 0, 4, 6, 13, 18, 15, 7, 12, 8, 14, 9, 16]);
+const COLUMN_POSITION_ORDER = Object.freeze([0, 10, 5, 1, 4, 3, 6, 7, 2, 13, 12, 15, 18, 8, 11, 14, 17, 9, 16]);
 
 export function formationPositionOrder(formation = "sphere", count = 57) {
   const positions = Array.from({ length: Math.max(0, count) }, (_, index) => index);
-  if (formation !== "line" && formation !== "arrow") return positions;
-  const order = formation === "line" ? LINE_POSITION_ORDER : ARROW_POSITION_ORDER;
+  if (formation !== "line" && formation !== "arrow" && formation !== "column") return positions;
+  const order = formation === "line" ? LINE_POSITION_ORDER
+    : formation === "arrow" ? ARROW_POSITION_ORDER : COLUMN_POSITION_ORDER;
   return positions.map(index => {
     const layer = Math.floor(index / SHIPS_PER_3D_FLEET_LAYER);
     return layer * SHIPS_PER_3D_FLEET_LAYER + order[index % SHIPS_PER_3D_FLEET_LAYER];
