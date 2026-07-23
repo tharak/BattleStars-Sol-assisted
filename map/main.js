@@ -32,6 +32,7 @@ import {
 } from "./strategicTurns.js";
 import { buildGravityFieldGroups, gravityHexRadius, hexDiskCells, warpGravityPoint } from "./gravityField.js";
 import { gravitySpinDirection, resolveGravityDrift } from "./gravityDynamics.js";
+import { buildTransportNetwork, mergeTransportCells, transportJumpDestination, transportLanesAt } from "./transportNetwork.js";
 import {
   scaledStrategicShipIconRadius, strategicFleetTone, strategicLaserColor, STRATEGIC_FACTION_COLORS,
 } from "./shipAppearance.js";
@@ -70,6 +71,7 @@ const infoForward = document.getElementById("infoForward");
 const infoBack = document.getElementById("infoBack");
 const infoFire = document.getElementById("infoFire");
 const infoTravel = document.getElementById("infoTravel");
+const infoTransport = document.getElementById("infoTransport");
 const infoGroupMove = document.getElementById("infoGroupMove");
 const infoMerge = document.getElementById("infoMerge");
 const infoSplit = document.getElementById("infoSplit");
@@ -924,6 +926,7 @@ async function advanceFactionCourses(faction) {
       movementCost: hexMoveCost,
       isBlocked: movementBlocker([ship]),
       resolveForcedMovement: gravityDrift,
+      resolveTransportMovement: transportMoves,
     });
     const route = chooseCourseRoute(routes, position, target);
     if (!route) continue;
@@ -934,6 +937,11 @@ async function advanceFactionCourses(faction) {
       moveForward: () => SC.moveForward(world, ship, { isBlocked: movementBlocker([ship]) }),
       moveBackward: () => SC.moveBackward(world, ship, { isBlocked: movementBlocker([ship]) }),
       applyForcedStep: drift => SC.setPosition(world, ship, ...drift.to),
+      jumpTransport: step => {
+        if (!step?.position || movementBlocker([ship])(step.position)) return { ok: false, reason: "blocked" };
+        SC.setPosition(world, ship, ...step.position);
+        return { ok: true };
+      },
       afterMovement: () => {
         courseAnimationStep++;
         mapArea.dataset.courseStep = String(courseAnimationStep);
@@ -1270,6 +1278,7 @@ function recomputeReachableMoves() {
       movementCost: hexMoveCost,
       isBlocked: movementBlocker([activation.u]),
       resolveForcedMovement: gravityDrift,
+      resolveTransportMovement: transportMoves,
     });
   }
   const hoveredRoute = pointerHex ? reachableMoves.get(hexKey(pointerHex[0], pointerHex[1])) : null;
@@ -1304,6 +1313,11 @@ function executeReachableMove(route) {
       moveForward: () => SC.moveForward(world, activation.u, { isBlocked }),
       moveBackward: () => SC.moveBackward(world, activation.u, { isBlocked }),
       applyForcedStep: drift => SC.setPosition(world, activation.u, ...drift.to),
+      jumpTransport: step => {
+        if (!step?.position || isBlocked(step.position)) return { ok: false, reason: "blocked" };
+        SC.setPosition(world, activation.u, ...step.position);
+        return { ok: true };
+      },
     });
   if (!result.ok) {
     moveResultHint(result);
@@ -1452,6 +1466,13 @@ function armTravel() {
   advancePlayableTutorial("course-armed");
   render();
 }
+function armTransport() {
+  if (!activation) return;
+  groupMoveArmed = false;
+  travelArmed = true;
+  setHint("Click a transport-lane destination to set a fast course.");
+  render();
+}
 function toggleCourse() {
   if (!activation) return;
   if (!shipCourses.has(activation.u)) {
@@ -1582,6 +1603,9 @@ function renderInfoPanel() {
     const course = shipCourses.get(u);
     infoTravel.textContent = course ? "Cancel Course" : "Set Course";
     infoTravel.title = course ? `Cancel target ${course.join(",")}` : "Choose a target hex for next-turn movement";
+    infoTransport.style.display = course ? "none" : "";
+    infoTransport.disabled = !SC.canMove(activation);
+    infoTransport.title = "Choose a destination; course planning will prefer available transport lanes.";
     infoGroupMove.style.display = SC.isFlagship(world, u) ? "" : "none";
     infoGroupMove.textContent = groupMoveEnabled
       ? "Cancel group move"
@@ -1610,6 +1634,7 @@ function renderInfoPanel() {
   infoMerge.style.display = "none";
   infoSplit.style.display = "none";
   infoConquer.style.display = "none";
+  infoTransport.style.display = "none";
   infoPanel.style.display = "none";
 }
 infoTurnL.onclick = () => doTurn(1);
@@ -1618,6 +1643,7 @@ infoForward.onclick = doForward;
 infoBack.onclick = doBackward;
 infoFire.onclick = armFireMode;
 infoTravel.onclick = toggleCourse;
+infoTransport.onclick = armTransport;
 infoGroupMove.onclick = toggleGroupMove;
 infoMerge.onclick = mergeFleets;
 infoSplit.onclick = splitFleet;
@@ -2000,6 +2026,16 @@ function sparseOverlaySnapshot() {
     const [x, z] = shipHexOffset(c, r);
     return { c, r, x, z, key: hexKey(c, r) };
   };
+  const transportCells = [];
+  for (const lane of systemStaticCache?.transportNetwork?.lanes || []) {
+    const stride = Math.max(1, Math.ceil(lane.cells.length / 12));
+    const sampled = lane.cells.filter((_cell, index) => index % stride === 0 || index === lane.cells.length - 1);
+    for (const position of sampled) {
+      const cell = systemStaticCache.transportNetwork.cells.get(hexKey(...position));
+      const [x, z] = shipHexOffset(...position);
+      transportCells.push({ ...toCell(position), x, z, laneIds: cell?.laneIds || [lane.id], ambush: !!cell?.ambush });
+    }
+  }
   const commandCenter = selectedShip != null && SC.isAlive(world, selectedShip) && SC.isFlagship(world, selectedShip)
     ? SC.posOf(world, selectedShip)
     : null;
@@ -2014,6 +2050,7 @@ function sparseOverlaySnapshot() {
   });
   return {
     boardCells: (tutorialMap?.cells || []).map(toCell),
+    transportCells: mapArea.dataset.renderer === "3d" ? [] : transportCells,
     commandCells: commandCenter ? hexPatch(commandCenter, CMD_R).map(toCell) : [],
     hoverCells: hoverPatchCenter ? hexPatch(hoverPatchCenter).map(toCell) : [],
     reachableCells: [...reachableMoves.values()].map(route => ({ ...toCell(route.position), cost: route.cost })),
@@ -2317,6 +2354,9 @@ function gravityHexes(layout) {
   }
   return cells;
 }
+function gravityRenderCells(cells) {
+  return new Map([...cells].filter(([, cell]) => !cell.transport));
+}
 // Refreshes the module-level gravityHexCosts (see its declaration above)
 // from the current gravity-hex map -- called once per render, right after
 // computing it.
@@ -2326,6 +2366,36 @@ function updateGravityHexes(cells) {
 
 function gravityDrift(position) {
   return resolveGravityDrift(position, gravityHexCosts, hex => shipHexOffset(hex[0], hex[1]));
+}
+
+function transportMoves(position) {
+  const network = systemStaticCache?.transportNetwork;
+  return transportLanesAt(position, network).map(lane => transportJumpDestination(lane, position)).filter(Boolean);
+}
+
+function transportFieldGeometry(network) {
+  const segments = [];
+  const nodes = [];
+  for (const lane of network?.lanes || []) {
+    const stride = Math.max(1, Math.ceil(lane.cells.length / 24));
+    const sampled = lane.cells.filter((_cell, index) => index % stride === 0 || index === lane.cells.length - 1);
+    for (let index = 1; index < sampled.length; index++) {
+      const [x1, z1] = shipHexOffset(...sampled[index - 1]);
+      const [x2, z2] = shipHexOffset(...sampled[index]);
+      segments.push([x1, z1, x2, z2]);
+    }
+    for (const position of lane.ambushCells) {
+      const [x, z] = shipHexOffset(...position);
+      nodes.push({ ...sparseOverlayCell(position), x, z });
+    }
+  }
+  return { segments, nodes };
+}
+
+function sparseOverlayCell(position) {
+  const [c, r] = position;
+  const [x, z] = shipHexOffset(c, r);
+  return { c, r, x, z, key: hexKey(c, r) };
 }
 
 function warpedGravityPoint(x, y, wells) {
@@ -2444,7 +2514,15 @@ function systemStaticData(data, sourceKey) {
   syncPlanetEconomy(layout);
   const wells = gravityWells(layout);
   const gravityCells = gravityHexes(layout);
-  systemStaticCache = { sourceKey, layout, wells, gravityCells };
+  const bodyCells = [];
+  if (layout.center) bodyCells.push({ id: layout.center.id, position: [0, 0], rotation: gravitySpinDirection(layout.center.id), gravityRadius: gravityHexRadius({ bodyRadiusPx: layout.center.rPx, hexSizePx: GRID_HEX_SIZE_PX, factor: GRAVITY_INFLUENCE_RADIUS_FACTOR }) });
+  for (const planet of layout.planets) {
+    bodyCells.push({ id: planet.id, parentId: layout.center?.id, position: planetHex(planet), rotation: gravitySpinDirection(planet.id), gravityRadius: gravityHexRadius({ bodyRadiusPx: planet.rPx, hexSizePx: GRID_HEX_SIZE_PX, factor: GRAVITY_INFLUENCE_RADIUS_FACTOR }) });
+    for (const moon of planet.moons) bodyCells.push({ id: moon.id, parentId: planet.id, position: planetHex(moon), rotation: gravitySpinDirection(planet.id), gravityRadius: gravityHexRadius({ bodyRadiusPx: moon.rPx, hexSizePx: GRID_HEX_SIZE_PX, factor: GRAVITY_INFLUENCE_RADIUS_FACTOR }) });
+  }
+  const transportNetwork = buildTransportNetwork(bodyCells);
+  const mergedGravityCells = mergeTransportCells(gravityCells, transportNetwork, (c, r) => shipHexOffset(c, r));
+  systemStaticCache = { sourceKey, layout, wells, gravityCells: mergedGravityCells, transportNetwork };
   return systemStaticCache;
 }
 
@@ -2454,23 +2532,24 @@ function renderSystem3D(entry, data) {
   mapArea.dataset.renderer = "3d";
   const scene = ensureScene3D();
   mapArea.dataset.rendererState = canvas3d.dataset.rendererState;
-  const { layout, wells, gravityCells } = systemStaticData(data, entry.systemId);
+  const { layout, wells, gravityCells, transportNetwork } = systemStaticData(data, entry.systemId);
   updateGravityHexes(gravityCells);
   recomputeReachableMoves();
   const ships = shipsSnapshot(wells);
 
   if (scene3dStaticSource !== entry.systemId) {
-    scene.rebuildStatic(({ addBody, addRing, addGravityField }) => {
+    scene.rebuildStatic(({ addBody, addRing, addGravityField, addTransportField }) => {
       const arrowsByColor = new Map();
       for (const arrow of gravityPullArrows(gravityCells, wells)) {
         if (!arrowsByColor.has(arrow.colorHex)) arrowsByColor.set(arrow.colorHex, []);
         arrowsByColor.get(arrow.colorHex).push(...arrow.segments);
       }
       for (const [colorHex, group] of buildGravityFieldGroups(
-        gravityCells, wells, GRID_HEX_SIZE_PX, gravityHexIntensity,
+        gravityRenderCells(gravityCells), wells, GRID_HEX_SIZE_PX, gravityHexIntensity,
       )) {
         addGravityField({ ...group, colorHex, arrowSegments: arrowsByColor.get(colorHex) || [] });
       }
+      addTransportField(transportFieldGeometry(transportNetwork));
       if (layout.center) {
         addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center), spinDirection: gravitySpinDirection(layout.center.id) });
       }
@@ -2627,7 +2706,7 @@ function renderSystem2D(entry, data) {
   // closer/costlier a hex, the more solid its color reads. Drawn before
   // any real body/ship, so everything else
   // still reads clearly on top of it.
-  for (const { colorHex, x, y, cost } of gravityCells.values()) {
+  for (const { colorHex, x, y, cost } of gravityRenderCells(gravityCells).values()) {
     const corners = gravityHexCorners(x, y, wells)
       .map(([px, py]) => worldToScreen(camera2d, px, py));
     ctx.beginPath();
@@ -2640,7 +2719,7 @@ function renderSystem2D(entry, data) {
   // A local, body-colored deformation lattice only where gravity exists.
   // Both opacity and stroke weight climb with the same AP-cost gradient as
   // the fill, making the deepest pull around a body read most strongly.
-  for (const { colorHex, x, y, cost } of gravityCells.values()) {
+  for (const { colorHex, x, y, cost } of gravityRenderCells(gravityCells).values()) {
     const intensity = gravityHexIntensity(cost);
     const corners = gravityHexCorners(x, y, wells)
       .map(([px, pz]) => worldToScreen(camera2d, px, pz));
@@ -2666,6 +2745,13 @@ function renderSystem2D(entry, data) {
   const sparseOverlay = sparseOverlaySnapshot();
   for (const cell of sparseOverlay.boardCells) {
     drawOverlayHex(cell, { stroke: "rgba(83,97,124,0.34)" });
+  }
+  for (const cell of sparseOverlay.transportCells) {
+    drawOverlayHex(cell, {
+      fill: cell.ambush ? "rgba(255,176,46,0.2)" : "rgba(56,217,255,0.08)",
+      stroke: cell.ambush ? "#ffb02e" : "rgba(56,217,255,0.8)",
+      lineWidth: cell.ambush ? 2.5 : 1.5,
+    });
   }
   for (const line of sparseOverlay.courseLines) {
     const [fromX, fromY] = warpedGravityPoint(line.from.x, line.from.z, wells);

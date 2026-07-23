@@ -10,6 +10,7 @@ export const StrategicMoveAction = Object.freeze({
   BACKWARD: "backward",
   TURN_LEFT: "turn_left",
   TURN_RIGHT: "turn_right",
+  TRANSPORT_JUMP: "transport_jump",
 });
 
 export const StrategicClickAction = Object.freeze({
@@ -38,6 +39,7 @@ const ACTION_TIE_ORDER = Object.freeze({
   [StrategicMoveAction.TURN_LEFT]: 1,
   [StrategicMoveAction.TURN_RIGHT]: 2,
   [StrategicMoveAction.BACKWARD]: 3,
+  [StrategicMoveAction.TRANSPORT_JUMP]: 4,
 });
 
 function compareActionSequences(a, b) {
@@ -127,6 +129,7 @@ export function findReachableDestinations({
   movementCost = nextPosition => forwardMovementCost(),
   isBlocked = () => false,
   resolveForcedMovement = () => null,
+  resolveTransportMovement = () => [],
 }) {
   const destinations = new Map();
   if (!position || facing == null || !canMoveDuringActivation(activation)) return destinations;
@@ -158,6 +161,14 @@ export function findReachableDestinations({
     }
 
     const candidates = [];
+    for (const transport of resolveTransportMovement(state.position) || []) {
+      if (!transport?.position || state.remainingMp < 1 || isBlocked(transport.position)) continue;
+      const route = makeRoute(state, StrategicMoveAction.TRANSPORT_JUMP, 1);
+      candidates.push({
+        ...state, ...route, position: [...transport.position],
+        transportSteps: [...(state.transportSteps || []), { ...transport, actionIndex: route.actions.length - 1 }],
+      });
+    }
     // Turning changes only facing, never movement points. Keep it in the
     // route search so every legal forward route can begin from any facing.
     if (state.remainingMp >= 1 && state.turns < MAX_TURNS_PER_ACTIVATION) {
@@ -307,12 +318,17 @@ export function executeStrategicRoute(route, {
   moveForward,
   moveBackward,
   applyForcedStep = () => {},
+  jumpTransport = () => ({ ok: true }),
 }) {
   if (!route) return { ok: false, reason: "missing_route" };
   for (let actionIndex = 0; actionIndex < route.actions.length; actionIndex++) {
     const action = route.actions[actionIndex];
     if (action === StrategicMoveAction.TURN_LEFT) turnLeft();
     else if (action === StrategicMoveAction.TURN_RIGHT) turnRight();
+    else if (action === StrategicMoveAction.TRANSPORT_JUMP) {
+      const result = jumpTransport(route.transportSteps?.find(step => step.actionIndex === actionIndex));
+      if (!result?.ok) return result || { ok: false, reason: "transport_failed" };
+    }
     else {
       const result = action === StrategicMoveAction.FORWARD ? moveForward() : moveBackward();
       if (!result?.ok) return result || { ok: false, reason: "step_failed" };
@@ -342,6 +358,7 @@ export async function executeStrategicRouteStepwise(route, {
   moveForward,
   moveBackward,
   applyForcedStep = () => {},
+  jumpTransport = () => ({ ok: true }),
   afterMovement = () => {},
   waitForNextMovement = () => Promise.resolve(),
 }) {
@@ -355,6 +372,14 @@ export async function executeStrategicRouteStepwise(route, {
     }
     if (action === StrategicMoveAction.TURN_RIGHT) {
       turnRight();
+      continue;
+    }
+    if (action === StrategicMoveAction.TRANSPORT_JUMP) {
+      const result = jumpTransport(route.transportSteps?.find(step => step.actionIndex === actionIndex));
+      if (!result?.ok) return result || { ok: false, reason: "transport_failed" };
+      await afterMovement({ action, actionIndex, movementIndex });
+      movementIndex++;
+      await waitForNextMovement({ action, actionIndex, movementIndex });
       continue;
     }
     const result = action === StrategicMoveAction.FORWARD ? moveForward() : moveBackward();

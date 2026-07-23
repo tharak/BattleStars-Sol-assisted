@@ -516,6 +516,19 @@ export function createSystemScene({
     }
   }
 
+  function addTransportField({ segments = [], nodes = [] }) {
+    if (segments.length) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(
+        segments.flatMap(([x1, z1, x2, z2]) => [x1, 0.08, z1, x2, 0.08, z2]), 3,
+      ));
+      buildGroup.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
+        color: 0x38d9ff, transparent: true, opacity: 0.8,
+      })));
+    }
+    if (nodes.length) addHexLines(nodes, 5, { color: 0xffb02e, opacity: 1, linewidth: 2.5 });
+  }
+
   function addHexLines(cells, hexSize, { color, opacity, linewidth, projectPoint = (x, z) => [x, z] }) {
     if (!cells.length) return;
     const flat = [];
@@ -569,9 +582,12 @@ export function createSystemScene({
 
   // Pointer movement only replaces this tiny group; bodies, textures,
   // gravity fields, and ships stay in their retained groups.
-  function updateSparseOverlays({ boardCells = [], commandCells = [], hoverCells = [], reachableCells = [], courseCells = [], courseLines = [], hoveredKey = null, colorHex, hexSize, projectPoint }) {
+  function updateSparseOverlays({ boardCells = [], transportCells = [], commandCells = [], hoverCells = [], reachableCells = [], courseCells = [], courseLines = [], hoveredKey = null, colorHex, hexSize, projectPoint }) {
     clearGroup(transientOverlayGroup);
     addHexLines(boardCells, hexSize, { color: 0x53617c, opacity: 0.34, linewidth: 1, projectPoint });
+    addHexLines(transportCells, hexSize, { color: 0x38d9ff, opacity: 0.7, linewidth: 2, projectPoint });
+    addHexFills(transportCells.filter(cell => cell.ambush), hexSize, { color: 0xffb02e, opacity: 0.28, projectPoint });
+    addHexLines(transportCells.filter(cell => cell.ambush), hexSize, { color: 0xffb02e, opacity: 1, linewidth: 2.5, projectPoint });
     addCourseLines(courseLines, projectPoint);
     if (colorHex) {
       addHexFills(commandCells, hexSize, { color: colorHex, opacity: 0.035, projectPoint });
@@ -606,7 +622,7 @@ export function createSystemScene({
     spinningBodies.length = 0;
     rebuildGroup(
       staticGroup, staticPickables, fn,
-      { addBody, addRing, addGravityField },
+      { addBody, addRing, addGravityField, addTransportField },
     );
     canvas.dataset.staticBuilds = String(++staticBuildCount);
   }
