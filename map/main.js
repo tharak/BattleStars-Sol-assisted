@@ -2871,7 +2871,7 @@ function renderSystem2D(entry, data, refreshUi = true) {
     const miniSize = Math.max(s * 0.3, 1.1);
     const miniSpacing = Math.max(s * 1.05, 3);
     const allSlots = fleetShipPositions({
-      x: sx, y: sy, facingDeg: 0, formation: ship.formation,
+      x: sx, y: sy, facingDeg: 0, formation: "sphere",
       strength: 57, spacing: miniSpacing,
     });
     const occupiedPositions = new Set(ship.memberSlots.map(slot => slot.positionIndex ?? slot.slotIndex));

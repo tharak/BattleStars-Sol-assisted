@@ -42,7 +42,7 @@ test("3D Fleets stack 57 Ships as three collision-free layers of 19", () => {
   }
 });
 
-test("3D Fleet layers use the Fleet formation when supplied", () => {
+test("3D Fleet layers use the same indexed hex positions for every formation", () => {
   const line = FleetShips.layeredFleetShipPositions({
     x: 0, z: 0, strength: 4, spacing: 1.7, firstLayerHeight: 1.3, layerSpacing: 1,
     formation: "line",
@@ -51,7 +51,7 @@ test("3D Fleet layers use the Fleet formation when supplied", () => {
     x: 0, z: 0, strength: 4, spacing: 1.7, firstLayerHeight: 1.3, layerSpacing: 1,
     formation: "column",
   });
-  assert.notDeepEqual(line.map(([x, , z]) => [x, z]), column.map(([x, , z]) => [x, z]));
+  assert.deepEqual(line.map(([x, , z]) => [x, z]), column.map(([x, , z]) => [x, z]));
   assert.equal(new Set(line.map(([, y]) => y)).size, 1);
 });
 

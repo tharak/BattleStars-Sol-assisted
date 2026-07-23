@@ -117,23 +117,13 @@ export function layeredFleetShipPositions({
 }) {
   const count = Math.max(1, Math.ceil(strength));
   if (formation) {
-    const formationOrder = (a, b) => {
-      const [af, al] = a;
-      const [bf, bl] = b;
-      if (formation === "line" || formation === "column") return formation === "line" ? al - bl : af - bf;
-      if (formation === "wedge") return bf - af || Math.abs(al) - Math.abs(bl);
-      if (formation === "echelon") return (af - al) - (bf - bl);
-      if (formation === "crescent") return Math.atan2(al, af) - Math.atan2(bl, bf);
-      if (formation === "spindle") return Math.abs(af) - Math.abs(bf) || al - bl;
-      return Math.hypot(af, al) - Math.hypot(bf, bl);
-    };
     const alignmentAngle = Math.PI / 6;
     const cosAlignment = Math.cos(alignmentAngle);
     const sinAlignment = Math.sin(alignmentAngle);
     const positions = [];
     for (let layer = 0; layer < Math.ceil(count / SHIPS_PER_3D_FLEET_LAYER); layer++) {
       const layerCount = Math.min(SHIPS_PER_3D_FLEET_LAYER, count - layer * SHIPS_PER_3D_FLEET_LAYER);
-      const layerSlots = HEX_LAYER_SLOTS.slice(0, layerCount).sort(formationOrder);
+      const layerSlots = HEX_LAYER_SLOTS.slice(0, layerCount);
       for (const [localForward, localLateral] of layerSlots) {
       const alignedX = localForward * cosAlignment - localLateral * sinAlignment;
       const alignedZ = localForward * sinAlignment + localLateral * cosAlignment;
