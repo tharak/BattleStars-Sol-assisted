@@ -165,6 +165,8 @@ export function createSystemScene({
   const pickables = [];
   let buildGroup = staticGroup;
   const spinningBodies = [];
+  const orbitalMeshes = new Map();
+  const orbitalRings = new Map();
   let buildPickables = staticPickables;
   let staticBuildCount = 0;
   let dynamicBuildCount = 0;
@@ -234,6 +236,7 @@ export function createSystemScene({
     mesh.userData = data;
     buildGroup.add(mesh);
     buildPickables.push(mesh);
+    if (data?.id) orbitalMeshes.set(data.id, mesh);
     if (ownerColorHex) {
       const halo = new THREE.Mesh(
         new THREE.RingGeometry(r * 1.3, r * 1.55, 32),
@@ -250,19 +253,22 @@ export function createSystemScene({
   // `tiltDeg` (default 0, flat) draws the ring rotated around its own
   // local X axis, matching a real-inclination moon's tilted orbital plane
   // (see layoutSystemWithMoons in orbitmap.js) instead of always lying flat.
-  function addRing(cx, cz, radius, tiltDeg = 0, color = RING_COLOR, eccentricity = 0) {
+  function addRing(cx, cz, radius, tiltDeg = 0, color = RING_COLOR, eccentricity = 0, id = null) {
     if (radius < 1) return;
     const tiltRad = tiltDeg * Math.PI / 180;
     const pts = [];
     for (let i = 0; i <= orbitSegments; i++) {
       const a = (i / orbitSegments) * Math.PI * 2;
       const localX = Math.cos(a) * radius, localZ = Math.sin(a) * radius * Math.sqrt(1 - eccentricity ** 2);
-      pts.push(new THREE.Vector3(cx + localX, ORBIT_RING_Y - localZ * Math.sin(tiltRad), cz + localZ * Math.cos(tiltRad)));
+      pts.push(new THREE.Vector3(localX, ORBIT_RING_Y - localZ * Math.sin(tiltRad), localZ * Math.cos(tiltRad)));
     }
     const curve = new THREE.CatmullRomCurve3(pts, true);
     const geo = new THREE.TubeGeometry(curve, orbitSegments, Math.max(0.35, radius * 0.006), 6, true);
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.65 });
-    buildGroup.add(new THREE.Mesh(geo, mat));
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(cx, 0, cz);
+    buildGroup.add(mesh);
+    if (id) orbitalRings.set(id, mesh);
   }
 
   // A Fleet is one strategic entity and one selectable hex token. Its
@@ -621,6 +627,8 @@ export function createSystemScene({
 
   function rebuildStatic(fn) {
     spinningBodies.length = 0;
+    orbitalMeshes.clear();
+    orbitalRings.clear();
     rebuildGroup(
       staticGroup, staticPickables, fn,
       { addBody, addRing, addGravityField, addTransportField },
@@ -661,6 +669,16 @@ export function createSystemScene({
       // A readable game-rate spin, not real-time day length.  It matches the
       // direction of the tactical current marker supplied by map/main.js.
       for (const { mesh, spinDirection } of spinningBodies) mesh.rotation.y = spinDirection * nowMs / 9000;
+      renderFrame();
+    },
+    updateOrbitalBodies(layout) {
+      for (const body of layout?.planets || []) {
+        orbitalMeshes.get(body.id)?.position.set(body.x, 0, body.y);
+        for (const moon of body.moons || []) {
+          orbitalMeshes.get(moon.id)?.position.set(moon.x, moon.tiltHeight, moon.tiltZ);
+          orbitalRings.get(moon.id)?.position.set(body.x, 0, body.y);
+        }
+      }
       renderFrame();
     },
     updateSparseOverlays,

@@ -2400,11 +2400,18 @@ function ensureOrbitAnimation() {
     orbitAnimationFrame = null;
     const level = path[path.length - 1]?.level;
     const overlayOpen = !startOverlay.hidden || !tutorialGuide.hidden;
-    if (level === "universe" && !tutorialMode && !overlayOpen) {
+    if ((level === "universe" || level === "system") && !tutorialMode && !overlayOpen) {
       if (now - lastOrbitAnimationRenderMs >= 125) {
         lastOrbitAnimationRenderMs = now;
         const entry = path[path.length - 1];
-        if (entry.level === "universe") renderUniverse(entry, levelData(entry));
+        const data = levelData(entry);
+        if (entry.level === "universe") renderUniverse(entry, data);
+        else if (mapArea.dataset.renderer === "3d" && scene3d) {
+          scene3d.updateOrbitalBodies(layoutSystemWithMoons(data, {
+            maxPixel: ORBIT_MAX_PX,
+            localMaxPixel: LOCAL_MAX_PX,
+          }));
+        }
       }
       orbitAnimationFrame = requestAnimationFrame(tick);
     }
@@ -2512,14 +2519,14 @@ function renderSystem3D(entry, data, refreshUi = true) {
         addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center), spinDirection: gravitySpinDirection(layout.center.id) });
       }
       for (const p of layout.planets) {
-        addRing(0, 0, p.orbitRadiusPx, 0, colorsFor(p).fill, p.eccentricity);
+        addRing(0, 0, p.orbitRadiusPx, 0, colorsFor(p).fill, p.eccentricity, p.id);
         addBody({
           x: p.x, z: p.y, radius: p.rPx, color: colorsFor(p).fill, data: p,
           textureUrl: textureFor(p), spinDirection: gravitySpinDirection(p.id),
           ownerColorHex: p.ownerFaction ? colorsFor({ faction: p.ownerFaction }).fill : null,
         });
         for (const m of p.moons) {
-          addRing(p.x, p.y, m.localRingPx, m.inclinationDeg, colorsFor(m).fill);
+          addRing(p.x, p.y, m.localRingPx, m.inclinationDeg, colorsFor(m).fill, 0, m.id);
           addBody({ x: m.x, y: m.tiltHeight, z: m.tiltZ, radius: m.rPx, color: colorsFor(m).fill, data: m, textureUrl: textureFor(m) });
         }
       }
