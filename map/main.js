@@ -2392,6 +2392,25 @@ let sceneDragging = false;
 let sceneJustDragged = false;
 let gravityAnimationFrame = null;
 let lastGravityAnimationRenderMs = 0;
+let orbitAnimationFrame = null;
+let lastOrbitAnimationRenderMs = 0;
+function ensureOrbitAnimation() {
+  if (orbitAnimationFrame != null) return;
+  const tick = now => {
+    orbitAnimationFrame = null;
+    const level = path[path.length - 1]?.level;
+    const overlayOpen = !startOverlay.hidden || !tutorialGuide.hidden;
+    if (level === "universe" && !tutorialMode && !overlayOpen) {
+      if (now - lastOrbitAnimationRenderMs >= 125) {
+        lastOrbitAnimationRenderMs = now;
+        const entry = path[path.length - 1];
+        if (entry.level === "universe") renderUniverse(entry, levelData(entry));
+      }
+      orbitAnimationFrame = requestAnimationFrame(tick);
+    }
+  };
+  orbitAnimationFrame = requestAnimationFrame(tick);
+}
 function ensureGravityAnimation() {
   if (gravityAnimationFrame != null) return;
   const tick = now => {
@@ -2465,7 +2484,7 @@ function systemStaticData(data, sourceKey) {
   return systemStaticCache;
 }
 
-function renderSystem3D(entry, data) {
+function renderSystem3D(entry, data, refreshUi = true) {
   mapwrap.style.display = "none";
   mapwrap3d.style.display = "inline-block";
   mapArea.dataset.renderer = "3d";
@@ -2556,8 +2575,10 @@ function renderSystem3D(entry, data) {
   };
   canvas3d.onmouseleave = () => clearSystemHover(() => scene.updateSparseOverlays(sparseOverlaySnapshot()));
 
-  renderInfoPanel();
-  renderBreadcrumb();
+  if (refreshUi) {
+    renderInfoPanel();
+    renderBreadcrumb();
+  }
 }
 
 function zoomSystemByKey3D(factor) {
@@ -2607,7 +2628,7 @@ window.addEventListener("mouseup", () => {
   canvas.style.cursor = "grab";
 });
 
-function renderSystem2D(entry, data) {
+function renderSystem2D(entry, data, refreshUi = true) {
   mapwrap3d.style.display = "none";
   mapwrap.style.display = "inline-block";
   mapArea.dataset.renderer = "2d";
@@ -2987,8 +3008,10 @@ function renderSystem2D(entry, data) {
     render();
   };
 
-  renderInfoPanel();
-  renderBreadcrumb();
+  if (refreshUi) {
+    renderInfoPanel();
+    renderBreadcrumb();
+  }
 }
 
 function zoomSystemByKey2D(factor) {
@@ -3028,9 +3051,9 @@ function activate2DFallback(error) {
   setHint(failure.hint);
 }
 
-function renderSystem(entry, data) {
+function renderSystem(entry, data, refreshUi = true) {
   if (!webglFailed && sceneModuleStatus === "loading") {
-    renderSystem2D(entry, data);
+    renderSystem2D(entry, data, refreshUi);
     mapArea.dataset.renderer = "loading";
     mapArea.dataset.rendererState = "loading";
     if (!persistentHint) setHint(RENDERER_LOADING_HINT);
@@ -3039,7 +3062,7 @@ function renderSystem(entry, data) {
   if (!webglFailed && sceneModuleStatus === "failed") activate2DFallback(sceneModuleError);
   if (!webglFailed) {
     try {
-      renderSystem3D(entry, data);
+      renderSystem3D(entry, data, refreshUi);
       return;
     } catch (err) {
       activate2DFallback(err);
@@ -3047,7 +3070,7 @@ function renderSystem(entry, data) {
   } else if (forcedRenderer === "2d" && mapArea.dataset.renderer !== "2d") {
     setHint("2D renderer forced by the URL for fallback testing.");
   }
-  renderSystem2D(entry, data);
+  renderSystem2D(entry, data, refreshUi);
 }
 
 function render() {
@@ -3076,6 +3099,7 @@ function render() {
     hasEffects: () => effects.length > 0,
     repaint: () => render(),
   });
+  ensureOrbitAnimation();
 }
 
 function zoomIn(enter, label) {
