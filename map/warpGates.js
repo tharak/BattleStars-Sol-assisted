@@ -47,6 +47,7 @@ export function buildWarpGates(bodies = []) {
     const bDirection = directionToward(b.position, a.position);
     const aPosition = offset(a.position, aDirection, WARP_GATE_DISTANCE);
     const bPosition = offset(b.position, bDirection, WARP_GATE_DISTANCE);
+    if (hexDist(aPosition, bPosition) < 3) continue;
     if (gates.has(key(...aPosition)) || gates.has(key(...bPosition))) continue;
     const id = `${a.id}-${b.id}`;
     pairs.push({ id, bodies: [a.id, b.id], positions: [aPosition, bPosition] });
