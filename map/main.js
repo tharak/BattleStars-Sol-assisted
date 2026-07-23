@@ -2,6 +2,7 @@ import {
   layoutOrbitalBoard, drawOrbitalBoard, hitTest,
   layoutSystemWithMoons, worldToScreen, screenToWorld, strokeFaintRing,
 } from "./orbitmap.js";
+import { voronoiCells } from "./voronoi.js";
 import {
   universeLevel, systemLevel,
   ARMADA_DEPLOYMENT_FORMATIONS, FACTIONS, FLEETS_PER_ARMADA,
@@ -2416,7 +2417,9 @@ function systemStaticData(data, sourceKey) {
   syncPlanetEconomy(layout);
   const wells = gravityWells(layout);
   const gravityCells = gravityHexes(layout);
-  systemStaticCache = { sourceKey, layout, wells, gravityCells };
+  const polygons = voronoiCells(layout.planets.map(planet => [planet.x, planet.y]), [-ORBIT_MAX_PX, -ORBIT_MAX_PX, ORBIT_MAX_PX, ORBIT_MAX_PX]);
+  const voronoi = layout.planets.map((planet, index) => ({ polygon: polygons[index], color: colorsFor(planet).fill }));
+  systemStaticCache = { sourceKey, layout, wells, gravityCells, voronoi };
   return systemStaticCache;
 }
 
@@ -2426,13 +2429,13 @@ function renderSystem3D(entry, data, refreshUi = true) {
   mapArea.dataset.renderer = "3d";
   const scene = ensureScene3D();
   mapArea.dataset.rendererState = canvas3d.dataset.rendererState;
-  const { layout, wells, gravityCells } = systemStaticData(data, entry.systemId);
+  const { layout, wells, gravityCells, voronoi } = systemStaticData(data, entry.systemId);
   updateGravityHexes(gravityCells);
   recomputeReachableMoves();
   const ships = shipsSnapshot(wells);
 
   if (scene3dStaticSource !== entry.systemId) {
-    scene.rebuildStatic(({ addBody, addRing, addGravityField }) => {
+    scene.rebuildStatic(({ addBody, addRing, addGravityField, addVoronoiField }) => {
       const arrowsByColor = new Map();
       for (const arrow of gravityPullArrows(gravityCells, wells)) {
         if (!arrowsByColor.has(arrow.colorHex)) arrowsByColor.set(arrow.colorHex, []);
@@ -2443,6 +2446,7 @@ function renderSystem3D(entry, data, refreshUi = true) {
       )) {
         addGravityField({ ...group, colorHex, arrowSegments: arrowsByColor.get(colorHex) || [] });
       }
+      addVoronoiField({ cells: voronoi });
       if (layout.center) {
         addBody({ x: 0, z: 0, radius: layout.center.rPx, color: colorsFor(layout.center).fill, data: layout.center, emissive: true, textureUrl: textureFor(layout.center), spinDirection: -gravitySpinDirection(layout.center.id) });
       }
@@ -2573,7 +2577,7 @@ function renderSystem2D(entry, data, refreshUi = true) {
   const ctx = canvas.getContext("2d");
   const cx = canvas.width / 2, cy = canvas.height / 2;
 
-  const { layout, wells, gravityCells } = systemStaticData(data, entry.systemId);
+  const { layout, wells, gravityCells, voronoi } = systemStaticData(data, entry.systemId);
   updateGravityHexes(gravityCells);
   recomputeReachableMoves();
   const ships = shipsSnapshot(wells);
@@ -2595,6 +2599,18 @@ function renderSystem2D(entry, data, refreshUi = true) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.save();
   ctx.translate(cx, cy);
+
+  for (const cell of voronoi) {
+    if (!cell.polygon?.length) continue;
+    ctx.beginPath();
+    cell.polygon.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+    ctx.closePath();
+    ctx.fillStyle = `${cell.color}33`;
+    ctx.fill();
+    ctx.strokeStyle = `${cell.color}66`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 
   // Every hex under a body's gravity, tinted that body's own color and
   // faded by how strong the pull is there (gravityHexIntensity) -- the

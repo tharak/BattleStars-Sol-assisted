@@ -538,6 +538,22 @@ export function createSystemScene({
     if (nodes.length) addHexLines(nodes, 5, { color: 0xffb02e, opacity: 0.7, linewidth: 1.25 });
   }
 
+  function addVoronoiField({ cells = [] }) {
+    for (const cell of cells) {
+      if (!cell.polygon?.length) continue;
+      const positions = [];
+      for (let index = 1; index < cell.polygon.length - 1; index++) {
+        const a = cell.polygon[0], b = cell.polygon[index], c = cell.polygon[index + 1];
+        positions.push(a[0], 0.3, a[1], b[0], 0.3, b[1], c[0], 0.3, c[1]);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      buildGroup.add(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+        color: cell.color, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false,
+      })));
+    }
+  }
+
   function addHexLines(cells, hexSize, { color, opacity, linewidth, projectPoint = (x, z) => [x, z] }) {
     if (!cells.length) return;
     const flat = [];
@@ -633,7 +649,7 @@ export function createSystemScene({
     orbitalRings.clear();
     rebuildGroup(
       staticGroup, staticPickables, fn,
-      { addBody, addRing, addGravityField, addTransportField },
+      { addBody, addRing, addGravityField, addTransportField, addVoronoiField },
     );
     canvas.dataset.staticBuilds = String(++staticBuildCount);
   }
