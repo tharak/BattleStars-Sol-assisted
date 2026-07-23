@@ -55,6 +55,23 @@ test("3D Fleet layers use the Fleet formation when supplied", () => {
   assert.equal(new Set(line.map(([, y]) => y)).size, 1);
 });
 
+test("3D Fleet formation slots never overlap", () => {
+  for (const formation of FleetShips.FLEET_FORMATION_NAMES) {
+    const positions = FleetShips.layeredFleetShipPositions({
+      x: 0, z: 0, strength: 57, spacing: 1.7, firstLayerHeight: 1.3, layerSpacing: 1,
+      formation,
+    });
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const [x1, y1, z1] = positions[i];
+        const [x2, y2, z2] = positions[j];
+        if (y1 !== y2) continue;
+        assert.ok(Math.hypot(x1 - x2, z1 - z2) >= 1.7 - 1e-9, `${formation} slots overlap`);
+      }
+    }
+  }
+});
+
 test("Fleet Ship formations rotate with the Fleet facing", () => {
   const east = FleetShips.fleetShipPositions({
     x: 10, y: 20, facingDeg: 0, formation: "line", strength: 2, spacing: 10,
