@@ -191,6 +191,8 @@ mapArea.dataset.courseStep = "0";
 // own laser effect, instead of a static line that only ever repaints when
 // something else happens to trigger a render.
 const effects = [];
+const warpAnimations = new Map();
+const WARP_ANIMATION_DURATION = 420;
 const STRATEGIC_EXPLOSION_DURATION = 720;
 // The RAF-loop mechanics for fading `effects` out -- see render()'s use
 // of this below, and battle/core/effectLoop.js for why this is shared
@@ -198,6 +200,14 @@ const STRATEGIC_EXPLOSION_DURATION = 720;
 // hand-rolled copy of the same "keep repainting while anything's still
 // fading" bookkeeping.
 const ensureEffectLoop = makeEffectLoop();
+
+function startWarpAnimation(fleet, destination) {
+  warpAnimations.set(fleet, {
+    from: [...SC.posOf(world, fleet)],
+    to: [...destination],
+    start: performance.now(),
+  });
+}
 // Every hex under a body's gravity (a Map of "c,r" -> {cost,colorHex,x,y},
 // see gravityHexes). `cost` now expresses visual/current strength only;
 // gravity moves ships automatically but no longer consumes extra AP.
@@ -520,7 +530,7 @@ function warpFactionFleets(faction) {
     if (!SC.isAlive(world, fleet)) continue;
     const gate = warpGateAt(SC.posOf(world, fleet), gates);
     if (!gate) continue;
-    SC.setPosition(world, fleet, ...warpGateDestination(SC.posOf(world, fleet), gate));
+    startWarpAnimation(fleet, warpGateDestination(SC.posOf(world, fleet), gate));
     teleported++;
   }
   return teleported;
@@ -552,7 +562,7 @@ function selectShip(e, { npc = false } = {}) {
   }
   const warp = warpGateAt(SC.posOf(world, e), systemStaticCache?.warpGates?.gates);
   if (warp) {
-    SC.setPosition(world, e, ...warpGateDestination(SC.posOf(world, e), warp));
+    startWarpAnimation(e, warpGateDestination(SC.posOf(world, e), warp));
     setHint(`${SC.labelOf(world, e)} entered Warp Gate ${warp.id} and emerged six hexes away.`);
   }
   selectedShip = e;
@@ -2264,7 +2274,14 @@ function shipsSnapshot(wells = []) {
   return alive.map(e => {
     const [c, r] = SC.posOf(world, e);
     const [gridX, gridY] = shipHexOffset(c, r);
-    const [x, y] = warpedGravityPoint(gridX, gridY, wells);
+    const warp = warpAnimations.get(e);
+    let [x, y] = warpedGravityPoint(gridX, gridY, wells);
+    if (warp) {
+      const progress = Math.min(1, (performance.now() - warp.start) / WARP_ANIMATION_DURATION);
+      const [fromX, fromY] = shipHexOffset(...warp.from);
+      const [toX, toY] = shipHexOffset(...warp.to);
+      [x, y] = warpedGravityPoint(fromX + (toX - fromX) * progress, fromY + (toY - fromY) * progress, wells);
+    }
     const hasActed = hasStrategicShipActed(strategicTurn, e);
     const stack = stackInfo.get(e);
     return {
@@ -2275,7 +2292,7 @@ function shipsSnapshot(wells = []) {
       strength: memberCount(e), effectiveStrength: fleetStrength(e), formation: SC.fleetFormationOf(world, e),
       isTarget: stack.fleetIds.some(fleet => targets?.has(fleet)), targetColor,
       isGroupMember: stack.fleetIds.some(fleet => groupMembers?.has(fleet)),
-      hasActed, colorHex: strategicFleetTone(SC.factionOf(world, e), e, hasActed),
+      hasActed, colorHex: warp ? "#e6a7ff" : strategicFleetTone(SC.factionOf(world, e), e, hasActed),
       x, y,
     };
   });
@@ -3102,8 +3119,16 @@ function render() {
   // mechanics themselves are shared with battle/render.js's own laser-fade
   // loop -- see battle/core/effectLoop.js.
   ensureEffectLoop({
-    pruneExpired: now => { for (let i = effects.length - 1; i >= 0; i--) if (now - effects[i].start >= effects[i].dur) effects.splice(i, 1); },
-    hasEffects: () => effects.length > 0,
+    pruneExpired: now => {
+      for (let i = effects.length - 1; i >= 0; i--) if (now - effects[i].start >= effects[i].dur) effects.splice(i, 1);
+      for (const [fleet, warp] of warpAnimations) {
+        if (now - warp.start >= WARP_ANIMATION_DURATION) {
+          SC.setPosition(world, fleet, ...warp.to);
+          warpAnimations.delete(fleet);
+        }
+      }
+    },
+    hasEffects: () => effects.length > 0 || warpAnimations.size > 0,
     repaint: () => render(),
   });
 }
