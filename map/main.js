@@ -72,7 +72,6 @@ const infoTurnR = document.getElementById("infoTurnR");
 const infoForward = document.getElementById("infoForward");
 const infoBack = document.getElementById("infoBack");
 const infoFire = document.getElementById("infoFire");
-const infoTravel = document.getElementById("infoTravel");
 const infoGroupMove = document.getElementById("infoGroupMove");
 const infoMerge = document.getElementById("infoMerge");
 const infoSplit = document.getElementById("infoSplit");
@@ -370,7 +369,6 @@ const TUTORIAL_TARGET_SELECTORS = Object.freeze({
   conquer: "#infoConquer",
   turn: "#infoTurnL, #infoTurnR",
   end: "#infoEnd",
-  course: "#infoTravel",
 });
 
 function updateTutorialActionHighlight() {
@@ -452,17 +450,16 @@ function infoFor(hit) {
       : "";
     return {
       name: hit.label,
-      detail: `${owner}; produces one Strength-${hit.resourceValue || 1} Fleet each owner turn.${conquest}`,
+      detail: `${owner}; repairs up to ${hit.resourceValue || 1} Ship health each owner turn.${conquest}`,
     };
   }
   if (hit.kind === "fleet" || hit.kind === "fleet-stack") {
-    const course = shipCourses.get(hit.id);
     const flagshipCount = SC.flagshipCountOf(world, hit.id);
     const states = stateCounts(hit.id);
     const captain = SC.captainOf(world, hit.id);
     return {
       name: `Fleet ${SC.labelOf(world, hit.id)}${flagshipCount ? ` ★${flagshipCount > 1 ? `×${flagshipCount}` : ""}` : ""}`,
-      detail: `${FACTIONS[hit.faction].label} Armada — ${memberCount(hit.id)} Ships, Strength ${fleetStrength(hit.id).toFixed(1)} (${states.ready} Ready, ${states.shaken} Shaken, ${states.routed} Routed).${captain ? ` ${captain.name}: ${captainAbility(captain.abilityId)?.description}.` : ""}${course ? ` Course: ${course.join(",")}.` : ""}`,
+      detail: `${FACTIONS[hit.faction].label} Armada — ${memberCount(hit.id)} Ships, Strength ${fleetStrength(hit.id).toFixed(1)} (${states.ready} Ready, ${states.shaken} Shaken, ${states.routed} Routed).${captain ? ` ${captain.name}: ${captainAbility(captain.abilityId)?.description}.` : ""}`,
     };
   }
   return null;
@@ -522,7 +519,7 @@ function recordActivationParticipants(ships) {
 }
 
 function activationCommitted() {
-  return !!(activation && (activation.moved || activation.fired || activation.courseSet || activationParticipants().length > 1));
+  return !!(activation && (activation.moved || activation.fired || activationParticipants().length > 1));
 }
 
 function warpFactionFleets(faction) {
@@ -657,10 +654,6 @@ function finishActionRender() {
 function scheduleNpcTurn() {
   if (npcTurnTimer != null) window.clearTimeout(npcTurnTimer);
   npcTurnTimer = null;
-  if (courseAnimationActive && courseAnimationPromise) {
-    courseAnimationPromise.then(() => scheduleNpcTurn());
-    return;
-  }
   if (!shipsSpawned || !isNpcFaction(activeStrategicFaction(strategicTurn))) return;
   npcTurnTimer = window.setTimeout(runNpcActivation, 320);
 }
@@ -681,9 +674,7 @@ function runNpcActivation() {
       .sort((a, b) => hexDist(SC.posOf(world, fleet), SC.posOf(world, a))
         - hexDist(SC.posOf(world, fleet), SC.posOf(world, b)))[0];
     if (enemy != null) {
-      shipCourses.set(fleet, [...SC.posOf(world, enemy)]);
-      activation.courseSet = true;
-      setHint(`${FACTIONS[faction].label} NPC sets ${SC.labelOf(world, fleet)} on an intercept course.`);
+      setHint(`${FACTIONS[faction].label} NPC holds ${SC.labelOf(world, fleet)} until it can engage.`);
     } else {
       setHint(`${FACTIONS[faction].label} NPC completes ${SC.labelOf(world, fleet)}'s activation.`);
     }
@@ -1219,7 +1210,6 @@ function startFactionEconomyTurn(layout, faction, round) {
     healed += healFleetAtPlanet(planet, faction);
     economy.lastProducedTurn = turnKey;
   }
-  beginFactionCourseAnimation(faction);
   return [
     ...completed,
     morale.rallied ? `${morale.rallied} Ship${morale.rallied === 1 ? "" : "s"} rallied` : "",
@@ -1606,9 +1596,6 @@ function renderInfoPanel() {
       ? `Move all ${commandedShips.length} ships back · ${groupBackwardRoute.cost} AP`
       : "1 hex astern, keeps facing — costs all remaining AP";
     infoFire.disabled = !SC.canFire(world, activation);
-    const course = shipCourses.get(u);
-    infoTravel.textContent = course ? "Cancel Course" : "Set Course";
-    infoTravel.title = course ? `Cancel target ${course.join(",")}` : "Choose a target hex for next-turn movement";
     infoGroupMove.style.display = SC.isFlagship(world, u) ? "" : "none";
     infoGroupMove.textContent = groupMoveEnabled
       ? "Cancel group move"
@@ -1644,7 +1631,6 @@ infoTurnR.onclick = () => doTurn(-1);
 infoForward.onclick = doForward;
 infoBack.onclick = doBackward;
 infoFire.onclick = armFireMode;
-infoTravel.onclick = toggleCourse;
 infoGroupMove.onclick = toggleGroupMove;
 infoMerge.onclick = mergeFleets;
 infoSplit.onclick = splitFleet;
