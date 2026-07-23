@@ -13,6 +13,7 @@ export default defineConfig({
       input: {
         index: resolve(import.meta.dirname, "index.html"),
         map: resolve(import.meta.dirname, "map.html"),
+        "map-test": resolve(import.meta.dirname, "map-test.html"),
       },
     },
   },

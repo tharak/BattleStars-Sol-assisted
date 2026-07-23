@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>Successor Stars — Strategic Map Test</title>
+<link rel="stylesheet" href="map/styles.css">
+<style>
+  html,body{width:100%;min-height:100%;margin:0;overflow:hidden;background:var(--bg)}
+  #mapApp{width:100vw;height:100dvh;display:grid;place-items:center;overflow:hidden}
+  /* The strategic renderers use a square world.  Keeping the stage square
+     prevents browsers from stretching its circles into ellipses on a
+     rectangular viewport. */
+  #mapArea{position:relative;width:min(100vw,100dvh);aspect-ratio:1;background:var(--panel)}
+  #mapwrap,#mapwrap3d{position:absolute;inset:0;width:100%;height:100%;padding:0;border:0;border-radius:0;background:var(--panel);overflow:hidden}
+  canvas{display:block;width:100%;height:100%;border-radius:0}
+  /* Kept in the DOM for keyboard/Escape navigation, but the screen is map-first. */
+  #topbar{display:none}
+  #hint{position:absolute;z-index:6;bottom:10px;left:50%;transform:translateX(-50%);max-width:min(70%,420px);min-height:0;
+    padding:5px 9px;border-radius:5px;background:#111624d9;color:var(--dim);font-size:12px;text-align:center;pointer-events:none}
+  #turnPanel{position:absolute;top:12px;left:12px;width:300px;max-height:calc(100% - 24px);
+    overflow:auto;background:#111624e8;border:1px solid var(--line);border-radius:8px;
+    padding:10px 12px;font-size:12px;z-index:5}
+  #turnPanel.minimized{width:auto;max-width:calc(100% - 24px);overflow:hidden;padding:7px 8px}
+  #turnPanel.minimized #turnClock,#turnPanel.minimized #turnFactions,#turnPanel.minimized #infoPanel{display:none!important}
+  #turnPanelHeader{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  #turnHeading{font-weight:bold;font-size:14px}
+  #turnPanelToggle{flex:0 0 auto;padding:1px 6px;font-size:14px;line-height:1.2}
+  #turnClock{color:var(--gold);font-variant-numeric:tabular-nums;margin:2px 0 8px}
+  .turnFaction{margin-top:8px}
+  .turnFactionHeader{display:flex;justify-content:space-between;gap:6px;font-weight:bold;margin-bottom:3px}
+  .turnFactionState{font-size:10px;text-transform:uppercase;color:var(--dim)}
+  .turnFaction.active .turnFactionState{color:var(--gold)}
+  .turnShips{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+  .turnShip{display:flex;justify-content:space-between;gap:4px;min-width:0;padding:3px 5px;
+    font-size:11px;text-align:left}
+  .turnShip span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .turnShipState{flex:0 0 auto;color:var(--dim);font-size:9px;text-transform:uppercase;white-space:nowrap}
+  .turnShip.ready{border-color:var(--gold)}
+  .turnShip.acting{border-color:#fff;color:#fff}
+  .turnShip.hovered{border-color:#fff;color:#fff;background:#27304a;box-shadow:0 0 0 2px #fff6,0 0 12px #fff5}
+  .turnShip.spent,.turnShip.destroyed{opacity:.55}
+  #infoPanel{display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+  #infoCaptain{margin-bottom:8px;padding:6px 8px;border:1px solid var(--gold);border-radius:5px;color:var(--gold);font-size:11px;line-height:1.35}
+  #infoControls{display:flex;flex-direction:column;gap:6px}
+  #infoControls>button{width:100%}
+  #infoShipButtons{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0}
+  #infoShipButtons button{flex:1 0 40%;padding:4px 6px;font-size:12px}
+  #infoGroupMove[aria-pressed="true"]{border-color:var(--gold);color:var(--gold);background:#3b3422}
+  #startOverlay{position:absolute;inset:0;z-index:20;display:grid;place-items:center;padding:18px;
+    background:radial-gradient(circle at center,#0d1424b8 0,#080b13e8 72%);backdrop-filter:blur(2px)}
+  #startOverlay[hidden]{display:none}
+  .startCard{position:relative;width:min(620px,calc(100% - 36px));max-height:calc(100% - 36px);overflow:auto;
+    box-sizing:border-box;padding:24px;border:1px solid #53617c;border-radius:12px;
+    background:#111624f2;box-shadow:0 18px 70px #000b;color:var(--ink)}
+  .startEyebrow{color:var(--gold);font-size:11px;font-weight:bold;letter-spacing:.18em;text-transform:uppercase}
+  .startCard h1{margin:5px 0 6px;font-size:28px}.startCard>p{margin:0 0 20px;color:var(--dim)}
+  #gameSetup{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 12px}
+  #gameSetup label{display:grid;gap:5px;color:var(--dim);font-size:12px;font-weight:bold}
+  #gameSetup select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:6px;
+    background:#0c111d;color:var(--ink);font:inherit}
+  #setupSummary{min-height:18px;margin:0 0 12px;color:var(--dim);font-size:12px}
+  #setupSummary.invalid{color:#ff718d}
+  #startMenuActions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  #startMenuActions button{min-height:72px;font-size:16px;font-weight:bold}
+  #newGameBtn{border-color:var(--gold);color:var(--gold);background:#3b3422}
+  #tutorialMenu[hidden],#tutorialDetail[hidden],#startMenu[hidden]{display:none}
+  #tutorialLibraryExitBtn{position:absolute;top:10px;right:10px;border-color:#a94d61;color:#ff9aae}
+  #tutorialLibraryExitBtn[hidden]{display:none}
+  .tutorialTop{display:flex;align-items:center;gap:10px;margin-bottom:14px}.tutorialTop h2{margin:0;font-size:20px}
+  .tutorialTop button{padding:5px 9px}
+  #tutorialGroups{display:grid;gap:10px}
+  .tutorialGroup{padding:10px;border:1px solid var(--line);border-radius:8px;background:#0c111de6}
+  .tutorialGroup h3{margin:0 0 2px;font-size:14px;color:var(--gold)}
+  .tutorialGroup p{margin:0 0 8px;color:var(--dim);font-size:12px}
+  .tutorialLessons{display:flex;flex-wrap:wrap;gap:5px}.tutorialLessons button{padding:5px 8px;font-size:12px}
+  #tutorialDetail h3{margin:4px 0 12px;color:var(--gold);font-size:19px}
+  #tutorialMechanics{margin:0;padding-left:20px;display:grid;gap:9px;color:var(--ink);line-height:1.35}
+  #tutorialGuide{position:absolute;z-index:8;top:12px;right:12px;width:300px;max-height:calc(100% - 24px);
+    box-sizing:border-box;overflow:auto;padding:12px;border:1px solid #53617c;border-radius:8px;
+    background:#111624ed;box-shadow:0 10px 36px #0009}
+  #tutorialGuide[hidden]{display:none}.tutorialGuideTop{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .tutorialGuideTop strong{color:var(--gold);font-size:14px}.tutorialGuideActions{display:flex;gap:5px}.tutorialGuideTop button{padding:4px 7px;font-size:11px}
+  #tutorialExitBtn{border-color:#a94d61;color:#ff9aae}
+  #tutorialStep{margin-top:9px;color:var(--gold);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  #tutorialActionTitle{margin:3px 0 4px;font-size:17px}#tutorialActionMessage{margin:0;color:var(--ink);font-size:13px;line-height:1.35}
+  @keyframes tutorialTargetPulse{
+    0%,100%{box-shadow:0 0 0 2px #ffd166,0 0 10px #ffd16666}
+    50%{box-shadow:0 0 0 4px #ffd166,0 0 22px #ffd166cc}
+  }
+  button[data-tutorial-target="true"]{position:relative;z-index:9;border-color:#ffd166!important;color:#fff!important;
+    background:#5a461f!important;animation:tutorialTargetPulse 1.1s ease-in-out infinite}
+  @media(prefers-reduced-motion:reduce){button[data-tutorial-target="true"]{animation:none;box-shadow:0 0 0 3px #ffd166}}
+  @media(max-width:640px){
+    #turnPanel{top:8px;left:8px;width:calc(50% - 14px);max-height:42%;padding:7px}
+    .turnShips{grid-template-columns:1fr}
+    #infoShipButtons button{padding:5px 4px;font-size:11px}
+    #hint{bottom:4px;max-width:45%;font-size:10px}
+    #startOverlay{padding:8px}.startCard{width:100%;max-height:100%;padding:16px}
+    .startCard h1{font-size:23px}#startMenuActions{grid-template-columns:1fr}
+    #startMenuActions button{min-height:58px}#gameSetup{grid-template-columns:1fr 1fr}
+    #tutorialGuide{top:auto;right:8px;bottom:8px;left:8px;width:auto;max-height:43%;padding:9px}
+  }
+</style>
+</head>
+<body>
+<div id="mapApp">
+  <div id="topbar">
+    <button id="zoomOut">◀ Zoom Out</button>
+    <div id="breadcrumb"></div>
+  </div>
+  <div id="hint"></div>
+
+  <div id="mapArea">
+    <div id="mapwrap"><canvas id="starmapCv"></canvas></div>
+    <div id="mapwrap3d" style="display:none"><canvas id="cv3d"></canvas></div>
+    <section id="startOverlay" aria-labelledby="startTitle">
+      <div class="startCard">
+        <button id="tutorialLibraryExitBtn" hidden>Exit Tutorial</button>
+        <div id="startMenu">
+          <div class="startEyebrow">Successor Stars</div>
+          <h1 id="startTitle">Command the Sol system</h1>
+          <p>The system begins neutral. Configure the commanders in this campaign or review the strategic mechanics first.</p>
+          <div id="gameSetup">
+            <label>Local players
+              <select id="playerCount">
+                <option value="0">0</option><option value="1" selected>1</option>
+                <option value="2">2</option><option value="3">3</option>
+              </select>
+            </label>
+            <label>NPC commanders
+              <select id="npcCount">
+                <option value="0">0</option><option value="1">1</option>
+                <option value="2" selected>2</option><option value="3">3</option>
+              </select>
+            </label>
+            <label>Captain seed
+              <input id="captainSeed" type="number" value="1" step="1">
+            </label>
+          </div>
+          <div id="setupSummary" role="status"></div>
+          <div id="startMenuActions">
+            <button id="newGameBtn">New Game</button>
+            <button id="tutorialBtn">Tutorial</button>
+          </div>
+        </div>
+        <div id="tutorialMenu" hidden>
+          <div class="tutorialTop"><button id="tutorialBackBtn">← Back</button><h2>Strategic tutorials</h2></div>
+          <div id="tutorialGroups"></div>
+        </div>
+        <div id="tutorialDetail" hidden>
+          <div class="tutorialTop"><button id="tutorialListBtn">← Tutorials</button><h2 id="tutorialGroupTitle"></h2></div>
+          <h3 id="tutorialLessonTitle"></h3>
+          <ul id="tutorialMechanics"></ul>
+        </div>
+      </div>
+    </section>
+    <aside id="tutorialGuide" aria-label="Playable tutorial guidance" hidden>
+      <div class="tutorialGuideTop">
+        <strong>Flight School</strong>
+        <div class="tutorialGuideActions">
+          <button id="tutorialLibraryBtn">Mechanics Library</button>
+          <button id="tutorialExitBtn">Exit Tutorial</button>
+        </div>
+      </div>
+      <div id="tutorialStep"></div>
+      <h2 id="tutorialActionTitle"></h2>
+      <p id="tutorialActionMessage" aria-live="polite"></p>
+    </aside>
+    <aside id="turnPanel" aria-label="Strategic turn roster">
+      <div id="turnPanelHeader">
+        <div id="turnHeading"></div>
+        <button id="turnPanelToggle" type="button" aria-expanded="true" aria-controls="turnFactions">−</button>
+      </div>
+  <div id="turnClock" role="timer"></div>
+  <div id="turnFactions"></div>
+  <div id="infoPanel" aria-label="Fleet controls">
+          <div id="infoCaptain" aria-live="polite"></div>
+          <div id="infoControls">
+          <div id="infoShipButtons">
+            <button id="infoTurnL">◄ Turn</button>
+            <button id="infoTurnR">► Turn</button>
+            <button id="infoForward">▲ Forward</button>
+            <button id="infoBack" title="1 hex astern, keeps facing — costs all remaining AP">▼ Back</button>
+            <button id="infoFire" class="danger">Fire</button>
+            <button id="infoGroupMove" style="display:none">Move command group</button>
+            <button id="infoMerge" style="display:none">Merge Fleets</button>
+            <button id="infoSplit" style="display:none">Split Fleet</button>
+            <button id="infoConquer" style="display:none">Conquer planet</button>
+          </div>
+          <button id="infoEnd" class="primary">End activation</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script type="module" src="map/main.js"></script>
+</body>
+</html>
