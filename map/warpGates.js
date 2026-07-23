@@ -25,6 +25,11 @@ export function buildWarpGates(bodies = []) {
   const pairs = [];
   const gates = new Map();
   const neighbors = new Set();
+  const preferredPairs = [["venus", "jupiter"], ["mercury", "mars"]];
+  for (const pair of preferredPairs) {
+    const indices = pair.map(id => bodies.findIndex(body => body.id === id));
+    if (indices.every(index => index >= 0)) neighbors.add([Math.min(...indices), Math.max(...indices)].join(":"));
+  }
   for (let index = 0; index < bodies.length; index++) {
     const distances = bodies
       .map((body, other) => ({ body, other, distance: Math.hypot(body.position[0] - bodies[index].position[0], body.position[1] - bodies[index].position[1]) }))
@@ -33,9 +38,11 @@ export function buildWarpGates(bodies = []) {
       .slice(0, 3);
     for (const entry of distances) neighbors.add([Math.min(index, entry.other), Math.max(index, entry.other)].join(":"));
   }
+  const replacedPairs = new Set([["mars", "venus"].sort().join(":"), ["jupiter", "mercury"].sort().join(":")]);
   for (const pairKey of neighbors) {
     const [aIndex, bIndex] = pairKey.split(":").map(Number);
     const a = bodies[aIndex], b = bodies[bIndex];
+    if (replacedPairs.has([a.id, b.id].sort().join(":"))) continue;
     const aDirection = directionToward(a.position, b.position);
     const bDirection = directionToward(b.position, a.position);
     const aPosition = offset(a.position, aDirection, WARP_GATE_DISTANCE);
