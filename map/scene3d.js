@@ -296,6 +296,28 @@ export function createSystemScene({
       formation,
     });
     const slots = memberSlots || allShipPositions.map((_, slotIndex) => ({ slotIndex, member: null }));
+    const occupiedPositions = new Set(slots.map(slot => slot.positionIndex ?? slot.slotIndex));
+    const addPositionLabel = (positionIndex, shipX, shipY, shipZ, opacity = 1) => {
+      const labelCanvas = document.createElement("canvas");
+      labelCanvas.width = 64;
+      labelCanvas.height = 64;
+      const labelContext = labelCanvas.getContext("2d");
+      labelContext.font = "bold 34px sans-serif";
+      labelContext.textAlign = "center";
+      labelContext.textBaseline = "middle";
+      labelContext.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+      labelContext.strokeStyle = `rgba(16, 16, 24, ${opacity})`;
+      labelContext.lineWidth = 7;
+      const positionLabel = String(positionIndex + 1);
+      labelContext.strokeText(positionLabel, 32, 32);
+      labelContext.fillText(positionLabel, 32, 32);
+      const label = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: new THREE.CanvasTexture(labelCanvas), transparent: true, depthTest: false,
+      }));
+      label.scale.set(0.72, 0.72, 1);
+      label.position.set(shipX, shipY + 0.72, shipZ);
+      group.add(label);
+    };
     let leadShip = null;
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i];
@@ -315,27 +337,16 @@ export function createSystemScene({
         new THREE.Vector3(Math.cos(rad), 0, Math.sin(rad)),
       );
       group.add(ship);
-      const labelCanvas = document.createElement("canvas");
-      labelCanvas.width = 64;
-      labelCanvas.height = 64;
-      const labelContext = labelCanvas.getContext("2d");
-      labelContext.font = "bold 34px sans-serif";
-      labelContext.textAlign = "center";
-      labelContext.textBaseline = "middle";
-      labelContext.fillStyle = "#ffffff";
-      labelContext.strokeStyle = "#101018";
-      labelContext.lineWidth = 7;
-      const slotLabel = String(positionIndex + 1);
-      labelContext.strokeText(slotLabel, 32, 32);
-      labelContext.fillText(slotLabel, 32, 32);
-      const label = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: new THREE.CanvasTexture(labelCanvas), transparent: true, depthTest: false,
-      }));
-      label.scale.set(0.72, 0.72, 1);
-      label.position.set(shipX, shipY + 0.72, shipZ);
-      group.add(label);
       if (i === 0) leadShip = ship;
     }
+    allShipPositions.forEach(([shipX, shipY, shipZ], positionIndex) => {
+      if (!occupiedPositions.has(positionIndex)) addPositionLabel(positionIndex, shipX, shipY, shipZ, 0.55);
+    });
+    slots.forEach(slot => {
+      const positionIndex = slot.positionIndex ?? slot.slotIndex;
+      const [shipX, shipY, shipZ] = allShipPositions[positionIndex];
+      addPositionLabel(positionIndex, shipX, shipY, shipZ);
+    });
     // Selection outline takes priority over the target outline (a ship
     // can't be both at once anyway -- selected is the acting ship,
     // isTarget is some *other* ship it could fire at); target uses the
