@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { hexDist, key } from "../battle/hexmath.js";
-import { buildWarpGates, WARP_GATE_DISTANCE } from "../map/warpGates.js";
+import { buildWarpGates, warpGateAt, WARP_GATE_DISTANCE, WARP_GATE_RADIUS } from "../map/warpGates.js";
 
 test("warp gates pair nearby planetary cells six hexes from each planet", () => {
   const network = buildWarpGates([
@@ -23,4 +23,7 @@ test("warp gates pair nearby planetary cells six hexes from each planet", () => 
     assert.deepEqual(secondGate.destination, first);
   }
   assert.equal(WARP_GATE_DISTANCE, 6);
+  assert.equal(WARP_GATE_RADIUS, 1);
+  const gate = network.gates.values().next().value;
+  assert.equal(warpGateAt(gate.position, network.gates).id, gate.id);
 });

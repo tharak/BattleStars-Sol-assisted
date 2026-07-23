@@ -3,7 +3,7 @@ import {
   layoutSystemWithMoons, worldToScreen, screenToWorld, strokeFaintRing,
 } from "./orbitmap.js";
 import { voronoiCells } from "./voronoi.js";
-import { buildWarpGates } from "./warpGates.js";
+import { buildWarpGates, warpGateAt, WARP_GATE_RADIUS } from "./warpGates.js";
 import {
   universeLevel, systemLevel,
   ARMADA_DEPLOYMENT_FORMATIONS, FACTIONS, FLEETS_PER_ARMADA,
@@ -536,7 +536,7 @@ function selectShip(e, { npc = false } = {}) {
     setHint(`End ${SC.labelOf(world, activation.u)}'s activation before selecting another ship.`);
     return false;
   }
-  const warp = systemStaticCache?.warpGates?.gates.get(hexKey(...SC.posOf(world, e)));
+  const warp = warpGateAt(SC.posOf(world, e), systemStaticCache?.warpGates?.gates);
   if (warp) {
     SC.setPosition(world, e, ...warp.destination);
     setHint(`${SC.labelOf(world, e)} entered Warp Gate ${warp.id} and emerged six hexes away.`);
@@ -2017,7 +2017,7 @@ function sparseOverlaySnapshot() {
     : null;
   const courseTarget = selectedShip != null ? shipCourses.get(selectedShip) : null;
   const warpGateCells = [...(systemStaticCache?.warpGates?.gates.values() || [])]
-    .map(gate => toCell(gate.position));
+    .flatMap(gate => hexPatch(gate.position, WARP_GATE_RADIUS).map(toCell));
   const warpGateLinks = (systemStaticCache?.warpGates?.pairs || []).map(pair => ({
     from: toCell(pair.positions[0]), to: toCell(pair.positions[1]),
   }));
