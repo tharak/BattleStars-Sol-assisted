@@ -2588,9 +2588,8 @@ function hexToRgba(hex, alpha) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
 
-// Right-button click-and-drag panning, only reachable once the 2D fallback
-// is active (mirrors the 3D scene's right-drag pan -- see scene3d.js).
-// Left stays click-only, reserved for selecting/focusing bodies and fleets.
+// Click-and-drag panning, only reachable once the 2D fallback is active.
+// A short left click remains reserved for selecting/focusing bodies and fleets.
 // Tracked at module scope (not inside renderSystem2D) since a drag can
 // outlive any single render -- mousemove/mouseup listen on window so the
 // drag keeps tracking even if the cursor leaves the canvas. justDragged
@@ -2954,7 +2953,7 @@ function renderSystem2D(entry, data, refreshUi = true) {
   ctx.restore();
 
   canvas.onmousedown = ev => {
-    if (ev.button !== 2) return;
+    if (ev.button !== 0 && ev.button !== 2) return;
     const rect = canvas.getBoundingClientRect();
     dragState = {
       startClientX: ev.clientX, startClientY: ev.clientY,
