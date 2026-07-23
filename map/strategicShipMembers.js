@@ -80,7 +80,8 @@ export function assignMixedFleetSlots(fleets, maxSlots = 57) {
     for (const fleet of ordered) {
       const member = fleet.members[memberIndex];
       if (!member) continue;
-      assignments.push({ slotIndex: assignments.length, fleetId: fleet.fleetId, member });
+      const positionIndex = assignments.length;
+      assignments.push({ slotIndex: positionIndex, positionIndex, fleetId: fleet.fleetId, member });
       added = true;
       if (assignments.length >= maxSlots) break;
     }

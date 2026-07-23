@@ -2876,7 +2876,8 @@ function renderSystem2D(entry, data, refreshUi = true) {
     });
     for (let i = 0; i < ship.memberSlots.length; i++) {
       const slot = ship.memberSlots[i];
-      const [mx, my] = allSlots[slot.slotIndex];
+      const positionIndex = slot.positionIndex ?? slot.slotIndex;
+      const [mx, my] = allSlots[positionIndex];
       const [tip, base1, base2] = shipArrowPoints(mx, my, miniSize, ship.facingDeg);
       ctx.beginPath();
       ctx.moveTo(...tip); ctx.lineTo(...base1); ctx.lineTo(...base2);
@@ -2893,9 +2894,9 @@ function renderSystem2D(entry, data, refreshUi = true) {
       ctx.textBaseline = "middle";
       ctx.lineWidth = Math.max(1, miniSize * 0.55);
       ctx.strokeStyle = "rgba(16, 16, 24, 0.9)";
-      ctx.strokeText(String(slot.slotIndex + 1), mx, my);
+      ctx.strokeText(String(positionIndex + 1), mx, my);
       ctx.fillStyle = "#ffffff";
-      ctx.fillText(String(slot.slotIndex + 1), mx, my);
+      ctx.fillText(String(positionIndex + 1), mx, my);
     }
     // A legal fire target for the currently-selected ship (see
     // shipsSnapshot) -- outlined in the *attacker's* own color (not

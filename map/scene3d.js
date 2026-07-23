@@ -299,7 +299,8 @@ export function createSystemScene({
     let leadShip = null;
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i];
-      const [shipX, shipY, shipZ] = allShipPositions[slot.slotIndex];
+      const positionIndex = slot.positionIndex ?? slot.slotIndex;
+      const [shipX, shipY, shipZ] = allShipPositions[positionIndex];
       const memberColor = slot.member?.isOriginalFlagship ? ACCENT.flagshipArrow
         : slot.member?.state === "routed" ? "#ff3355"
           : slot.member?.state === "shaken" ? "#ffd166" : colorHex;
@@ -324,7 +325,7 @@ export function createSystemScene({
       labelContext.fillStyle = "#ffffff";
       labelContext.strokeStyle = "#101018";
       labelContext.lineWidth = 7;
-      const slotLabel = String(slot.slotIndex + 1);
+      const slotLabel = String(positionIndex + 1);
       labelContext.strokeText(slotLabel, 32, 32);
       labelContext.fillText(slotLabel, 32, 32);
       const label = new THREE.Sprite(new THREE.SpriteMaterial({

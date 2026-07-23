@@ -43,6 +43,7 @@ test("mixed slots alternate Fleet ownership", () => {
     { fleetId: 2, members: [member(3), member(4)] },
   ]);
   assert.deepEqual(slots.map(slot => slot.fleetId), [1, 2, 1, 2]);
+  assert.deepEqual(slots.map(slot => slot.positionIndex), [0, 1, 2, 3]);
 });
 
 test("directional damage uses injected exposure weighting and persists tenths", () => {
