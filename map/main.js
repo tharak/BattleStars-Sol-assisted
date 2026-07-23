@@ -654,12 +654,20 @@ function finishActionRender() {
 function scheduleNpcTurn() {
   if (npcTurnTimer != null) window.clearTimeout(npcTurnTimer);
   npcTurnTimer = null;
+  if (warpAnimations.size > 0) {
+    npcTurnTimer = window.setTimeout(scheduleNpcTurn, WARP_ANIMATION_DURATION + 20);
+    return;
+  }
   if (!shipsSpawned || !isNpcFaction(activeStrategicFaction(strategicTurn))) return;
   npcTurnTimer = window.setTimeout(runNpcActivation, 320);
 }
 
 function runNpcActivation() {
   npcTurnTimer = null;
+  if (warpAnimations.size > 0) {
+    scheduleNpcTurn();
+    return;
+  }
   const faction = activeStrategicFaction(strategicTurn);
   if (!shipsSpawned || !isNpcFaction(faction)) return;
   const fleet = SC.shipsOfFaction(world, faction).find(ship => shipCanActThisTurn(ship));
