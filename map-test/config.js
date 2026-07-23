@@ -18,7 +18,6 @@ export const MAP_TEST_CONFIG = Object.freeze({
   fleetCount: DEFAULT_MAP_CONFIG.fleetCount,
   fleetFormation: DEFAULT_MAP_CONFIG.fleetFormation,
   initialFleetStrength: DEFAULT_MAP_CONFIG.initialFleetStrength,
-  strategicDamagePerHit: DEFAULT_MAP_CONFIG.strategicDamagePerHit * 10,
 });
 
 globalThis.__BATTLESTARS_MAP_CONFIG__ = MAP_TEST_CONFIG;
