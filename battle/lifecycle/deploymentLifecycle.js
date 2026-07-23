@@ -20,7 +20,7 @@ export function selectOrPlaceDeploymentHex(context, [column, row]) {
   const unit = { pos: [column, row], facing: setup.side === Side.BLUE ? 0 : 3 };
   setup.placed.push(unit);
   setup.selected = unit;
-  if (setup.flagShips.length < 3) setup.flagShips.push(unit);
+  if (setup.flagShips.length < (context.FLAGSHIP_COUNT ?? 1)) setup.flagShips.push(unit);
   setup.flagShip = setup.flagShips[0] || null;
   return true;
 }
@@ -37,7 +37,7 @@ export function setDeploymentFlagship(context) {
   if (!setup?.selected) return false;
   const index = setup.flagShips.indexOf(setup.selected);
   if (index >= 0) setup.flagShips.splice(index, 1);
-  else if (setup.flagShips.length < 3) setup.flagShips.push(setup.selected);
+  else if (setup.flagShips.length < (context.FLAGSHIP_COUNT ?? 1)) setup.flagShips.push(setup.selected);
   setup.flagShip = setup.flagShips[0] || null;
   return true;
 }
@@ -55,7 +55,8 @@ export function removeDeploymentUnit(context) {
 
 export function commitDeployment(context) {
   const setup = context.setup;
-  if (!setup || setup.placed.length !== context.SIZE || setup.flagShips.length !== 3) return null;
+  if (!setup || setup.placed.length !== context.SIZE
+      || setup.flagShips.length !== (context.FLAGSHIP_COUNT ?? 1)) return null;
   const side = setup.side;
   context.G.fleets[side].name = "custom";
   for (const placed of setup.placed) {
@@ -66,6 +67,7 @@ export function commitDeployment(context) {
       facing: placed.facing,
       isFlagship: captainIndex >= 0,
       captain: captainIndex >= 0 ? context.G.fleets[side].captains[captainIndex] : null,
+      strength: context.FLEET_STRENGTH ?? 19,
     });
   }
   context.setup = null;

@@ -71,7 +71,10 @@ export function inSetupZone(side, c) { const [lo, hi] = SETUP_ZONE[side]; return
 // Creates one entity with the full standard component set and registers it
 // on its fleet's roster. Shared by formation deployment and manual setup so
 // both paths produce identical entities.
-export function spawnUnit(state, { side, position, facing, isFlagship = false, captain = null }) {
+export function spawnUnit(state, {
+  side, position, facing, isFlagship = false, captain = null,
+  strength = 4,
+}) {
   const { world } = state;
   const roster = state.G.fleets[side].roster;
   const i = roster.length;
@@ -79,7 +82,7 @@ export function spawnUnit(state, { side, position, facing, isFlagship = false, c
   world.add(e, C.Position, { c: position[0], r: position[1] });
   world.add(e, C.Facing, { dir: facing });
   world.add(e, C.Side, { value: side });
-  world.add(e, C.Strength, { value: 4 });
+  world.add(e, C.Strength, { value: strength });
   // A tactical unit is a Fleet.  Its Strength is represented by this
   // compact, visual-only formation of individual Ships in either renderer.
   world.add(e, C.FleetFormation, { name: "sphere" });
@@ -94,7 +97,10 @@ export function spawnUnit(state, { side, position, facing, isFlagship = false, c
 
 export function deployFormation(state, name, side) {
   const { u } = formationLayout(name, state.SIZE);
-  const flagshipIndices = [0, Math.floor((u.length - 1) / 2), u.length - 1];
+  const flagshipCount = Math.max(0, Math.min(u.length, state.FLAGSHIP_COUNT ?? 1));
+  const flagshipIndices = flagshipCount === 0
+    ? []
+    : [0, ...Array.from({ length: flagshipCount - 1 }, (_, index) => index + 1)];
   const straight = side === Side.BLUE ? 0 : 3, toPos = side === Side.BLUE ? 5 : 4, toNeg = side === Side.BLUE ? 1 : 2;
   const [blueAnchor, redAnchor] = DEPLOY_ANCHOR;
   const entities = u.map(([fwd, lat, df], i) => spawnUnit(state, {
@@ -103,6 +109,7 @@ export function deployFormation(state, name, side) {
     facing: df === 0 ? straight : (df > 0 ? toPos : toNeg),
     isFlagship: flagshipIndices.includes(i),
     captain: flagshipIndices.includes(i) ? state.G.fleets[side].captains?.[flagshipIndices.indexOf(i)] : null,
+    strength: state.FLEET_STRENGTH ?? 19,
   }));
   if (name === "sphere") {
     const c = state.world.get(entities[0], C.Position);

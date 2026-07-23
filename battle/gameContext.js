@@ -16,8 +16,12 @@ export class GameContext {
     this.G = null;
     this.scen = null;
     this.ctrlMode = ControlMode.PLAY_BLUE;
-    this.SIZE = 9;
-    this.BREAK_AT = 5;
+    // Match the strategic map's initial armada: three full Fleets, each
+    // representing 19 Ships, with one original flagship for the faction.
+    this.SIZE = 3;
+    this.BREAK_AT = 2;
+    this.FLEET_STRENGTH = 19;
+    this.FLAGSHIP_COUNT = 1;
     this.moveMode = ActivationOrder.INTERLEAVED;
     this.deployMode = DeploymentMode.MANUAL;
     this.act = null;

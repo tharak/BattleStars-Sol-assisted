@@ -54,6 +54,21 @@ test("beginBattle resets the ECS world between matches", () => {
   assert.equal(state.world.createEntity(), 1);
 });
 
+test("battle-map default deployment matches a strategic armada", () => {
+  const state = battleWith(new SeededRandomSource(7));
+  state.G.fleets[0].captains = [{ id: "blue-1" }, { id: "blue-2" }];
+  deployFormation(state, "sphere", 0);
+
+  const roster = state.G.fleets[0].roster;
+  assert.equal(state.SIZE, 3);
+  assert.equal(state.FLEET_STRENGTH, 19);
+  assert.equal(roster.length, 3);
+  assert.equal(roster.filter(entity => state.world.has(entity, C.Flagship)).length, 1);
+  assert.equal(state.world.get(roster[0], C.Strength).value, 19);
+  assert.deepEqual(state.world.get(roster[0], C.Captain), { id: "blue-1" });
+  assert.equal(state.world.has(roster[1], C.Captain), false);
+});
+
 test("fire resolves through injected dice and emits domain events", () => {
   const state = battleWith(new SequenceRandomSource([6, 1, 1, 1, 6]));
   const attacker = spawnUnit(state, { side: 0, position: [10, 13], facing: 0 });
