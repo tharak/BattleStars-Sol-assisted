@@ -1882,7 +1882,7 @@ function colorsFor(cell) {
 // ---------------------------------------------------------------------
 
 const ORBIT_MAX_PX = 420;
-const ORBIT_MARGIN = 55;
+const ORBIT_MARGIN = 90;
 const CANVAS_PX = ORBIT_MAX_PX * 2 + ORBIT_MARGIN * 2;
 
 function renderUniverse(entry, data, nowMs = Date.now()) {
@@ -2418,7 +2418,8 @@ function systemStaticData(data, sourceKey) {
   const wells = gravityWells(layout);
   const gravityCells = gravityHexes(layout);
   const sites = layout.center ? [layout.center, ...layout.planets] : layout.planets;
-  const polygons = voronoiCells(sites.map(site => [site.x, site.y]), [-ORBIT_MAX_PX, -ORBIT_MAX_PX, ORBIT_MAX_PX, ORBIT_MAX_PX]);
+  const voronoiExtent = ORBIT_MAX_PX + ORBIT_MARGIN;
+  const polygons = voronoiCells(sites.map(site => [site.x, site.y]), [-voronoiExtent, -voronoiExtent, voronoiExtent, voronoiExtent]);
   const voronoi = sites.map((site, index) => ({ polygon: polygons[index], color: colorsFor(site).fill }));
   systemStaticCache = { sourceKey, layout, wells, gravityCells, voronoi };
   return systemStaticCache;
