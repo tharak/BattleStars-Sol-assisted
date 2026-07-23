@@ -2418,7 +2418,7 @@ function systemStaticData(data, sourceKey) {
   const wells = gravityWells(layout);
   const gravityCells = gravityHexes(layout);
   const sites = layout.center ? [layout.center, ...layout.planets] : layout.planets;
-  const polygons = voronoiCells(sites.map(site => [site.x, site.y]), [-ORBIT_MAX_PX, -ORBIT_MAX_PX, ORBIT_MAX_PX, ORBIT_MAX_PX]);
+  const polygons = voronoiCells(sites.map(site => [site.x, site.y]), [-ORBIT_MAX_PX, -ORBIT_MAX_PX, ORBIT_MAX_PX, ORBIT_MAX_PX], { metric: "manhattan" });
   const voronoi = sites.map((site, index) => ({ polygon: polygons[index], color: colorsFor(site).fill }));
   systemStaticCache = { sourceKey, layout, wells, gravityCells, voronoi };
   return systemStaticCache;

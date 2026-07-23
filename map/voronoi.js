@@ -19,7 +19,43 @@ function clipHalfPlane(polygon, a, b, c) {
   return clipped;
 }
 
-export function voronoiCells(points, bounds) {
+function manhattanVoronoiCell(points, siteIndex, bounds) {
+  const [minX, minY, maxX, maxY] = bounds;
+  const [siteX, siteY] = points[siteIndex];
+  const nearest = (x, y) => {
+    let winner = 0, best = Infinity;
+    for (let index = 0; index < points.length; index++) {
+      const distance = Math.abs(x - points[index][0]) + Math.abs(y - points[index][1]);
+      if (distance < best) { best = distance; winner = index; }
+    }
+    return winner;
+  };
+  const polygon = [];
+  for (let step = 0; step < 128; step++) {
+    const angle = step * Math.PI * 2 / 128;
+    const dx = Math.cos(angle), dy = Math.sin(angle);
+    let maxT = Infinity;
+    if (dx > 0) maxT = Math.min(maxT, (maxX - siteX) / dx);
+    if (dx < 0) maxT = Math.min(maxT, (minX - siteX) / dx);
+    if (dy > 0) maxT = Math.min(maxT, (maxY - siteY) / dy);
+    if (dy < 0) maxT = Math.min(maxT, (minY - siteY) / dy);
+    let low = 0, high = Math.max(0, maxT);
+    if (nearest(siteX + dx * high, siteY + dy * high) === siteIndex) {
+      polygon.push([siteX + dx * high, siteY + dy * high]);
+      continue;
+    }
+    for (let iteration = 0; iteration < 18; iteration++) {
+      const middle = (low + high) / 2;
+      if (nearest(siteX + dx * middle, siteY + dy * middle) === siteIndex) low = middle;
+      else high = middle;
+    }
+    polygon.push([siteX + dx * low, siteY + dy * low]);
+  }
+  return polygon;
+}
+
+export function voronoiCells(points, bounds, { metric = "euclidean" } = {}) {
+  if (metric === "manhattan") return points.map((_point, index) => manhattanVoronoiCell(points, index, bounds));
   const [minX, minY, maxX, maxY] = bounds;
   const cells = [];
   for (let index = 0; index < points.length; index++) {
