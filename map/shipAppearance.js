@@ -6,19 +6,19 @@ export const STRATEGIC_FACTION_COLORS = Object.freeze({
 
 export const STRATEGIC_SHIP_ICON_RADIUS = 2.2;
 
-export function strategicShipColor(faction, hasActed = false) {
-  const colors = STRATEGIC_FACTION_COLORS[faction];
+export function strategicShipColor(faction, hasActed = false, palette = STRATEGIC_FACTION_COLORS) {
+  const colors = palette[faction];
   if (!colors) return "#1a2133";
   return hasActed ? colors.acted : colors.fill;
 }
 
-export function strategicLaserColor(faction) {
-  return STRATEGIC_FACTION_COLORS[faction]?.fill || "#ffffff";
+export function strategicLaserColor(faction, palette = STRATEGIC_FACTION_COLORS) {
+  return palette[faction]?.fill || "#ffffff";
 }
 
 const FLEET_TONE_FACTORS = Object.freeze([-0.24, -0.16, -0.08, 0, 0.08, 0.16, 0.24]);
-export function strategicFleetTone(faction, fleetId, hasActed = false) {
-  const base = strategicShipColor(faction, hasActed);
+export function strategicFleetTone(faction, fleetId, hasActed = false, palette = STRATEGIC_FACTION_COLORS) {
+  const base = strategicShipColor(faction, hasActed, palette);
   const amount = FLEET_TONE_FACTORS[Math.abs(Number(fleetId) || 0) % FLEET_TONE_FACTORS.length];
   const value = parseInt(base.slice(1), 16);
   const channels = [(value >> 16) & 255, (value >> 8) & 255, value & 255].map(channel => (

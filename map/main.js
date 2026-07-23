@@ -1467,7 +1467,7 @@ function doFireAt(tgt) {
   effects.push({
     kind: "tracer",
     from: SC.posOf(world, firer), to: targetPosition, hit: damage > 0, start: performance.now(),
-    colorHex: strategicLaserColor(SC.factionOf(world, firer)),
+    colorHex: strategicLaserColor(SC.factionOf(world, firer), FACTION_COLORS),
     dur: damage > 0 ? LASER_DURATION.hit : LASER_DURATION.miss,
   });
   activation.fired = true; activation.fireMode = false;
@@ -1902,7 +1902,7 @@ const textureFor = cell => BODY_TEXTURES[cell.id];
 // shipsSnapshot), and a small icon needs to read as a bright dot from
 // across the whole system at a glance, not blend into the rest of the
 // palette the way a bigger shape safely could.
-const FACTION_COLORS = STRATEGIC_FACTION_COLORS;
+const FACTION_COLORS = activeMapConfig().factionColors || STRATEGIC_FACTION_COLORS;
 
 function colorsFor(cell) {
   const p = (cell.faction && FACTION_COLORS[cell.faction]) || ID_COLORS[cell.id];
@@ -2293,7 +2293,7 @@ function shipsSnapshot(wells = []) {
       strength: memberCount(e), effectiveStrength: fleetStrength(e), formation: SC.fleetFormationOf(world, e),
       isTarget: stack.fleetIds.some(fleet => targets?.has(fleet)), targetColor,
       isGroupMember: stack.fleetIds.some(fleet => groupMembers?.has(fleet)),
-      hasActed, colorHex: warp ? "#e6a7ff" : strategicFleetTone(SC.factionOf(world, e), e, hasActed),
+      hasActed, colorHex: warp ? "#e6a7ff" : strategicFleetTone(SC.factionOf(world, e), e, hasActed, FACTION_COLORS),
       x, y,
     };
   });

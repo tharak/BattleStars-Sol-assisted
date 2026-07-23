@@ -6,6 +6,7 @@ export const DEFAULT_MAP_CONFIG = Object.freeze({
     green: Object.freeze({ label: "Green", startAt: "venus" }),
     red: Object.freeze({ label: "Red", startAt: "mars" }),
   }),
+  factionColors: null,
   planetIds: Object.freeze(["mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune"]),
   planetAxisAu: Object.freeze({
     mercury: 0.387, venus: 0.723, earth: 1, mars: 1.524,
