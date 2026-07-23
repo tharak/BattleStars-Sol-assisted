@@ -622,6 +622,18 @@ export function createSystemScene({
       transientOverlayGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({
         color: 0xd66dff, transparent: true, opacity: 0.75,
       })));
+      const dx = toX - fromX, dz = toZ - fromZ, length = Math.hypot(dx, dz) || 1;
+      const ux = dx / length, uz = dz / length, px = -uz, pz = ux;
+      const midX = (fromX + toX) / 2, midZ = (fromZ + toZ) / 2;
+      const chevronPositions = [];
+      for (const direction of [-1, 1]) {
+        const baseX = midX + ux * direction * 10, baseZ = midZ + uz * direction * 10;
+        chevronPositions.push(baseX + px * 4, SPARSE_OVERLAY_Y, baseZ + pz * 4, midX, SPARSE_OVERLAY_Y, midZ);
+        chevronPositions.push(midX, SPARSE_OVERLAY_Y, midZ, baseX - px * 4, SPARSE_OVERLAY_Y, baseZ - pz * 4);
+      }
+      const chevronGeometry = new THREE.BufferGeometry();
+      chevronGeometry.setAttribute("position", new THREE.Float32BufferAttribute(chevronPositions, 3));
+      transientOverlayGroup.add(new THREE.LineSegments(chevronGeometry, new THREE.LineBasicMaterial({ color: 0xe6a7ff, transparent: true, opacity: 0.95 })));
     }
     addCourseLines(courseLines, projectPoint);
     if (colorHex) {

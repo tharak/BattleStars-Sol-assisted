@@ -2688,6 +2688,19 @@ function renderSystem2D(entry, data, refreshUi = true) {
     ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.setLineDash([]);
+    const dx = toX - fromX, dy = toY - fromY, length = Math.hypot(dx, dy) || 1;
+    const ux = dx / length, uy = dy / length, px = -uy, py = ux;
+    const midX = (fromX + toX) / 2, midY = (fromY + toY) / 2;
+    ctx.beginPath();
+    for (const direction of [-1, 1]) {
+      const baseX = midX + ux * direction * 10, baseY = midY + uy * direction * 10;
+      ctx.moveTo(baseX + px * 4, baseY + py * 4);
+      ctx.lineTo(midX, midY);
+      ctx.lineTo(baseX - px * 4, baseY - py * 4);
+    }
+    ctx.strokeStyle = "#e6a7ff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
   }
   for (const line of sparseOverlay.courseLines) {
     const [fromX, fromY] = warpedGravityPoint(line.from.x, line.from.z, wells);
