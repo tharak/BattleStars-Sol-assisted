@@ -9,7 +9,7 @@ export const MAP_TEST_CONFIG = Object.freeze({
     red: Object.freeze({ label: "Red", startAt: "venus" }),
   }),
   factionColors: Object.freeze({
-    blue: Object.freeze({ fill: "#00ffb3", stroke: "#00ffb3", acted: "#00845d" }),
+    blue: Object.freeze({ fill: "#b86bff", stroke: "#b86bff", acted: "#6d3f9f" }),
     red: Object.freeze({ fill: "#00e5ff", stroke: "#00e5ff", acted: "#007985" }),
   }),
   planetIds: Object.freeze(["earth", "venus"]),
