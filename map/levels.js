@@ -14,6 +14,7 @@ import {
   AU_KM, BODY_RADIUS_KM, MAJOR_MOON_RADIUS_KM, PARENT_GM_KM3S2,
   keplerPeriodDays, angleAtDeg, J2000_MS, hashAngleDeg,
 } from "./orbits.js";
+import { activeMapConfig } from "./config.js";
 
 // ---------------------------------------------------------------------
 // Real solar-system data
@@ -255,14 +256,10 @@ function moonsOf(bodyId) {
 // is; these two exports are never read again afterward.
 // ---------------------------------------------------------------------
 
-export const FACTIONS = {
-  blue:  { label: "Blue",  startAt: "earth" },
-  green: { label: "Green", startAt: "venus" },
-  red:   { label: "Red",   startAt: "mars" },
-};
+export const FACTIONS = activeMapConfig().factions;
 // An Armada is the faction-level force. It initially deploys three full Fleet
 // tokens, with one original flagship commanding the group.
-export const FLEETS_PER_ARMADA = 3;
+export const FLEETS_PER_ARMADA = activeMapConfig().fleetCount;
 
 export const FLEET_POSITIONS = {};
 
@@ -281,7 +278,9 @@ export function initFleetPositions(nowMs = Date.now()) {
 
 // The Armada's initial deployment layout only. A Fleet's own in-hex Ship
 // formation is stored on its ECS entity and can be changed in the info panel.
-export const ARMADA_DEPLOYMENT_FORMATIONS = { blue: "sphere", green: "sphere", red: "sphere" };
+export const ARMADA_DEPLOYMENT_FORMATIONS = Object.fromEntries(
+  Object.keys(FACTIONS).map(faction => [faction, activeMapConfig().fleetFormation]),
+);
 
 // Compatibility exports for external scenario scripts. New map code uses the
 // Armada names above; these aliases do not describe a Fleet's in-hex Ships.
