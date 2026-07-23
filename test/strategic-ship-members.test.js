@@ -4,7 +4,7 @@ import { FiringArc } from "../battle/domain/constants.js";
 import { SequenceRandomSource } from "../battle/core/random.js";
 import {
   StrategicShipState, allocateCollisionLosses, applyDirectionalDamage,
-  assignMixedFleetSlots, fleetEffectiveStrength, resolveHexVolley,
+  assignMixedFleetSlots, fleetEffectiveStrength, repairStrategicMembers, resolveHexVolley,
   splitStrategicMembers,
 } from "../map/strategicShipMembers.js";
 
@@ -15,6 +15,14 @@ test("Fleet Strength sums member health and halves Shaken members", () => {
     member(1), member(2, { health: 0.6 }), member(3, { state: StrategicShipState.SHAKEN }),
     member(4, { state: StrategicShipState.ROUTED }),
   ]), 2.1);
+});
+
+test("planets repair the most damaged living Ships without reviving losses", () => {
+  const result = repairStrategicMembers([
+    member(1, { health: 0.4 }), member(2, { health: 0.8 }), member(3, { health: 0 }),
+  ], 0.5);
+  assert.deepEqual(result.members.map(ship => ship.health), [0.9, 0.8, 0]);
+  assert.equal(result.repaired, 0.5);
 });
 
 test("split detaches 19 above the layer size and halves smaller Fleets weakest-first", () => {

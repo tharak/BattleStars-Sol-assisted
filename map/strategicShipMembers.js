@@ -30,6 +30,22 @@ export function fleetEffectiveStrength(members) {
   return Math.round((members || []).reduce((total, member) => total + memberEffectiveStrength(member), 0) * 1000) / 1000;
 }
 
+export function repairStrategicMembers(members, repairPoints = 0) {
+  const next = (members || []).map(member => ({ ...member }));
+  let remaining = Math.max(0, Math.round(Number(repairPoints) * 10));
+  const damaged = next
+    .filter(member => member.health > 0 && member.health < 1)
+    .sort((a, b) => a.health - b.health || a.id - b.id);
+  for (const member of damaged) {
+    while (remaining > 0 && member.health < 1) {
+      member.health = roundTenth(Math.min(1, member.health + 0.1));
+      remaining--;
+    }
+    if (remaining <= 0) break;
+  }
+  return { members: next, repaired: Math.round((Number(repairPoints) * 10 - remaining)) / 10 };
+}
+
 export function splitStrategicMembers(members) {
   if (!Array.isArray(members) || members.length < 2) return null;
   const detachedCount = members.length <= 19 ? Math.floor(members.length / 2) : 19;

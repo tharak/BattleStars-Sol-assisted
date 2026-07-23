@@ -39,17 +39,17 @@ import {
 } from "./shipAppearance.js";
 import {
   GRAVITY_INFLUENCE_RADIUS_FACTOR, INITIAL_FLEET_STRENGTH,
-  MAX_FLEET_STRENGTH, MAX_SHIPS_PER_HEX, PRODUCTION_FLEETS_PER_TURN, STRATEGIC_DAMAGE_PER_HIT,
+  MAX_FLEET_STRENGTH, MAX_SHIPS_PER_HEX, STRATEGIC_DAMAGE_PER_HIT,
 } from "./strategicBalance.js";
 import {
   bodyResourceValue, canConquerPlanet, conquestCompletionRound,
-  conquestDurationTurns, spawnPointTowardSun,
+  conquestDurationTurns,
 } from "./strategicEconomy.js";
 import { blocksFleetMovement, mergeSurvivorId } from "./strategicFleetActions.js";
 import {
   StrategicShipState, allocateCollisionLosses, applyDirectionalDamage,
   assignMixedFleetSlots, createStrategicMembers, fleetEffectiveStrength,
-  resolveHexVolley, splitStrategicMembers,
+  repairStrategicMembers, resolveHexVolley, splitStrategicMembers,
 } from "./strategicShipMembers.js";
 import {
   createPlayableTutorialMap, nextPlayableTutorialStep,
@@ -1173,40 +1173,24 @@ function beginConquest() {
   completeCurrentActivation({ preserveHint: true });
 }
 
-function openProductionHex(planet) {
-  const gravityRadiusPx = planet.rPx * GRAVITY_INFLUENCE_RADIUS_FACTOR;
-  const desiredPoint = spawnPointTowardSun({
-    planetX: planet.x, planetY: planet.y, gravityRadiusPx, hexSizePx: GRID_HEX_SIZE_PX,
-  });
-  const desired = pixelToHexIndex(...desiredPoint);
-  const occupied = SC.occupiedSet(world);
-  const candidates = hexPatch(desired, 4).sort((a, b) => {
-    const [ax, ay] = shipHexOffset(a[0], a[1]);
-    const [bx, by] = shipHexOffset(b[0], b[1]);
-    return Math.hypot(ax - desiredPoint[0], ay - desiredPoint[1])
-      - Math.hypot(bx - desiredPoint[0], by - desiredPoint[1]);
-  });
-  return candidates.find(hex => {
-    if (occupied.has(hexKey(hex[0], hex[1]))) return false;
-    const [x, y] = shipHexOffset(hex[0], hex[1]);
-    return Math.hypot(x - planet.x, y - planet.y) > gravityRadiusPx;
-  }) || null;
-}
-
-function produceFleet(planet, faction) {
-  const position = openProductionHex(planet);
-  if (!position) return null;
-  const roster = armadaRoster.get(faction);
-  const ship = SC.spawnFleet(world, {
-    faction, c: position[0], r: position[1], dir: directionToward(position, [0, 0]),
-    label: `${faction[0].toUpperCase()}${roster.length + 1}`,
-    strength: planet.resourceValue,
-  });
-  roster.push(ship);
-  attachFreshMembers(ship, planet.resourceValue);
-  shipTurnMp.set(ship, MP_MAX);
-  shipTurnTurns.set(ship, 0);
-  return ship;
+function healFleetAtPlanet(planet, faction) {
+  const radius = planet.rPx * GRAVITY_INFLUENCE_RADIUS_FACTOR;
+  const candidates = (armadaRoster.get(faction) || [])
+    .filter(fleet => SC.isAlive(world, fleet) && membersOf(fleet).some(member => member.health > 0 && member.health < 1))
+    .map(fleet => {
+      const [fleetX, fleetY] = shipHexOffset(...SC.posOf(world, fleet));
+      const distance = Math.hypot(fleetX - planet.x, fleetY - planet.y);
+      const damage = membersOf(fleet).reduce((total, member) => total + Math.max(0, 1 - member.health), 0);
+      return { fleet, distance, damage };
+    })
+    .filter(candidate => candidate.distance <= radius)
+    .sort((a, b) => b.damage - a.damage || a.distance - b.distance || a.fleet - b.fleet);
+  const target = candidates[0];
+  if (!target) return 0;
+  const result = repairStrategicMembers(membersOf(target.fleet), planet.resourceValue);
+  strategicMembers.set(target.fleet, result.members);
+  syncStrategicFleet(target.fleet);
+  return result.repaired;
 }
 
 function startFactionEconomyTurn(layout, faction, round) {
@@ -1225,14 +1209,12 @@ function startFactionEconomyTurn(layout, faction, round) {
     }
   }
 
-  let produced = 0;
+  let healed = 0;
   for (const planet of layout.planets) {
     const economy = planetEconomy.get(planet.id);
     const turnKey = `${round}:${faction}`;
     if (economy.owner !== faction || economy.lastProducedTurn === turnKey) continue;
-    for (let index = 0; index < PRODUCTION_FLEETS_PER_TURN; index++) {
-      if (produceFleet(planet, faction) != null) produced++;
-    }
+    healed += healFleetAtPlanet(planet, faction);
     economy.lastProducedTurn = turnKey;
   }
   beginFactionCourseAnimation(faction);
@@ -1240,7 +1222,7 @@ function startFactionEconomyTurn(layout, faction, round) {
     ...completed,
     morale.rallied ? `${morale.rallied} Ship${morale.rallied === 1 ? "" : "s"} rallied` : "",
     morale.retreated ? `${morale.retreated} routed Fleet${morale.retreated === 1 ? "" : "s"} retreated` : "",
-    produced ? `${FACTIONS[faction].label} produces ${produced} Fleet${produced === 1 ? "" : "s"}` : "",
+    healed ? `${FACTIONS[faction].label} planets repaired ${healed.toFixed(1)} Ship health` : "",
   ]
     .filter(Boolean).join(". ");
 }
