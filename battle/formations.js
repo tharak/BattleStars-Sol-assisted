@@ -6,6 +6,14 @@ import * as C from "./components.js";
 
 // mirrors battle_sim.py exactly
 export function formationLayout(name, size) {
+  if (size === 3) {
+    if (name === "line") return { u: range(-1, 1).map(l => [0, l, 0]), flag: 1 };
+    if (name === "spindle") return { u: [[1, 0, 0], [0, 0, 0], [-1, 0, 0]], flag: 1 };
+    if (name === "crescent") return { u: [[1, -1, 0], [0, 0, 0], [1, 1, 0]], flag: 1 };
+    if (name === "echelon") return { u: [[1, -1, 0], [0, 0, 0], [-1, 1, 0]], flag: 1 };
+    if (name === "sphere") return { u: [[0, 0, 0], [1, 0, 0], [0, -1, 0]], flag: 0 };
+    if (name === "column") return { u: range(-1, 1).map(f => [f, 0, 0]), flag: 1 };
+  }
   if (size === 5) {
     if (name === "line")    return { u: range(-2,2).map(l => [0,l,0]), flag: 2 };
     if (name === "spindle") return { u: [[1,0,0],[0,-1,0],[0,0,0],[0,1,0],[-1,0,0]], flag: 2 };
