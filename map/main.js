@@ -512,6 +512,20 @@ function activationCommitted() {
   return !!(activation && (activation.moved || activation.fired || activation.courseSet || activationParticipants().length > 1));
 }
 
+function warpFactionFleets(faction) {
+  const gates = systemStaticCache?.warpGates?.gates;
+  if (!gates) return 0;
+  let teleported = 0;
+  for (const fleet of armadaRoster.get(faction) || []) {
+    if (!SC.isAlive(world, fleet)) continue;
+    const gate = warpGateAt(SC.posOf(world, fleet), gates);
+    if (!gate) continue;
+    SC.setPosition(world, fleet, ...gate.destination);
+    teleported++;
+  }
+  return teleported;
+}
+
 // Selecting a ship resets its activation fresh (mirrors
 // battle/lifecycle/activationLifecycle.js:selectUnit). Strategic turns add
 // the active-faction and already-acted gates around the shared ship rules.
@@ -589,12 +603,16 @@ function completeCurrentActivation({ preserveHint = false } = {}) {
     nowMs: performance.now(),
     eligibleFactionIds: economicallyEligibleFactions(),
   });
+  const teleported = strategicTurn.round !== previousRound || activeStrategicFaction(strategicTurn) !== previousFaction
+    ? warpFactionFleets(activeStrategicFaction(strategicTurn))
+    : 0;
   const economyHint = processStrategicTurnTransition(previousTurn, strategicTurn);
   lastRenderedTimerSecond = null;
   clearSelection();
   if (strategicTurn.round !== previousRound || activeStrategicFaction(strategicTurn) !== previousFaction) {
     const nextTurn = `${FACTIONS[activeStrategicFaction(strategicTurn)].label} turn begins.`;
-    const transitionHint = economyHint ? `${nextTurn} ${economyHint}.` : nextTurn;
+    const warpHint = teleported ? ` ${teleported} Fleet${teleported === 1 ? "" : "s"} crossed a Warp Gate.` : "";
+    const transitionHint = economyHint ? `${nextTurn}${warpHint} ${economyHint}.` : `${nextTurn}${warpHint}`;
     setHint(preserveHint ? `${resultHint} ${transitionHint}` : transitionHint);
   } else if (!preserveHint) {
     setHint("");
