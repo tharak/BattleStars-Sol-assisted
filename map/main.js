@@ -560,7 +560,7 @@ function selectShip(e, { npc = false } = {}) {
     setHint(`End ${SC.labelOf(world, activation.u)}'s activation before selecting another ship.`);
     return false;
   }
-  const warp = warpGateAt(SC.posOf(world, e), systemStaticCache?.warpGates?.gates);
+  const warp = warpAnimations.has(e) ? null : warpGateAt(SC.posOf(world, e), systemStaticCache?.warpGates?.gates);
   if (warp) {
     startWarpAnimation(e, warpGateDestination(SC.posOf(world, e), warp));
     setHint(`${SC.labelOf(world, e)} entered Warp Gate ${warp.id} and emerged six hexes away.`);
