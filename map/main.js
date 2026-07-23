@@ -195,6 +195,7 @@ const effects = [];
 const warpAnimations = new Map();
 const WARP_ANIMATION_DURATION = 420;
 const STRATEGIC_EXPLOSION_DURATION = 720;
+const STRATEGIC_DAMAGE_DURATION = 900;
 // The RAF-loop mechanics for fading `effects` out -- see render()'s use
 // of this below, and battle/core/effectLoop.js for why this is shared
 // with battle/render.js's own laser-fade loop instead of a second
@@ -1441,6 +1442,10 @@ function doFireAt(tgt) {
     strategicMembers.set(fleet, outcome.members);
     syncStrategicFleet(fleet);
     damage += hits * STRATEGIC_DAMAGE_PER_HIT;
+    effects.push({
+      kind: "damage", position: [...SC.posOf(world, fleet)], amount: hits * STRATEGIC_DAMAGE_PER_HIT,
+      start: performance.now(), dur: STRATEGIC_DAMAGE_DURATION,
+    });
     destroyed += outcome.destroyedIds.length;
     for (const memberId of outcome.destroyedIds) {
       const slot = slotAssignments.find(assignment => assignment.member.id === memberId);
@@ -2503,7 +2508,7 @@ function renderSystem3D(entry, data, refreshUi = true) {
     scene3dStaticSource = entry.systemId;
   }
 
-  scene.rebuildDynamic(({ addShip, addTracer, addExplosion }) => {
+  scene.rebuildDynamic(({ addShip, addTracer, addExplosion, addDamageNumber }) => {
     for (const s of ships) {
       addShip({
         x: s.x, z: s.y, colorHex: s.colorHex, data: s,
@@ -2522,6 +2527,13 @@ function renderSystem3D(entry, data, refreshUi = true) {
         const [gridX, gridY] = shipHexOffset(...eff.position);
         const [x, z] = warpedGravityPoint(gridX, gridY, wells);
         addExplosion({ x, z, slotIndex: eff.slotIndex, seed: eff.seed, progress: (now - eff.start) / eff.dur });
+        continue;
+      }
+      if (eff.kind === "damage") {
+        const progress = Math.max(0, Math.min(1, (now - eff.start) / eff.dur));
+        const [gridX, gridZ] = shipHexOffset(...eff.position);
+        const [x, z] = warpedGravityPoint(gridX, gridZ, wells);
+        addDamageNumber({ x, z, text: `-${eff.amount.toFixed(1)}`, progress, alpha: 1 - progress });
         continue;
       }
       const alpha = 1 - (now - eff.start) / eff.dur;
@@ -2922,6 +2934,23 @@ function renderSystem2D(entry, data, refreshUi = true) {
         ctx.lineTo(slot[0] + Math.cos(angle) * outer, slot[1] + Math.sin(angle) * outer);
         ctx.stroke();
       }
+      ctx.restore();
+      continue;
+    }
+    if (eff.kind === "damage") {
+      const progress = Math.max(0, Math.min(1, (effNow - eff.start) / eff.dur));
+      const [gridX, gridY] = shipHexOffset(...eff.position);
+      const [worldX, worldY] = warpedGravityPoint(gridX, gridY, wells);
+      const [screenX, screenY] = worldToScreen(camera2d, worldX, worldY);
+      ctx.save();
+      ctx.globalAlpha = 1 - progress;
+      ctx.font = "bold 16px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#160b19";
+      ctx.strokeText(`-${eff.amount.toFixed(1)}`, screenX, screenY - progress * 30 - 12);
+      ctx.fillStyle = "#ff7895";
+      ctx.fillText(`-${eff.amount.toFixed(1)}`, screenX, screenY - progress * 30 - 12);
       ctx.restore();
       continue;
     }

@@ -459,6 +459,27 @@ export function createSystemScene({
     buildGroup.add(new LineSegments2(rayGeo, rayMat));
   }
 
+  function addDamageNumber({ x, z, text, progress = 0, alpha = 1 }) {
+    const canvasText = document.createElement("canvas");
+    canvasText.width = 256;
+    canvasText.height = 96;
+    const context = canvasText.getContext("2d");
+    context.font = "bold 54px system-ui, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.lineWidth = 10;
+    context.strokeStyle = "#160b19";
+    context.strokeText(text, 128, 48);
+    context.fillStyle = "#ff7895";
+    context.fillText(text, 128, 48);
+    const texture = new THREE.CanvasTexture(canvasText);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: alpha, depthTest: false }));
+    sprite.position.set(x, 4 + progress * 3, z);
+    sprite.scale.set(4.5, 1.7, 1);
+    buildGroup.add(sprite);
+  }
+
   // One merged flat mesh covering every hex a single body's gravity
   // reaches, tinted that body's own color -- a big body's field can cover
   // a thousand-plus hexes (see gravityHexes in map/main.js), so this
@@ -678,7 +699,7 @@ export function createSystemScene({
   function rebuildDynamic(fn) {
     rebuildGroup(
       dynamicGroup, dynamicPickables, fn,
-      { addShip, addTracer, addExplosion },
+      { addShip, addTracer, addExplosion, addDamageNumber },
     );
     canvas.dataset.dynamicBuilds = String(++dynamicBuildCount);
   }
