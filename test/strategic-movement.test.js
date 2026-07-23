@@ -96,16 +96,16 @@ test("a gravity drift becomes the advertised destination without extra MP", () =
   assert.deepEqual(route.forcedSteps, [{ from: [1, 0], to: [1, -1], direction: 1, wellId: "earth", actionIndex: 0 }]);
 });
 
-test("a transport lane jump is a one-point multi-hex route", () => {
+test("entering a transport lane automatically starts a multi-hex jump", () => {
   const routes = findReachableDestinations({
-    position: [0, 0], facing: 0, activation: { u: 1, mp: 1, turns: 0 },
-    resolveTransportMovement: position => position[0] === 0
+    position: [0, 0], facing: 0, activation: { u: 1, mp: 2, turns: 0 },
+    resolveTransportMovement: position => position[0] === 1
       ? [{ position: [3, 0], laneId: "sun-earth", jumpHexes: 3 }]
       : [],
   });
   const route = routes.get("3,0");
-  assert.equal(route.cost, 1);
-  assert.deepEqual(route.actions, [StrategicMoveAction.TRANSPORT_JUMP]);
+  assert.equal(route.cost, 2);
+  assert.deepEqual(route.actions, [StrategicMoveAction.FORWARD, StrategicMoveAction.TRANSPORT_JUMP]);
   assert.equal(route.transportSteps[0].laneId, "sun-earth");
 });
 

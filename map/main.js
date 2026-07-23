@@ -71,7 +71,6 @@ const infoForward = document.getElementById("infoForward");
 const infoBack = document.getElementById("infoBack");
 const infoFire = document.getElementById("infoFire");
 const infoTravel = document.getElementById("infoTravel");
-const infoTransport = document.getElementById("infoTransport");
 const infoGroupMove = document.getElementById("infoGroupMove");
 const infoMerge = document.getElementById("infoMerge");
 const infoSplit = document.getElementById("infoSplit");
@@ -1466,13 +1465,6 @@ function armTravel() {
   advancePlayableTutorial("course-armed");
   render();
 }
-function armTransport() {
-  if (!activation) return;
-  groupMoveArmed = false;
-  travelArmed = true;
-  setHint("Click a transport-lane destination to set a fast course.");
-  render();
-}
 function toggleCourse() {
   if (!activation) return;
   if (!shipCourses.has(activation.u)) {
@@ -1603,9 +1595,6 @@ function renderInfoPanel() {
     const course = shipCourses.get(u);
     infoTravel.textContent = course ? "Cancel Course" : "Set Course";
     infoTravel.title = course ? `Cancel target ${course.join(",")}` : "Choose a target hex for next-turn movement";
-    infoTransport.style.display = course ? "none" : "";
-    infoTransport.disabled = !SC.canMove(activation);
-    infoTransport.title = "Choose a destination; course planning will prefer available transport lanes.";
     infoGroupMove.style.display = SC.isFlagship(world, u) ? "" : "none";
     infoGroupMove.textContent = groupMoveEnabled
       ? "Cancel group move"
@@ -1634,7 +1623,6 @@ function renderInfoPanel() {
   infoMerge.style.display = "none";
   infoSplit.style.display = "none";
   infoConquer.style.display = "none";
-  infoTransport.style.display = "none";
   infoPanel.style.display = "none";
 }
 infoTurnL.onclick = () => doTurn(1);
@@ -1643,7 +1631,6 @@ infoForward.onclick = doForward;
 infoBack.onclick = doBackward;
 infoFire.onclick = armFireMode;
 infoTravel.onclick = toggleCourse;
-infoTransport.onclick = armTransport;
 infoGroupMove.onclick = toggleGroupMove;
 infoMerge.onclick = mergeFleets;
 infoSplit.onclick = splitFleet;
@@ -2518,7 +2505,6 @@ function systemStaticData(data, sourceKey) {
   if (layout.center) bodyCells.push({ id: layout.center.id, position: [0, 0], rotation: gravitySpinDirection(layout.center.id), gravityRadius: gravityHexRadius({ bodyRadiusPx: layout.center.rPx, hexSizePx: GRID_HEX_SIZE_PX, factor: GRAVITY_INFLUENCE_RADIUS_FACTOR }) });
   for (const planet of layout.planets) {
     bodyCells.push({ id: planet.id, parentId: layout.center?.id, position: planetHex(planet), rotation: gravitySpinDirection(planet.id), gravityRadius: gravityHexRadius({ bodyRadiusPx: planet.rPx, hexSizePx: GRID_HEX_SIZE_PX, factor: GRAVITY_INFLUENCE_RADIUS_FACTOR }) });
-    for (const moon of planet.moons) bodyCells.push({ id: moon.id, parentId: planet.id, position: planetHex(moon), rotation: gravitySpinDirection(planet.id), gravityRadius: gravityHexRadius({ bodyRadiusPx: moon.rPx, hexSizePx: GRID_HEX_SIZE_PX, factor: GRAVITY_INFLUENCE_RADIUS_FACTOR }) });
   }
   const transportNetwork = buildTransportNetwork(bodyCells);
   const mergedGravityCells = mergeTransportCells(gravityCells, transportNetwork, (c, r) => shipHexOffset(c, r));

@@ -14,11 +14,10 @@ test("transport network builds deterministic parent-child lanes and ambush nodes
   const network = buildTransportNetwork([
     { id: "sun", position: [0, 0], rotation: 1, gravityRadius: 4 },
     { id: "earth", parentId: "sun", position: [12, 0], rotation: 1, gravityRadius: 3 },
-    { id: "moon", parentId: "earth", position: [16, 1], rotation: 1, gravityRadius: 2 },
   ]);
-  assert.deepEqual(network.lanes.map(lane => lane.id), ["earth-moon", "sun-earth"]);
-  assert.equal(network.lanes.length, 2);
-  assert.ok(network.lanes.every(lane => lane.endpoints.every(([c, r]) => !((c === 0 && r === 0) || (c === 12 && r === 0) || (c === 16 && r === 1)))));
+  assert.deepEqual(network.lanes.map(lane => lane.id), ["sun-earth"]);
+  assert.equal(network.lanes.length, 1);
+  assert.ok(network.lanes.every(lane => lane.endpoints.every(([c, r]) => !((c === 0 && r === 0) || (c === 12 && r === 0)))));
   assert.ok(network.lanes.every(lane => lane.ambushCells.every(cell => network.cells.get(`${cell[0]},${cell[1]}`).ambush)));
 });
 

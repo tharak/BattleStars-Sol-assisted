@@ -110,7 +110,7 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   await expect(page.locator(".turnShip").first()).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#infoPanel")).toBeVisible();
   await expect(page.locator("#infoPanel select")).toHaveCount(0);
-  await expect(page.locator("#infoPanel button")).toHaveCount(12);
+  await expect(page.locator("#infoPanel button")).toHaveCount(11);
   await expect(page.locator("#infoSplit")).toBeVisible();
   await expect(page.locator("#infoMerge")).toBeHidden();
   expect(await page.locator("#cv3d").evaluate(canvas =>

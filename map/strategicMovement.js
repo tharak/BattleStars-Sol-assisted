@@ -161,13 +161,11 @@ export function findReachableDestinations({
     }
 
     const candidates = [];
-    for (const transport of resolveTransportMovement(state.position) || []) {
-      if (!transport?.position || state.remainingMp < 1 || isBlocked(transport.position)) continue;
-      const route = makeRoute(state, StrategicMoveAction.TRANSPORT_JUMP, 1);
-      candidates.push({
-        ...state, ...route, position: [...transport.position],
-        transportSteps: [...(state.transportSteps || []), { ...transport, actionIndex: route.actions.length - 1 }],
-      });
+    const transport = resolveTransportMovement(state.position)?.[0];
+    if (transport && state.remainingMp >= 1 && !isBlocked(transport.position)) {
+      const jumpRoute = makeRoute(state, StrategicMoveAction.TRANSPORT_JUMP, 1);
+      jumpRoute.transportSteps = [...(state.transportSteps || []), { ...transport, actionIndex: jumpRoute.actions.length - 1 }];
+      candidates.push({ ...state, ...jumpRoute, position: [...transport.position] });
     }
     // Turning changes only facing, never movement points. Keep it in the
     // route search so every legal forward route can begin from any facing.
@@ -191,7 +189,14 @@ export function findReachableDestinations({
       const route = makeRoute(state, StrategicMoveAction.FORWARD, forwardCost);
       const drift = resolveForcedMovement(forwardPosition);
       if (drift) (route.forcedSteps ||= []).push({ ...drift, actionIndex: route.actions.length - 1 });
-      candidates.push({ ...state, ...route, position: drift?.to || forwardPosition });
+      const nextPosition = drift?.to || forwardPosition;
+      const nextState = { ...state, ...route, position: [...nextPosition] };
+      const transport = resolveTransportMovement(nextPosition)?.[0];
+      if (transport && nextState.remainingMp >= 1 && !isBlocked(transport.position)) {
+        const jumpRoute = makeRoute(nextState, StrategicMoveAction.TRANSPORT_JUMP, 1);
+        jumpRoute.transportSteps = [...(nextState.transportSteps || []), { ...transport, actionIndex: jumpRoute.actions.length - 1 }];
+        candidates.push({ ...nextState, ...jumpRoute, position: [...transport.position] });
+      } else candidates.push(nextState);
     }
 
     // Moving astern always consumes a full movement allowance, even when
@@ -202,7 +207,14 @@ export function findReachableDestinations({
         const route = makeRoute(state, StrategicMoveAction.BACKWARD, movementAllowance);
         const drift = resolveForcedMovement(backwardPosition);
         if (drift) (route.forcedSteps ||= []).push({ ...drift, actionIndex: route.actions.length - 1 });
-        candidates.push({ ...state, ...route, position: drift?.to || backwardPosition });
+        const nextPosition = drift?.to || backwardPosition;
+        const nextState = { ...state, ...route, position: [...nextPosition] };
+        const transport = resolveTransportMovement(nextPosition)?.[0];
+        if (transport && nextState.remainingMp >= 1 && !isBlocked(transport.position)) {
+          const jumpRoute = makeRoute(nextState, StrategicMoveAction.TRANSPORT_JUMP, 1);
+          jumpRoute.transportSteps = [...(nextState.transportSteps || []), { ...transport, actionIndex: jumpRoute.actions.length - 1 }];
+          candidates.push({ ...nextState, ...jumpRoute, position: [...transport.position] });
+        } else candidates.push(nextState);
       }
     }
 
