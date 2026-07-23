@@ -1886,8 +1886,13 @@ function colorsFor(cell) {
 const ORBIT_MAX_PX = 420;
 const ORBIT_MARGIN = 55;
 const CANVAS_PX = ORBIT_MAX_PX * 2 + ORBIT_MARGIN * 2;
+const ORBIT_TIME_SCALE = 20;
+const orbitAnimationStartRealMs = Date.now();
+const orbitAnimationStartSimMs = orbitAnimationStartRealMs;
+const orbitAnimationNow = realNowMs => orbitAnimationStartSimMs
+  + (realNowMs - orbitAnimationStartRealMs) * ORBIT_TIME_SCALE;
 
-function renderUniverse(entry, data) {
+function renderUniverse(entry, data, nowMs = Date.now()) {
   mapwrap3d.style.display = "none";
   mapwrap.style.display = "inline-block";
   canvas.width = CANVAS_PX;
@@ -1895,7 +1900,7 @@ function renderUniverse(entry, data) {
   const ctx = canvas.getContext("2d");
   const cx = canvas.width / 2, cy = canvas.height / 2;
 
-  const layout = layoutOrbitalBoard(data, { maxPixel: ORBIT_MAX_PX });
+  const layout = layoutOrbitalBoard(data, { maxPixel: ORBIT_MAX_PX, nowMs });
   ctx.fillStyle = BOARD_TINT.bg;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.save();
@@ -2405,11 +2410,13 @@ function ensureOrbitAnimation() {
         lastOrbitAnimationRenderMs = now;
         const entry = path[path.length - 1];
         const data = levelData(entry);
-        if (entry.level === "universe") renderUniverse(entry, data);
+        const simulatedNowMs = orbitAnimationNow(now);
+        if (entry.level === "universe") renderUniverse(entry, data, simulatedNowMs);
         else if (mapArea.dataset.renderer === "3d" && scene3d) {
           scene3d.updateOrbitalBodies(layoutSystemWithMoons(data, {
             maxPixel: ORBIT_MAX_PX,
             localMaxPixel: LOCAL_MAX_PX,
+            nowMs: simulatedNowMs,
           }));
         }
       }
