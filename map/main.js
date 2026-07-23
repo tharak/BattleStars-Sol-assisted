@@ -1886,11 +1886,8 @@ function colorsFor(cell) {
 const ORBIT_MAX_PX = 420;
 const ORBIT_MARGIN = 55;
 const CANVAS_PX = ORBIT_MAX_PX * 2 + ORBIT_MARGIN * 2;
-const ORBIT_TIME_SCALE = 20;
-const orbitAnimationStartRealMs = Date.now();
-const orbitAnimationStartSimMs = orbitAnimationStartRealMs;
-const orbitAnimationNow = realNowMs => orbitAnimationStartSimMs
-  + (realNowMs - orbitAnimationStartRealMs) * ORBIT_TIME_SCALE;
+const EARTH_DAY_MS = 86400000;
+let orbitAnimationSimMs = Date.now();
 
 function renderUniverse(entry, data, nowMs = Date.now()) {
   mapwrap3d.style.display = "none";
@@ -2408,9 +2405,10 @@ function ensureOrbitAnimation() {
     if ((level === "universe" || level === "system") && !tutorialMode && !overlayOpen) {
       if (now - lastOrbitAnimationRenderMs >= 125) {
         lastOrbitAnimationRenderMs = now;
+        orbitAnimationSimMs += EARTH_DAY_MS;
         const entry = path[path.length - 1];
         const data = levelData(entry);
-        const simulatedNowMs = orbitAnimationNow(now);
+        const simulatedNowMs = orbitAnimationSimMs;
         if (entry.level === "universe") renderUniverse(entry, data, simulatedNowMs);
         else if (mapArea.dataset.renderer === "3d" && scene3d) {
           scene3d.updateOrbitalBodies(layoutSystemWithMoons(data, {
