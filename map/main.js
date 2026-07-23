@@ -1801,14 +1801,14 @@ const STROKE = {
 // Merged with MOON_COLORS below into one id-keyed table (ID_COLORS) since
 // both are looked up the same way, by cell.id.
 const PLANET_COLORS = {
-  mercury: { fill: "#3a3a3a", stroke: "#9e9e9e" },
-  venus:   { fill: "#5c5030", stroke: "#f0d9a0" },
-  earth:   { fill: "#1a3a5c", stroke: "#4a9eff" },
-  mars:    { fill: "#5c2a1a", stroke: "#ff6b4a" },
-  jupiter: { fill: "#5c4020", stroke: "#e0a050" },
-  saturn:  { fill: "#5c4a20", stroke: "#e0c070" },
-  uranus:  { fill: "#1a4a4a", stroke: "#7de8e8" },
-  neptune: { fill: "#1a2a5c", stroke: "#5a7dff" },
+  mercury: { fill: "#667085", stroke: "#cbd5e1" },
+  venus:   { fill: "#c08457", stroke: "#f7d7a8" },
+  earth:   { fill: "#2563a8", stroke: "#75b9ff" },
+  mars:    { fill: "#b94b3a", stroke: "#ff8a72" },
+  jupiter: { fill: "#a86f4b", stroke: "#e9b18a" },
+  saturn:  { fill: "#c9a85b", stroke: "#ffe3a1" },
+  uranus:  { fill: "#2fa9a5", stroke: "#8ef5ef" },
+  neptune: { fill: "#4169d8", stroke: "#9bb5ff" },
 };
 
 // Same idea, per moon (id = its name lowercased -- see MOONS in levels.js).
@@ -2418,7 +2418,7 @@ function systemStaticData(data, sourceKey) {
   const wells = gravityWells(layout);
   const gravityCells = gravityHexes(layout);
   const sites = layout.center ? [layout.center, ...layout.planets] : layout.planets;
-  const polygons = voronoiCells(sites.map(site => [site.x, site.y]), [-ORBIT_MAX_PX, -ORBIT_MAX_PX, ORBIT_MAX_PX, ORBIT_MAX_PX], { metric: "manhattan" });
+  const polygons = voronoiCells(sites.map(site => [site.x, site.y]), [-ORBIT_MAX_PX, -ORBIT_MAX_PX, ORBIT_MAX_PX, ORBIT_MAX_PX]);
   const voronoi = sites.map((site, index) => ({ polygon: polygons[index], color: colorsFor(site).fill }));
   systemStaticCache = { sourceKey, layout, wells, gravityCells, voronoi };
   return systemStaticCache;
