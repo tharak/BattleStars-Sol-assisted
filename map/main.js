@@ -429,7 +429,7 @@ tutorialLibraryExitBtn.onclick = exitPlayableTutorial;
 // the same way setHint(...) already works.
 function infoFor(hit) {
   if (!hit) return null;
-  if (hit.kind === "star") return { name: hit.label, detail: `The star this system orbits. Gravity current: ${gravitySpinDirection(hit.id) > 0 ? "clockwise" : "counter-clockwise"}.` };
+  if (hit.kind === "star") return { name: hit.label, detail: "The star this system orbits. Transport corridors use planetary rotation for direction." };
   if (hit.kind === "moon") return { name: hit.label, detail: `Moon of ${hit.parentLabel}.` };
   if (hit.kind === "planet") {
     const economy = planetEconomy.get(hit.id);
@@ -693,7 +693,8 @@ function moveResultHint(res) {
 // constant (rather than a bare 1 sprinkled through the cost math below)
 // so a future per-ship move cost (e.g. a heavier hull that costs more
 // than 1 AP/hex even in open space) is a one-line swap to a lookup here.
-// Gravity is a positional hazard whose automatic drift does not add AP cost.
+// Open-space movement remains a one-AP forward step. Transport corridors add
+// their own directed jump after a fleet enters a network cell.
 function hexMoveCost() {
   const cost = forwardMovementCost();
   return SC.captainOf(world, activation?.u)?.abilityId === "gravity_navigator" ? Math.max(1, cost - 1) : cost;
@@ -880,8 +881,6 @@ function processMemberTurnStart(faction) {
     const target = SC.backwardHex(world, fleet);
     if (!movementBlocker([fleet])(target)) {
       SC.setPosition(world, fleet, ...target);
-      const drift = gravityDrift(SC.posOf(world, fleet));
-      if (drift) SC.setPosition(world, fleet, ...drift.to);
       resolveHexCollisionAt(SC.posOf(world, fleet), [fleet]);
       retreated++;
     }
@@ -924,7 +923,7 @@ async function advanceFactionCourses(faction) {
       movementAllowance: MP_MAX,
       movementCost: hexMoveCost,
       isBlocked: movementBlocker([ship]),
-      resolveForcedMovement: gravityDrift,
+      resolveForcedMovement: () => null,
       resolveTransportMovement: transportMoves,
     });
     const route = chooseCourseRoute(routes, position, target);
@@ -1264,7 +1263,7 @@ function recomputeReachableMoves() {
       movementAllowance: MP_MAX,
       movementCost: (_member, nextPosition) => hexMoveCost(nextPosition),
       isBlocked: (_member, nextPosition) => groupIsBlocked(nextPosition),
-      resolveForcedMovement: (_member, position) => gravityDrift(position),
+      resolveForcedMovement: () => null,
     });
   } else {
     reachableMoves = findReachableDestinations({
@@ -1276,7 +1275,7 @@ function recomputeReachableMoves() {
       movementAllowance: MP_MAX,
       movementCost: hexMoveCost,
       isBlocked: movementBlocker([activation.u]),
-      resolveForcedMovement: gravityDrift,
+      resolveForcedMovement: () => null,
       resolveTransportMovement: transportMoves,
     });
   }
@@ -1354,10 +1353,8 @@ function doForward() {
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp -= cost; activation.moved = true; activation.fireMode = false;
   rememberActivationMp();
-  const drift = gravityDrift(SC.posOf(world, activation.u));
-  if (drift) SC.setPosition(world, activation.u, ...drift.to);
   const collisions = resolveHexCollisionAt(SC.posOf(world, activation.u), [activation.u]);
-  setHint(`${drift ? `Gravity current pulls ${SC.labelOf(world, activation.u)} one hex ${drift.wellId === "sun" ? "around the Sun" : `around ${drift.wellId}`}.` : ""}${collisions ? ` Collision destroys ${collisions} Ship${collisions === 1 ? "" : "s"}.` : ""}`.trim());
+  setHint(`${collisions ? `Collision destroys ${collisions} Ship${collisions === 1 ? "" : "s"}.` : ""}`.trim());
   advancePlayableTutorial("forward");
   finishActionRender();
 }
@@ -1377,10 +1374,8 @@ function doBackward() {
   if (!res.ok) { moveResultHint(res); renderInfoPanel(); return; }
   activation.mp -= activation.backwardCost || MP_MAX; activation.moved = true; activation.fireMode = false;
   rememberActivationMp();
-  const drift = gravityDrift(SC.posOf(world, activation.u));
-  if (drift) SC.setPosition(world, activation.u, ...drift.to);
   const collisions = resolveHexCollisionAt(SC.posOf(world, activation.u), [activation.u]);
-  setHint(`${drift ? `Gravity current pulls ${SC.labelOf(world, activation.u)} one hex.` : ""}${collisions ? ` Collision destroys ${collisions} Ship${collisions === 1 ? "" : "s"}.` : ""}`.trim());
+  setHint(`${collisions ? `Collision destroys ${collisions} Ship${collisions === 1 ? "" : "s"}.` : ""}`.trim());
   advancePlayableTutorial("back");
   finishActionRender();
 }
@@ -2270,10 +2265,7 @@ function shipsSnapshot(wells = []) {
 
 // Gravity wells are the Sun and planets. Moons remain visual bodies only.
 function gravityWells(layout) {
-  const wells = [];
-  if (layout.center) wells.push({ id: layout.center.id, x: 0, z: 0, rPx: layout.center.rPx, colorHex: colorsFor(layout.center).fill, spinDirection: gravitySpinDirection(layout.center.id) });
-  for (const p of layout.planets) wells.push({ id: p.id, x: p.x, z: p.y, rPx: p.rPx, colorHex: colorsFor(p).fill, spinDirection: gravitySpinDirection(p.id) });
-  return wells;
+  return [];
 }
 
 // Gravity influence radius scales with a body's own rendered size --
@@ -2322,24 +2314,7 @@ function gravityHexIntensity(cost) {
 // radius are ever considered, so this stays cheap even though the Sun's
 // own field alone can cover a thousand-plus hexes.
 function gravityHexes(layout) {
-  const cells = new Map(); // "c,r" -> {cost, colorHex, x, y}
-  for (const well of gravityWells(layout)) {
-    const radius = gravityHexRadius({
-      bodyRadiusPx: well.rPx,
-      hexSizePx: GRID_HEX_SIZE_PX,
-      factor: GRAVITY_INFLUENCE_RADIUS_FACTOR,
-    });
-    const [centerC, centerR] = pixelToHexIndex(well.x, well.z);
-    for (const [c, r] of hexDiskCells([centerC, centerR], radius)) {
-      const [x, y] = shipHexOffset(c, r);
-      const dist = Math.hypot(x - well.x, y - well.z);
-      const cost = gravityHexCost(dist, well);
-      const k = hexKey(c, r);
-      const existing = cells.get(k);
-      if (!existing || cost > existing.cost) cells.set(k, { c, r, cost, colorHex: well.colorHex, x, y, well });
-    }
-  }
-  return cells;
+  return new Map();
 }
 function gravityRenderCells(cells) {
   return new Map([...cells].filter(([, cell]) => !cell.transport));
@@ -2400,29 +2375,7 @@ function gravityHexCorners(x, y, wells, size = GRID_HEX_SIZE_PX) {
 // stops there: one free drift in this direction.  Its length stays inside
 // the cell, so it communicates force without pretending to be a route.
 function gravityPullArrows(cells, wells) {
-  const arrows = [];
-  for (const cell of cells.values()) {
-    const drift = resolveGravityDrift([cell.c, cell.r], cells, hex => shipHexOffset(hex[0], hex[1]));
-    if (!drift) continue;
-    const [fromX, fromY] = warpedGravityPoint(cell.x, cell.y, wells);
-    const [nextX, nextY] = warpedGravityPoint(...shipHexOffset(...drift.to), wells);
-    const dx = nextX - fromX, dy = nextY - fromY;
-    const length = Math.hypot(dx, dy) || 1;
-    const ux = dx / length, uy = dy / length;
-    const start = [fromX - ux * GRID_HEX_SIZE_PX * 0.2, fromY - uy * GRID_HEX_SIZE_PX * 0.2];
-    const tip = [fromX + ux * GRID_HEX_SIZE_PX * 0.38, fromY + uy * GRID_HEX_SIZE_PX * 0.38];
-    const side = [-uy, ux];
-    const head = GRID_HEX_SIZE_PX * 0.16;
-    arrows.push({
-      colorHex: cell.colorHex, intensity: gravityHexIntensity(cell.cost),
-      segments: [
-        start, tip,
-        tip, [tip[0] - ux * head + side[0] * head, tip[1] - uy * head + side[1] * head],
-        tip, [tip[0] - ux * head - side[0] * head, tip[1] - uy * head - side[1] * head],
-      ],
-    });
-  }
-  return arrows;
+  return [];
 }
 // --- 3D path (primary) ---------------------------------------------------
 
