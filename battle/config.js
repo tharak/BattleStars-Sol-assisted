@@ -16,14 +16,14 @@ export { MAX_TURNS_PER_ACTIVATION };
 // all hexes within BOARD_RADIUS of BOARD_CENTER. COLS/ROWS are just the
 // bounding box the hexagon is inscribed in -- use inBounds(), not a
 // rectangle check, to test whether a hex is actually on the board.
-export const COLS = 27, ROWS = 27;
-export const BOARD_CENTER = [13, 13], BOARD_RADIUS = 13;
+export const COLS = 17, ROWS = 17;
+export const BOARD_CENTER = [8, 8], BOARD_RADIUS = 8;
 export const inBounds = (c, r) => hexDist(BOARD_CENTER, [c, r]) <= BOARD_RADIUS;
 
 // Anchor columns formationLayout() offsets ("fwd") deploy around, and the
 // row ("lat" offsets) they're centered on -- chosen so every existing
 // formation at every fleet size stays inside the hexagon on both sides.
-export const DEPLOY_ANCHOR = [7, 19], DEPLOY_ROW_CENTER = 13;
+export const DEPLOY_ANCHOR = [5, 11], DEPLOY_ROW_CENTER = 8;
 
 export const STATE_NAME = ["Steady", "Shaken", "ROUTED"];
 
@@ -36,7 +36,14 @@ export const FORMATION_NAMES = ["line", "spindle", "crescent", "echelon", "spher
 
 // Deployment zones: each side may only place squadrons in its own half,
 // leaving a neutral no-man's-land in the middle columns.
-export const SETUP_ZONE = [[0, 9], [17, COLS - 1]];
+export const SETUP_ZONE = [[0, 6], [10, COLS - 1]];
+
+// Decorative strategic context for the compact tactical debug arena. These
+// bodies are visual landmarks; combat rules still resolve on the hex board.
+export const BATTLE_PLANETS = Object.freeze([
+  Object.freeze({ name: "Aurelia", position: [2, 8], color: "#d98b55", radius: 24 }),
+  Object.freeze({ name: "Cinder", position: [14, 8], color: "#6396d8", radius: 22 }),
+]);
 
 // Hex pixel geometry (canvas rendering).
 export const HS = 17;                    // hex size (center -> corner)

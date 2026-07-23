@@ -28,24 +28,25 @@
     </div>
     <div class="opts" id="sizepick">
       <b>Fleet size:</b>
-      <label><input type="radio" name="fsize" value="3" checked> 3 Fleets (breaks at 2)</label>
+      <label><input type="radio" name="fsize" value="2" checked> 2 Fleets (breaks at 2)</label>
+      <label><input type="radio" name="fsize" value="3"> 3 Fleets (breaks at 2)</label>
       <label><input type="radio" name="fsize" value="5"> 5 Fleets (breaks at 3)</label>
       <label><input type="radio" name="fsize" value="9"> 9 Fleets (breaks at 5)</label>
       <label><input type="radio" name="fsize" value="12"> 12 Fleets (breaks at 7)</label>
     </div>
     <div class="opts" id="movepick">
       <b>Movement:</b>
-      <label><input type="radio" name="movemode" value="0" checked> Interleaved (one squadron at a time, alternating sides, as usual)</label>
-      <label><input type="radio" name="movemode" value="1"> All-at-once (each side moves &amp; fires every squadron it has before the other side gets a turn — you go first)</label>
+      <label><input type="radio" name="movemode" value="0" checked> Interleaved (one Fleet at a time, alternating sides, as usual)</label>
+      <label><input type="radio" name="movemode" value="1"> All-at-once (each side moves &amp; fires every Fleet it has before the other side gets a turn — you go first)</label>
     </div>
     <div class="opts" id="deploypick">
       <b>Deployment:</b>
-      <label><input type="radio" name="deploymode" value="0" checked> Manual placement (place your own squadrons by hand before the battle)</label>
+      <label><input type="radio" name="deploymode" value="0" checked> Manual placement (place your own Fleets by hand before the battle)</label>
       <label><input type="radio" name="deploymode" value="1"> Battle formation (both sides use the scenario's fixed formation below, like a spectated match)</label>
     </div>
     <div class="opts"><label>Captain seed <input id="captainSeed" type="number" value="1" step="1"></label></div>
     <p style="color:var(--dim);max-width:70ch;font-size:12.5px">With manual placement, any side you
-    control deploys its own squadrons by hand before the battle starts (click your shaded zone) and
+    control deploys its own Fleets by hand before the battle starts (click your shaded zone) and
     the AI picks a random formation once you're done. With battle formation, both sides start in the
     scenario's exact fixed formation — useful for testing whether your play beats the baseline in
     that specific matchup. Spectated (AI vs AI) matches always use the fixed formation.</p>

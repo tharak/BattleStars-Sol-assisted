@@ -60,9 +60,9 @@ test("battle-map default deployment matches a strategic armada", () => {
   deployFormation(state, "sphere", 0);
 
   const roster = state.G.fleets[0].roster;
-  assert.equal(state.SIZE, 3);
+  assert.equal(state.SIZE, 2);
   assert.equal(state.FLEET_STRENGTH, 19);
-  assert.equal(roster.length, 3);
+  assert.equal(roster.length, 2);
   assert.equal(roster.filter(entity => state.world.has(entity, C.Flagship)).length, 1);
   assert.equal(state.world.get(roster[0], C.Strength).value, 19);
   assert.deepEqual(state.world.get(roster[0], C.Captain), { id: "blue-1" });

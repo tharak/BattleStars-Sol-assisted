@@ -1,6 +1,6 @@
 // Canvas rendering. Reads component data via queries.js and colors via
 // colors.js -- never mutates game state.
-import { COLS, ROWS, RANGE, CMD_R, HS, HW, OX, OY, MoraleState, inBounds } from "./config.js";
+import { COLS, ROWS, RANGE, CMD_R, HS, HW, OX, OY, BATTLE_PLANETS, MoraleState, inBounds } from "./config.js";
 import { DIR_ANGLE, hexDist, losClear, inFireArc, key, facingArrowPoints, hexCorners } from "./hexmath.js";
 import { inSetupZone } from "./formations.js";
 import { SIDE_COLORS, STATE_COLORS, ACCENT, BOARD_TINT } from "./colors.js";
@@ -48,6 +48,23 @@ export function draw(state, presentation) {
 function renderFrame(state, presentation) {
   cv.width = OX * 2 + HW * (COLS + 0.5); cv.height = OY * 2 + HS * 1.5 * (ROWS - 1) + HS * 2;
   cx2.fillStyle = BOARD_TINT.bg; cx2.fillRect(0, 0, cv.width, cv.height);
+
+  // Keep the tactical board visually connected to the strategic map without
+  // making planets selectable or changing any combat occupancy rules.
+  for (const planet of BATTLE_PLANETS) {
+    const [x, y] = hexCenter(...planet.position);
+    const glow = cx2.createRadialGradient(x, y, planet.radius * 0.2, x, y, planet.radius * 1.8);
+    glow.addColorStop(0, `${planet.color}aa`);
+    glow.addColorStop(0.55, `${planet.color}33`);
+    glow.addColorStop(1, `${planet.color}00`);
+    cx2.fillStyle = glow;
+    cx2.beginPath(); cx2.arc(x, y, planet.radius * 1.8, 0, Math.PI * 2); cx2.fill();
+    cx2.fillStyle = planet.color;
+    cx2.beginPath(); cx2.arc(x, y, planet.radius, 0, Math.PI * 2); cx2.fill();
+    cx2.strokeStyle = `${planet.color}cc`; cx2.lineWidth = 1.5; cx2.stroke();
+    cx2.fillStyle = "#e9efff"; cx2.font = "11px system-ui"; cx2.textAlign = "center";
+    cx2.fillText(planet.name, x, y + planet.radius + 15);
+  }
 
   // fire-zone shading for selected human unit
   let zone = new Set(), tgts = [];

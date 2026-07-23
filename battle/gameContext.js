@@ -16,9 +16,9 @@ export class GameContext {
     this.G = null;
     this.scen = null;
     this.ctrlMode = ControlMode.PLAY_BLUE;
-    // Match the strategic map's initial armada: three full Fleets, each
+    // Match this compact battle map: two full Fleets, each
     // representing 19 Ships, with one original flagship for the faction.
-    this.SIZE = 3;
+    this.SIZE = 2;
     this.BREAK_AT = 2;
     this.FLEET_STRENGTH = 19;
     this.FLAGSHIP_COUNT = 1;
