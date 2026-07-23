@@ -674,7 +674,14 @@ function runNpcActivation() {
       .sort((a, b) => hexDist(SC.posOf(world, fleet), SC.posOf(world, a))
         - hexDist(SC.posOf(world, fleet), SC.posOf(world, b)))[0];
     if (enemy != null) {
-      setHint(`${FACTIONS[faction].label} NPC holds ${SC.labelOf(world, fleet)} until it can engage.`);
+      recomputeReachableMoves();
+      const enemyPosition = SC.posOf(world, enemy);
+      const route = [...reachableMoves.values()]
+        .filter(candidate => candidate.cost > 0)
+        .sort((a, b) => hexDist(a.position, enemyPosition) - hexDist(b.position, enemyPosition)
+          || a.cost - b.cost)[0];
+      if (route) executeReachableMove(route);
+      else setHint(`${FACTIONS[faction].label} NPC holds ${SC.labelOf(world, fleet)} until it can engage.`);
     } else {
       setHint(`${FACTIONS[faction].label} NPC completes ${SC.labelOf(world, fleet)}'s activation.`);
     }
