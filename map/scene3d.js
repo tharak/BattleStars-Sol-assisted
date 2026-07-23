@@ -264,7 +264,7 @@ export function createSystemScene({
       pts.push(new THREE.Vector3(localX, ORBIT_RING_Y - localZ * Math.sin(tiltRad), localZ * Math.cos(tiltRad)));
     }
     const curve = new THREE.CatmullRomCurve3(pts, true);
-    const geo = new THREE.TubeGeometry(curve, orbitSegments, Math.max(0.35, radius * 0.006), 6, true);
+    const geo = new THREE.TubeGeometry(curve, orbitSegments, Math.max(0.18, radius * 0.003), 6, true);
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.65 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(cx, 0, cz);
