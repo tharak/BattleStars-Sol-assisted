@@ -22,6 +22,7 @@ import { resolveMorale, resolveRally } from "../battle/domain/moraleRules.js";
 import { FiringArc } from "../battle/domain/constants.js";
 import { forwardMovementCost } from "../battle/domain/movementRules.js";
 import { makeEffectLoop } from "../battle/core/effectLoop.js";
+import { activeMapConfig } from "./config.js";
 import {
   chooseCourseRoute, executeStrategicGroupRoute, executeStrategicGroupTurn,
   executeStrategicRoute, executeStrategicRouteStepwise, findGroupReachableDestinations,
@@ -2020,7 +2021,8 @@ function snapToHexGrid(x, y) {
 // keeps their local rings and cluster visually attached to the planet.
 function snapGravityBodiesToHexGrid(layout) {
   for (const planet of layout.planets) {
-    const [x, y] = snapToHexGrid(planet.x, planet.y);
+    const override = activeMapConfig().planetHexPositions?.[planet.id];
+    const [x, y] = override ? shipHexOffset(...override) : snapToHexGrid(planet.x, planet.y);
     const dx = x - planet.x, dy = y - planet.y;
     planet.x = x; planet.y = y;
     for (const moon of planet.moons) {
@@ -2117,7 +2119,10 @@ function spawnInitialShips(layout) {
     const distanceKm = Math.hypot(pos.xKm, pos.yKm);
     const angle = Math.atan2(pos.yKm, pos.xKm);
     const r = layout.dist.toPixel(distanceKm);
-    const [anchorX, anchorY] = snapToHexGrid(r * Math.cos(angle), r * Math.sin(angle));
+    const startHex = activeMapConfig().planetHexPositions?.[FACTIONS[faction]?.startAt];
+    const [anchorX, anchorY] = startHex
+      ? shipHexOffset(...startHex)
+      : snapToHexGrid(r * Math.cos(angle), r * Math.sin(angle));
     const { u } = formationLayout(ARMADA_DEPLOYMENT_FORMATIONS[faction], FLEETS_PER_ARMADA);
     u.forEach(([fwd, lat], i) => {
       const [dx, dy] = shipHexOffset(fwd, lat);

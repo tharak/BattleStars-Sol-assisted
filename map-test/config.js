@@ -14,6 +14,7 @@ export const MAP_TEST_CONFIG = Object.freeze({
     earth: 0.42,
     venus: 0.58,
   }),
+  planetHexPositions: Object.freeze({ earth: Object.freeze([4, 8]), venus: Object.freeze([14, 8]) }),
   fleetCount: DEFAULT_MAP_CONFIG.fleetCount,
   fleetFormation: DEFAULT_MAP_CONFIG.fleetFormation,
   initialFleetStrength: DEFAULT_MAP_CONFIG.initialFleetStrength,
