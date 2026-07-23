@@ -136,7 +136,7 @@ test("the map-test profile shows every fleet formation for both factions", async
   await page.goto("/map-test.html");
   await page.getByRole("button", { name: "New Game" }).click();
   await expect(page.locator(".turnShip")).toHaveCount(12);
-  for (const formation of ["sphere", "line", "spindle", "crescent", "echelon", "column"]) {
+  for (const formation of ["sphere", "line", "arrow", "crescent", "echelon", "column"]) {
     await expect(page.locator(`.turnShip[aria-label*="${formation} formation"]`)).toHaveCount(2);
   }
 });

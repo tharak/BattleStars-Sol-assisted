@@ -34,7 +34,7 @@ test("strategic Fleets start at 10 Ships and cap at three layers", () => {
 });
 
 test("every named formation supports arbitrary fleet counts", () => {
-  for (const name of ["line", "spindle", "crescent", "echelon", "sphere", "column"]) {
+  for (const name of ["line", "arrow", "crescent", "echelon", "sphere", "column"]) {
     for (const size of [1, 2, 4, 7, 13]) {
       const layout = formationLayout(name, size);
       assert.equal(layout.u.length, size);

@@ -95,6 +95,14 @@ test("sphere formation fills positions sequentially", () => {
   assert.deepEqual(FleetShips.formationPositionOrder("sphere", 6), [0, 1, 2, 3, 4, 5]);
 });
 
+test("arrow formation fills the requested indexed positions per layer", () => {
+  assert.deepEqual(FleetShips.formationPositionOrder("arrow", 19), [
+    10, 1, 3, 2, 5, 11, 17, 0, 4, 6, 13, 18, 15, 7, 12, 8, 14, 9, 16,
+  ]);
+  assert.equal(FleetShips.formationPositionOrder("arrow", 57)[19], 29);
+  assert.equal(FleetShips.formationPositionOrder("arrow", 57)[38], 48);
+});
+
 test("Fleet formation state defaults to sphere and only accepts supported formations", () => {
   const world = new World();
   const fleet = ShipRules.spawnFleet(world, { faction: "blue", c: 0, r: 0, dir: 0, label: "B1" });

@@ -2,17 +2,19 @@
 // rules entity; these offsets turn its current Strength into a grander
 // miniature formation without creating independently targetable ships.
 export const FLEET_FORMATION_NAMES = Object.freeze([
-  "line", "wedge", "echelon", "sphere", "spindle", "crescent", "column",
+  "line", "wedge", "echelon", "sphere", "arrow", "crescent", "column",
 ]);
 export const SHIPS_PER_3D_FLEET_LAYER = 19;
 const LINE_POSITION_ORDER = Object.freeze([0, 2, 5, 9, 16, 4, 6, 11, 17, 1, 3, 8, 14, 15, 13, 18, 10, 7, 12]);
+const ARROW_POSITION_ORDER = Object.freeze([10, 1, 3, 2, 5, 11, 17, 0, 4, 6, 13, 18, 15, 7, 12, 8, 14, 9, 16]);
 
 export function formationPositionOrder(formation = "sphere", count = 57) {
   const positions = Array.from({ length: Math.max(0, count) }, (_, index) => index);
-  if (formation !== "line") return positions;
+  if (formation !== "line" && formation !== "arrow") return positions;
+  const order = formation === "line" ? LINE_POSITION_ORDER : ARROW_POSITION_ORDER;
   return positions.map(index => {
     const layer = Math.floor(index / SHIPS_PER_3D_FLEET_LAYER);
-    return layer * SHIPS_PER_3D_FLEET_LAYER + LINE_POSITION_ORDER[index % SHIPS_PER_3D_FLEET_LAYER];
+    return layer * SHIPS_PER_3D_FLEET_LAYER + order[index % SHIPS_PER_3D_FLEET_LAYER];
   });
 }
 
@@ -43,7 +45,7 @@ const LAYOUTS = Object.freeze({
   sphere: [
     [[0, 0]], [[0.22, -0.42], [0.22, 0.42]], [[0.42, 0], [-0.28, -0.48], [-0.28, 0.48]], [[0.42, 0], [0, -0.48], [0, 0.48], [-0.42, 0]],
   ],
-  spindle: [
+  arrow: [
     [[0, 0]], [[0.28, -0.28], [-0.28, 0.28]], [[0.38, 0], [0, 0], [-0.38, 0]], [[0.42, 0], [0, -0.42], [0, 0.42], [-0.42, 0]],
   ],
   crescent: [
@@ -71,7 +73,7 @@ export function fleetShipOffsets(formation = "sphere", strength = 4) {
       return [0.72 * Math.cos(angle), 0.72 * Math.sin(angle)];
     });
   }
-  if (formation === "spindle") {
+  if (formation === "arrow") {
     return Array.from({ length: count }, (_, index) => {
       const t = index / (count - 1);
       return [-0.95 + 1.9 * t, (index % 2 ? 0.55 : -0.55) * Math.sin(Math.PI * t)];

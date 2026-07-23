@@ -8,7 +8,7 @@ import * as C from "./components.js";
 export function formationLayout(name, size) {
   if (size === 3) {
     if (name === "line") return { u: range(-1, 1).map(l => [0, l, 0]), flag: 1 };
-    if (name === "spindle") return { u: [[1, 0, 0], [0, 0, 0], [-1, 0, 0]], flag: 1 };
+    if (name === "arrow") return { u: [[1, 0, 0], [0, 0, 0], [-1, 0, 0]], flag: 1 };
     if (name === "crescent") return { u: [[1, -1, 0], [0, 0, 0], [1, 1, 0]], flag: 1 };
     if (name === "echelon") return { u: [[1, -1, 0], [0, 0, 0], [-1, 1, 0]], flag: 1 };
     if (name === "sphere") return { u: [[0, 0, 0], [1, 0, 0], [0, -1, 0]], flag: 0 };
@@ -16,7 +16,7 @@ export function formationLayout(name, size) {
   }
   if (size === 5) {
     if (name === "line")    return { u: range(-2,2).map(l => [0,l,0]), flag: 2 };
-    if (name === "spindle") return { u: [[1,0,0],[0,-1,0],[0,0,0],[0,1,0],[-1,0,0]], flag: 2 };
+    if (name === "arrow") return { u: [[1,0,0],[0,-1,0],[0,0,0],[0,1,0],[-1,0,0]], flag: 2 };
     if (name === "crescent")return { u: range(-2,2).map(l => [Math.abs(l)===2?1:0,
                                         l, l<=-2?1:(l>=2?-1:0)]), flag: 2 };
     if (name === "echelon") return { u: range(-2,2).map(l => [-l,l,0]), flag: 2 };
@@ -25,7 +25,7 @@ export function formationLayout(name, size) {
   }
   if (size === 9) {
     if (name === "line")    return { u: range(-4,4).map(l => [0,l,0]), flag: 4 };
-    if (name === "spindle") return { u: [[2,0,0],[1,-1,0],[1,1,0],[0,-1,0],[0,0,0],[0,1,0],
+    if (name === "arrow") return { u: [[2,0,0],[1,-1,0],[1,1,0],[0,-1,0],[0,0,0],[0,1,0],
                                         [-1,-1,0],[-1,1,0],[-2,0,0]], flag: 4 };
     if (name === "crescent")return { u: range(-4,4).map(l => [Math.abs(l)>=3?2:(Math.abs(l)===2?1:0),
                                         l, l<=-2?1:(l>=2?-1:0)]), flag: 4 };
@@ -36,7 +36,7 @@ export function formationLayout(name, size) {
   }
   if (size === 12) {
     if (name === "line")    return { u: range(-6,5).map(l => [0,l,0]), flag: 6 };
-    if (name === "spindle") return { u: [[3,0,0],[2,-1,0],[2,1,0],
+    if (name === "arrow") return { u: [[3,0,0],[2,-1,0],[2,1,0],
                                         [1,-1,0],[1,0,0],[1,1,0],
                                         [0,-1,0],[0,0,0],[0,1,0],
                                         [-1,-1,0],[-1,1,0],[-2,0,0]], flag: 7 };

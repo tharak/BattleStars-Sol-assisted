@@ -17,7 +17,7 @@ export const MAP_TEST_CONFIG = Object.freeze({
   planetHexPositions: Object.freeze({ earth: Object.freeze([4, 8]), venus: Object.freeze([14, 8]) }),
   fleetCount: 6,
   fleetFormation: "sphere",
-  fleetFormations: Object.freeze(["sphere", "line", "spindle", "crescent", "echelon", "column"]),
+  fleetFormations: Object.freeze(["sphere", "line", "arrow", "crescent", "echelon", "column"]),
   initialFleetStrength: 10,
   maxFleetStrength: 57,
   maxShipsPerHex: 57,
