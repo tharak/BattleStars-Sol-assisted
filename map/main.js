@@ -1454,7 +1454,7 @@ function doFireAt(tgt) {
     syncStrategicFleet(fleet);
     damage += hits * STRATEGIC_DAMAGE_PER_HIT;
     effects.push({
-      kind: "damage", position: [...SC.posOf(world, fleet)], amount: hits * STRATEGIC_DAMAGE_PER_HIT,
+      kind: "damage", position: [...SC.posOf(world, fleet)], hits,
       start: performance.now(), dur: STRATEGIC_DAMAGE_DURATION,
     });
     destroyed += outcome.destroyedIds.length;
@@ -1473,7 +1473,7 @@ function doFireAt(tgt) {
   activation.fired = true; activation.fireMode = false;
   const hits = [...volley.hitsByFleet.values()].reduce((sum, value) => sum + value, 0);
   setHint(`${SC.labelOf(world, firer)} fires ${volley.dice} dice at the stack: [${volley.rolls.map(result => result.roll).join(" ")}] → `
-    + `${hits} hit${hits === 1 ? "" : "s"} · ${damage.toFixed(1)} damage${destroyed ? ` · ${destroyed} Ship${destroyed === 1 ? "" : "s"} destroyed` : ""}.`);
+    + `${hits} hit${hits === 1 ? "" : "s"}${destroyed ? ` · ${destroyed} Ship${destroyed === 1 ? "" : "s"} destroyed` : ""}.`);
   finishActionRender();
 }
 // Arms Set Course -- the next click stores a persistent destination. At the
@@ -2544,7 +2544,7 @@ function renderSystem3D(entry, data, refreshUi = true) {
         const progress = Math.max(0, Math.min(1, (now - eff.start) / eff.dur));
         const [gridX, gridZ] = shipHexOffset(...eff.position);
         const [x, z] = warpedGravityPoint(gridX, gridZ, wells);
-        addDamageNumber({ x, z, text: `-${eff.amount.toFixed(1)}`, progress, alpha: 1 - progress });
+        addDamageNumber({ x, z, text: `${eff.hits} hit${eff.hits === 1 ? "" : "s"}`, progress, alpha: 1 - progress });
         continue;
       }
       const alpha = 1 - (now - eff.start) / eff.dur;
@@ -2959,9 +2959,10 @@ function renderSystem2D(entry, data, refreshUi = true) {
       ctx.textAlign = "center";
       ctx.lineWidth = 4;
       ctx.strokeStyle = "#160b19";
-      ctx.strokeText(`-${eff.amount.toFixed(1)}`, screenX, screenY - progress * 30 - 12);
+      const hitText = `${eff.hits} hit${eff.hits === 1 ? "" : "s"}`;
+      ctx.strokeText(hitText, screenX, screenY - progress * 30 - 12);
       ctx.fillStyle = "#ff7895";
-      ctx.fillText(`-${eff.amount.toFixed(1)}`, screenX, screenY - progress * 30 - 12);
+      ctx.fillText(hitText, screenX, screenY - progress * 30 - 12);
       ctx.restore();
       continue;
     }
