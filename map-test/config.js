@@ -9,6 +9,11 @@ export const MAP_TEST_CONFIG = Object.freeze({
     red: Object.freeze({ label: "Red", startAt: "venus" }),
   }),
   planetIds: Object.freeze(["earth", "venus"]),
+  planetAxisAu: Object.freeze({
+    ...DEFAULT_MAP_CONFIG.planetAxisAu,
+    earth: 0.42,
+    venus: 0.58,
+  }),
   fleetCount: DEFAULT_MAP_CONFIG.fleetCount,
   fleetFormation: DEFAULT_MAP_CONFIG.fleetFormation,
   initialFleetStrength: DEFAULT_MAP_CONFIG.initialFleetStrength,

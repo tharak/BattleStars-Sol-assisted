@@ -21,10 +21,7 @@ import { activeMapConfig } from "./config.js";
 // ---------------------------------------------------------------------
 
 // Semi-major axis, AU, for the Sun's 8 planets.
-const PLANET_AXIS_AU = {
-  mercury: 0.387, venus: 0.723, earth: 1.000, mars: 1.524,
-  jupiter: 5.203, saturn: 9.537, uranus: 19.191, neptune: 30.069,
-};
+const PLANET_AXIS_AU = activeMapConfig().planetAxisAu;
 
 // Mean longitude at the J2000.0 epoch (degrees) and each planet's real
 // orbital period (days) -- the standard "Keplerian elements for
