@@ -2117,11 +2117,10 @@ function spawnInitialShips(layout) {
     const r = layout.dist.toPixel(distanceKm);
     const [anchorX, anchorY] = snapToHexGrid(r * Math.cos(angle), r * Math.sin(angle));
     const { u } = formationLayout(ARMADA_DEPLOYMENT_FORMATIONS[faction], FLEETS_PER_ARMADA);
-    const flagshipIndices = [0, Math.floor((u.length - 1) / 2), u.length - 1];
     u.forEach(([fwd, lat], i) => {
       const [dx, dy] = shipHexOffset(fwd, lat);
       const [c, rIdx] = pixelToHexIndex(anchorX + dx, anchorY + dy);
-      const captain = flagshipIndices.includes(i) ? captainsByFaction.get(faction)?.[flagshipIndices.indexOf(i)] : null;
+      const captain = i === 0 ? captainsByFaction.get(faction)?.[0] : null;
       const ship = SC.spawnFleet(world, {
         faction, c, r: rIdx, dir: directionToward([c, rIdx], [0, 0]), isFlagship: !!captain, captain,
         label: `${faction[0].toUpperCase()}${i + 1}`, strength: INITIAL_FLEET_STRENGTH,

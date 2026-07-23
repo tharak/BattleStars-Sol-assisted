@@ -169,7 +169,7 @@ test("the strategic map keeps an intentional 2D fallback path", async ({ page })
   await expect(page.locator("#setupSummary")).toContainText("2 local players · 0 NPC commanders · 2 Armadas");
   await page.getByRole("button", { name: "New Game" }).click();
   await expect(page.locator("#turnHeading")).toContainText("Blue Armada turn");
-  await expect(page.locator(".turnShip")).toHaveCount(25);
+  await expect(page.locator(".turnShip")).toHaveCount(7);
   await expect(page.locator(".turnFaction")).toHaveCount(2);
   await expect(page.locator("#turnClock")).toBeVisible();
   await expect(page.locator("#turnClock")).toContainText("remaining");
