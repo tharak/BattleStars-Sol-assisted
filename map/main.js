@@ -109,13 +109,12 @@ const tutorialStep = document.getElementById("tutorialStep");
 const tutorialActionTitle = document.getElementById("tutorialActionTitle");
 const tutorialActionMessage = document.getElementById("tutorialActionMessage");
 const urlParams = new URLSearchParams(window.location.search);
-const forcedRenderer = urlParams.get("renderer");
 const requestedQuality = ["low", "high"].includes(urlParams.get("quality"))
   ? urlParams.get("quality")
   : "auto";
 const RENDERER_LOADING_HINT = "Loading the bundled 3D renderer…";
 let createSystemScene = null;
-let sceneModuleStatus = forcedRenderer === "2d" ? "skipped" : "loading";
+let sceneModuleStatus = "loading";
 let sceneModuleError = null;
 if (sceneModuleStatus === "loading") {
   import("./scene3d.js").then(module => {
@@ -1690,13 +1689,7 @@ function strategicShipDisplayState(ship, faction, participantSet) {
 
 function focusStrategicShip(ship) {
   const [x, z] = shipHexOffset(...SC.posOf(world, ship));
-  if (mapArea.dataset.renderer === "3d" && scene3d) {
-    scene3d.panTo(x, z);
-  } else {
-    camera2d.x = x;
-    camera2d.y = z;
-    render();
-  }
+  scene3d?.panTo(x, z);
 }
 
 function selectShipFromRoster(ship) {
@@ -2218,14 +2211,9 @@ function startPlayableTutorial() {
   render();
   requestAnimationFrame(() => {
     const [x, z] = warpedGravityPoint(...shipHexOffset(...tutorialMap.center), systemStaticCache?.wells || []);
-    if (mapArea.dataset.renderer === "3d" && scene3d) {
+    if (scene3d) {
       scene3d.panTo(x, z);
       scene3d.zoomBy(4);
-    } else {
-      camera2d.x = x;
-      camera2d.y = z;
-      camera2d.zoom = 4;
-      render();
     }
   });
 }
@@ -2422,7 +2410,7 @@ function gravityPullArrows(cells, wells) {
 
 let scene3d = null;
 let scene3dStaticSource = null;
-let webglFailed = forcedRenderer === "2d";
+let webglFailed = false;
 // Left-drag rotates the camera (see scene3d.js's mouseButtons) but a plain
 // left click also needs to keep selecting/focusing bodies and fleets --
 // OrbitControls' own "start"/"change"/"end" events tell a real rotate-drag
@@ -3121,15 +3109,15 @@ function rendererFailure(error) {
     detail,
     contextFailure,
     hint: contextFailure
-      ? `3D graphics unavailable (${detail}). Showing the 2D map.`
-      : `3D renderer error: ${detail}. Showing the 2D map.`,
+      ? `3D graphics unavailable (${detail}). WebGL is required for the strategic map.`
+      : `3D renderer error: ${detail}. WebGL is required for the strategic map.`,
   };
 }
 
-function activate2DFallback(error) {
+function activate3DFailure(error) {
   const failure = rendererFailure(error);
-  if (failure.contextFailure) console.warn("3D graphics unavailable; using 2D fallback:", error);
-  else console.error("3D renderer failed; using 2D fallback:", error);
+  if (failure.contextFailure) console.warn("3D graphics unavailable:", error);
+  else console.error("3D renderer failed:", error);
   webglFailed = true;
   const failedScene = scene3d;
   scene3d = null;
@@ -3140,30 +3128,33 @@ function activate2DFallback(error) {
   canvas3d.onclick = null;
   canvas3d.onmousemove = null;
   canvas3d.onmouseleave = null;
+  mapwrap.style.display = "none";
+  mapwrap3d.style.display = "inline-block";
+  mapArea.dataset.renderer = "3d";
+  mapArea.dataset.rendererState = "failed";
   mapArea.dataset.rendererError = failure.detail;
   setHint(failure.hint);
 }
 
 function renderSystem(entry, data, refreshUi = true) {
-  if (!webglFailed && sceneModuleStatus === "loading") {
-    renderSystem2D(entry, data, refreshUi);
+  if (sceneModuleStatus === "loading") {
+    mapwrap.style.display = "none";
+    mapwrap3d.style.display = "inline-block";
     mapArea.dataset.renderer = "loading";
     mapArea.dataset.rendererState = "loading";
     if (!persistentHint) setHint(RENDERER_LOADING_HINT);
     return;
   }
-  if (!webglFailed && sceneModuleStatus === "failed") activate2DFallback(sceneModuleError);
-  if (!webglFailed) {
-    try {
-      renderSystem3D(entry, data, refreshUi);
-      return;
-    } catch (err) {
-      activate2DFallback(err);
-    }
-  } else if (forcedRenderer === "2d" && mapArea.dataset.renderer !== "2d") {
-    setHint("2D renderer forced by the URL for fallback testing.");
+  if (sceneModuleStatus === "failed") {
+    if (!webglFailed) activate3DFailure(sceneModuleError);
+    return;
   }
-  renderSystem2D(entry, data, refreshUi);
+  if (webglFailed) return;
+  try {
+    renderSystem3D(entry, data, refreshUi);
+  } catch (err) {
+    activate3DFailure(err);
+  }
 }
 
 function render() {
@@ -3256,19 +3247,12 @@ document.addEventListener("keydown", ev => {
     if (ev.key === " ") { ev.preventDefault(); endActivation(); return; }
   }
   if (ev.key === "=" || ev.key === "+") {
-    if (webglFailed) zoomSystemByKey2D(KEY_ZOOM_FACTOR); else zoomSystemByKey3D(KEY_ZOOM_FACTOR);
+    if (!webglFailed) zoomSystemByKey3D(KEY_ZOOM_FACTOR);
   } else if (ev.key === "-" || ev.key === "_") {
-    if (webglFailed) zoomSystemByKey2D(1 / KEY_ZOOM_FACTOR); else zoomSystemByKey3D(1 / KEY_ZOOM_FACTOR);
+    if (!webglFailed) zoomSystemByKey3D(1 / KEY_ZOOM_FACTOR);
   } else if (ev.key.startsWith("Arrow")) {
     ev.preventDefault();
-    if (webglFailed) {
-      const step = KEY_PAN_PX / camera2d.zoom;
-      if (ev.key === "ArrowLeft") camera2d.x -= step;
-      else if (ev.key === "ArrowRight") camera2d.x += step;
-      else if (ev.key === "ArrowUp") camera2d.y -= step;
-      else if (ev.key === "ArrowDown") camera2d.y += step;
-      render();
-    } else {
+    if (!webglFailed) {
       const scene = ensureScene3D();
       const step = KEY_PAN_PX / scene.camera.zoom;
       if (ev.key === "ArrowLeft") scene.panCamera(-step, 0);

@@ -62,8 +62,8 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   await expect(page.locator("#turnPanel")).toBeVisible();
   await expect(page.locator("#turnClock")).toBeHidden();
   await expect(page.locator("#turnHeading")).toContainText("Blue Armada turn");
-  await expect(page.locator(".turnShip")).toHaveCount(37);
-  await expect(page.locator(".turnShip.ready")).toHaveCount(13);
+  await expect(page.locator(".turnShip")).toHaveCount(9);
+  await expect(page.locator(".turnShip.ready")).toHaveCount(3);
   await expect(page.locator(".turnFaction")).toHaveCount(3);
   await expect(page.locator(".turnFactionHeader")).toContainText(["Player", "NPC", "NPC"]);
   await expect(page.getByRole("button", { name: /Fleet B1 Ready, 10 Ships/ })).toBeVisible();
@@ -93,7 +93,7 @@ test("the strategic map boots the bundled Three.js renderer", async ({ page }, t
   await expect(page.locator(".turnShip").first()).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#infoPanel")).toBeVisible();
   await expect(page.locator("#infoPanel select")).toHaveCount(0);
-  await expect(page.locator("#infoPanel button")).toHaveCount(11);
+  await expect(page.locator("#infoPanel button")).toHaveCount(15);
   await expect(page.locator("#infoSplit")).toBeVisible();
   await expect(page.locator("#infoMerge")).toBeHidden();
   expect(await page.locator("#cv3d").evaluate(canvas =>
@@ -141,38 +141,8 @@ test("the map-test profile shows every fleet formation for both factions", async
   }
 });
 
-test("the strategic map keeps an intentional 2D fallback path", async ({ page }) => {
-  const pageErrors = [];
-  const sceneRequests = [];
-  page.on("pageerror", error => pageErrors.push(error.message));
-  page.on("request", request => {
-    if (/\/assets\/scene3d-[^/]+\.js$/.test(new URL(request.url()).pathname)) {
-      sceneRequests.push(request.url());
-    }
-  });
-
-  await page.goto("/map.html?renderer=2d");
-  await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer", "2d");
-  await expect(page.locator("#startOverlay")).toBeVisible();
-  await expect(page.locator("#turnPanel")).toBeHidden();
-  await expect(page.locator("#hint")).toContainText("forced by the URL");
-  await page.locator("#playerCount").selectOption("2");
-  await page.locator("#npcCount").selectOption("0");
-  await expect(page.locator("#setupSummary")).toContainText("2 local players · 0 NPC commanders · 2 Armadas");
-  await page.getByRole("button", { name: "New Game" }).click();
-  await expect(page.locator("#turnHeading")).toContainText("Blue Armada turn");
-  await expect(page.locator(".turnShip")).toHaveCount(7);
-  await expect(page.locator(".turnFaction")).toHaveCount(2);
-  await expect(page.locator("#turnClock")).toBeVisible();
-  await expect(page.locator("#turnClock")).toContainText("remaining");
-  await expect(page.locator("#mapwrap")).toBeVisible();
-  await expect(page.locator("#mapwrap3d")).toBeHidden();
-  expect(sceneRequests).toEqual([]);
-  expect(pageErrors).toEqual([]);
-});
-
 test("split Fleets can merge back into an already-acted flagship Fleet", async ({ page }) => {
-  await page.goto("/map.html?renderer=2d");
+  await page.goto("/map.html");
   await page.getByRole("button", { name: "Tutorial" }).click();
   await page.getByRole("button", { name: /Fleet B1 Ready, 10 Ships, sphere formation/ }).click();
   await page.locator("#infoForward").click();
@@ -206,7 +176,7 @@ test("split Fleets can merge back into an already-acted flagship Fleet", async (
   await expect(page.locator('.turnShip[aria-pressed="true"]')).toHaveCount(0);
 });
 
-test("a failed 3D bundle load reports the cause and falls back to 2D", async ({ page }) => {
+test("a failed 3D bundle load reports the cause without a renderer fallback", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", error => pageErrors.push(error.message));
   await page.route("**/*", route => /\/scene3d(?:-|\.js)/.test(new URL(route.request().url()).pathname)
@@ -214,10 +184,12 @@ test("a failed 3D bundle load reports the cause and falls back to 2D", async ({ 
     : route.continue());
 
   await page.goto("/map.html");
-  await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer", "2d");
+  await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer", "3d");
+  await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer-state", "failed");
   await expect(page.locator("#mapArea")).toHaveAttribute("data-renderer-error", /scene3d(?:-|\.js)/);
-  await expect(page.locator("#mapwrap")).toBeVisible();
-  await expect(page.locator("#hint")).toContainText("3D renderer error:");
+  await expect(page.locator("#mapwrap3d")).toBeVisible();
+  await expect(page.locator("#mapwrap")).toBeHidden();
+  await expect(page.locator("#hint")).toContainText("WebGL is required");
   expect(pageErrors).toEqual([]);
 });
 
