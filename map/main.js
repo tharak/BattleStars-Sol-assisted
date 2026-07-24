@@ -77,6 +77,7 @@ const infoGroupMove = document.getElementById("infoGroupMove");
 const infoMerge = document.getElementById("infoMerge");
 const infoSplit = document.getElementById("infoSplit");
 const infoConquer = document.getElementById("infoConquer");
+const infoFormationButtons = [...document.querySelectorAll("#infoFormationButtons [data-formation]")];
 const infoEnd = document.getElementById("infoEnd");
 const mapArea = document.getElementById("mapArea");
 const turnPanel = document.getElementById("turnPanel");
@@ -1598,6 +1599,12 @@ function renderInfoPanel() {
     const captain = SC.captainOf(world, u);
     infoPanel.style.display = "block";
     const ability = captainAbility(captain?.abilityId);
+    const currentFormation = SC.fleetFormationOf(world, u);
+    for (const button of infoFormationButtons) {
+      const isCurrent = button.dataset.formation === currentFormation;
+      button.setAttribute("aria-pressed", String(isCurrent));
+      button.disabled = isCurrent;
+    }
     const captainText = captain ? `${captain.name} — ${ability?.name || captain.abilityId}: ${ability?.description || ""}` : "No captain assigned";
     infoPanel.dataset.captain = captainText;
     infoCaptain.textContent = `Captain: ${captainText}`;
@@ -1648,6 +1655,15 @@ function renderInfoPanel() {
   infoConquer.style.display = "none";
   infoPanel.style.display = "none";
 }
+function changeFleetFormation(event) {
+  if (selectedShip == null) return;
+  const formation = event.currentTarget.dataset.formation;
+  if (!SC.setFleetFormation(world, selectedShip, formation)) return;
+  setHint(`Formation changed to ${formation}.`);
+  renderInfoPanel();
+  render();
+}
+for (const button of infoFormationButtons) button.addEventListener("click", changeFleetFormation);
 infoTurnL.onclick = () => doTurn(1);
 infoTurnR.onclick = () => doTurn(-1);
 infoForward.onclick = doForward;

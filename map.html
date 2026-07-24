@@ -47,6 +47,9 @@
   #infoControls>button{width:100%}
   #infoShipButtons{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0}
   #infoShipButtons button{flex:1 0 40%;padding:4px 6px;font-size:12px}
+  #infoFormationButtons{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 4px}
+  #infoFormationButtons button{flex:1 0 30%;padding:4px 6px;font-size:12px}
+  #infoFormationButtons button[aria-pressed="true"]{border-color:var(--gold);color:var(--gold);background:#3b3422}
   #infoGroupMove[aria-pressed="true"]{border-color:var(--gold);color:var(--gold);background:#3b3422}
   #startOverlay{position:absolute;inset:0;z-index:20;display:grid;place-items:center;padding:18px;
     background:radial-gradient(circle at center,#0d1424b8 0,#080b13e8 72%);backdrop-filter:blur(2px)}
@@ -188,6 +191,13 @@
             <button id="infoMerge" style="display:none">Merge Fleets</button>
             <button id="infoSplit" style="display:none">Split Fleet</button>
             <button id="infoConquer" style="display:none">Conquer planet</button>
+          </div>
+          <div id="infoFormationButtons" aria-label="Fleet formation">
+            <button type="button" data-formation="sphere">Sphere</button>
+            <button type="button" data-formation="line">Line</button>
+            <button type="button" data-formation="arrow">Arrow</button>
+            <button type="button" data-formation="column">Column</button>
+            <button type="button" data-formation="wedge">Wedge</button>
           </div>
           <button id="infoEnd" class="primary">End activation</button>
         </div>
