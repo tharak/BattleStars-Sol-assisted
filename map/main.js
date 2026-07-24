@@ -2905,24 +2905,10 @@ function renderSystem2D(entry, data, refreshUi = true) {
     const easedProgress = animationProgress * animationProgress * (3 - 2 * animationProgress);
     const oldOrder = ship.formationAnimation ? formationPositionOrder(ship.formationAnimation.from, allSlots.length) : null;
     const newOrder = formationPositionOrder(ship.formation, allSlots.length);
-    const positionOrder = formationPositionOrder(ship.formation, allSlots.length);
-    const visualPosition = rawPosition => positionOrder[rawPosition] ?? rawPosition;
-    const occupiedPositions = new Set(ship.memberSlots.map(slot => visualPosition(slot.positionIndex ?? slot.slotIndex)));
-    ctx.font = `bold ${Math.max(7, miniSize * 1.8)}px sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.lineWidth = Math.max(1, miniSize * 0.55);
-    allSlots.forEach(([mx, my], positionIndex) => {
-      if (occupiedPositions.has(positionIndex)) return;
-      ctx.strokeStyle = "rgba(16, 16, 24, 0.55)";
-      ctx.strokeText(String(positionIndex + 1), mx, my);
-      ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
-      ctx.fillText(String(positionIndex + 1), mx, my);
-    });
     for (let i = 0; i < ship.memberSlots.length; i++) {
       const slot = ship.memberSlots[i];
       const rawPosition = slot.positionIndex ?? slot.slotIndex;
-      const positionIndex = visualPosition(rawPosition);
+      const positionIndex = newOrder[rawPosition] ?? rawPosition;
       const oldPosition = oldSlots[oldOrder ? oldOrder[rawPosition] : positionIndex];
       const newPosition = allSlots[newOrder[rawPosition] ?? positionIndex];
       const mx = oldPosition[0] + (newPosition[0] - oldPosition[0]) * easedProgress;
@@ -2938,10 +2924,6 @@ function renderSystem2D(entry, data, refreshUi = true) {
       ctx.strokeStyle = hexToRgba("#ffffff", 0.35);
       ctx.lineWidth = Math.max(0.6, miniSize * 0.2);
       ctx.stroke();
-      ctx.strokeStyle = "rgba(16, 16, 24, 0.9)";
-      ctx.strokeText(String(positionIndex + 1), mx, my);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillText(String(positionIndex + 1), mx, my);
     }
     // A legal fire target for the currently-selected ship (see
     // shipsSnapshot) -- outlined in the *attacker's* own color (not

@@ -307,35 +307,11 @@ export function createSystemScene({
     const oldOrder = formationAnimation ? formationPositionOrder(formationAnimation.from, allShipPositions.length) : null;
     const newOrder = formationPositionOrder(formation, allShipPositions.length);
     const slots = memberSlots || allShipPositions.map((_, slotIndex) => ({ slotIndex, member: null }));
-    const positionOrder = formationPositionOrder(formation, allShipPositions.length);
-    const visualPosition = rawPosition => positionOrder[rawPosition] ?? rawPosition;
-    const occupiedPositions = new Set(slots.map(slot => visualPosition(slot.positionIndex ?? slot.slotIndex)));
-    const addPositionLabel = (positionIndex, shipX, shipY, shipZ, opacity = 1) => {
-      const labelCanvas = document.createElement("canvas");
-      labelCanvas.width = 64;
-      labelCanvas.height = 64;
-      const labelContext = labelCanvas.getContext("2d");
-      labelContext.font = "bold 34px sans-serif";
-      labelContext.textAlign = "center";
-      labelContext.textBaseline = "middle";
-      labelContext.fillStyle = `rgba(255, 255, 255, ${opacity})`;
-      labelContext.strokeStyle = `rgba(16, 16, 24, ${opacity})`;
-      labelContext.lineWidth = 7;
-      const positionLabel = String(positionIndex + 1);
-      labelContext.strokeText(positionLabel, 32, 32);
-      labelContext.fillText(positionLabel, 32, 32);
-      const label = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: new THREE.CanvasTexture(labelCanvas), transparent: true, depthTest: false,
-      }));
-      label.scale.set(0.72, 0.72, 1);
-      label.position.set(shipX, shipY + 0.72, shipZ);
-      group.add(label);
-    };
     let leadShip = null;
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i];
       const rawPosition = slot.positionIndex ?? slot.slotIndex;
-      const positionIndex = visualPosition(rawPosition);
+      const positionIndex = newOrder[rawPosition] ?? rawPosition;
       const oldPosition = oldShipPositions[oldOrder ? oldOrder[rawPosition] : positionIndex];
       const newPosition = allShipPositions[newOrder[rawPosition] ?? positionIndex];
       const shipX = oldPosition[0] + (newPosition[0] - oldPosition[0]) * easedProgress;
@@ -357,14 +333,6 @@ export function createSystemScene({
       group.add(ship);
       if (i === 0) leadShip = ship;
     }
-    allShipPositions.forEach(([shipX, shipY, shipZ], positionIndex) => {
-      if (!occupiedPositions.has(positionIndex)) addPositionLabel(positionIndex, shipX, shipY, shipZ, 0.55);
-    });
-    slots.forEach(slot => {
-      const positionIndex = visualPosition(slot.positionIndex ?? slot.slotIndex);
-      const [shipX, shipY, shipZ] = allShipPositions[positionIndex];
-      addPositionLabel(positionIndex, shipX, shipY, shipZ);
-    });
     // Selection outline takes priority over the target outline (a ship
     // can't be both at once anyway -- selected is the acting ship,
     // isTarget is some *other* ship it could fire at); target uses the
