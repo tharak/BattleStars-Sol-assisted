@@ -276,7 +276,7 @@ export function createSystemScene({
   // A Fleet is one strategic entity and one selectable hex token. Its
   // Strength is rendered as a compact formation of smaller Ship cones
   // inside that token, so a loss immediately removes one visible Ship.
-  function addShip({ x, z, colorHex, data, selected, facingDeg, strength = 4, formation = "sphere", isFlag, isTarget, targetColor, isGroupMember, hasActed, memberSlots = null, showBase = true }) {
+  function addShip({ x, z, colorHex, data, selected, facingDeg, strength = 4, formation = "sphere", formationAnimation = null, isFlag, isTarget, targetColor, isGroupMember, hasActed, memberSlots = null, showBase = true }) {
     // Grounded at the plane, not lifted -- unlike the old ring-only
     // marker, this group now holds both the flat hex token (which
     // should visibly rest on the orbital plane, at SHIP_BASE_Y) and the raised
@@ -296,6 +296,16 @@ export function createSystemScene({
       formation,
       facingDeg,
     });
+    const oldShipPositions = formationAnimation ? layeredFleetShipPositions({
+      x: 0, z: 0, strength: memberSlots ? 57 : strength, spacing: 1.7,
+      firstLayerHeight: SHIP_FIRST_LAYER_HEIGHT, layerSpacing: SHIP_LAYER_SPACING,
+      formation: formationAnimation.from, facingDeg,
+    }) : allShipPositions;
+    const animationProgress = formationAnimation
+      ? Math.min(1, Math.max(0, (performance.now() - formationAnimation.start) / 500)) : 1;
+    const easedProgress = animationProgress * animationProgress * (3 - 2 * animationProgress);
+    const oldOrder = formationAnimation ? formationPositionOrder(formationAnimation.from, allShipPositions.length) : null;
+    const newOrder = formationPositionOrder(formation, allShipPositions.length);
     const slots = memberSlots || allShipPositions.map((_, slotIndex) => ({ slotIndex, member: null }));
     const positionOrder = formationPositionOrder(formation, allShipPositions.length);
     const visualPosition = rawPosition => positionOrder[rawPosition] ?? rawPosition;
@@ -324,8 +334,13 @@ export function createSystemScene({
     let leadShip = null;
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i];
-      const positionIndex = visualPosition(slot.positionIndex ?? slot.slotIndex);
-      const [shipX, shipY, shipZ] = allShipPositions[positionIndex];
+      const rawPosition = slot.positionIndex ?? slot.slotIndex;
+      const positionIndex = visualPosition(rawPosition);
+      const oldPosition = oldShipPositions[oldOrder ? oldOrder[rawPosition] : positionIndex];
+      const newPosition = allShipPositions[newOrder[rawPosition] ?? positionIndex];
+      const shipX = oldPosition[0] + (newPosition[0] - oldPosition[0]) * easedProgress;
+      const shipY = oldPosition[1] + (newPosition[1] - oldPosition[1]) * easedProgress;
+      const shipZ = oldPosition[2] + (newPosition[2] - oldPosition[2]) * easedProgress;
       const memberColor = slot.member?.isOriginalFlagship ? ACCENT.flagshipArrow
         : slot.member?.state === "routed" ? "#ff3355"
           : slot.member?.state === "shaken" ? "#ffd166" : colorHex;

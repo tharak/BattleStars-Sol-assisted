@@ -194,7 +194,9 @@ mapArea.dataset.courseStep = "0";
 // something else happens to trigger a render.
 const effects = [];
 const warpAnimations = new Map();
+const formationAnimations = new Map();
 const WARP_ANIMATION_DURATION = 420;
+const FORMATION_ANIMATION_DURATION = 500;
 const STRATEGIC_EXPLOSION_DURATION = 720;
 const STRATEGIC_DAMAGE_DURATION = 900;
 // The RAF-loop mechanics for fading `effects` out -- see render()'s use
@@ -1657,8 +1659,10 @@ function renderInfoPanel() {
 }
 function changeFleetFormation(event) {
   if (selectedShip == null) return;
+  const previous = SC.fleetFormationOf(world, selectedShip);
   const formation = event.currentTarget.dataset.formation;
   if (!SC.setFleetFormation(world, selectedShip, formation)) return;
+  formationAnimations.set(selectedShip, { from: previous, to: formation, start: performance.now() });
   setHint(`Formation changed to ${formation}.`);
   renderInfoPanel();
   render();
@@ -2315,6 +2319,7 @@ function shipsSnapshot(wells = []) {
       faction: SC.factionOf(world, e), isFlag: SC.isFlagship(world, e),
       label: SC.labelOf(world, e), facingDeg: DIR_ANGLE[SC.facingOf(world, e)],
       strength: memberCount(e), effectiveStrength: fleetStrength(e), formation: SC.fleetFormationOf(world, e),
+      formationAnimation: formationAnimations.get(e) || null,
       isTarget: stack.fleetIds.some(fleet => targets?.has(fleet)), targetColor,
       isGroupMember: stack.fleetIds.some(fleet => groupMembers?.has(fleet)),
       hasActed, colorHex: warp ? "#e6a7ff" : strategicFleetTone(SC.factionOf(world, e), e, hasActed, FACTION_COLORS),
@@ -2549,6 +2554,7 @@ function renderSystem3D(entry, data, refreshUi = true) {
         x: s.x, z: s.y, colorHex: s.colorHex, data: s,
         selected: s.fleetIds.includes(selectedShip), facingDeg: s.facingDeg, isFlag: s.isFlag,
         strength: s.strength, formation: s.formation,
+        formationAnimation: s.formationAnimation,
         memberSlots: s.memberSlots, showBase: s.showBase,
         isTarget: s.isTarget, targetColor: s.targetColor, isGroupMember: s.isGroupMember,
         hasActed: s.hasActed,
@@ -2890,6 +2896,15 @@ function renderSystem2D(entry, data, refreshUi = true) {
       x: sx, y: sy, facingDeg: ship.facingDeg, formation: "sphere",
       strength: 57, spacing: miniSpacing,
     });
+    const oldSlots = ship.formationAnimation ? fleetShipPositions({
+      x: sx, y: sy, facingDeg: ship.facingDeg, formation: "sphere",
+      strength: 57, spacing: miniSpacing,
+    }) : allSlots;
+    const animationProgress = ship.formationAnimation
+      ? Math.min(1, Math.max(0, (performance.now() - ship.formationAnimation.start) / FORMATION_ANIMATION_DURATION)) : 1;
+    const easedProgress = animationProgress * animationProgress * (3 - 2 * animationProgress);
+    const oldOrder = ship.formationAnimation ? formationPositionOrder(ship.formationAnimation.from, allSlots.length) : null;
+    const newOrder = formationPositionOrder(ship.formation, allSlots.length);
     const positionOrder = formationPositionOrder(ship.formation, allSlots.length);
     const visualPosition = rawPosition => positionOrder[rawPosition] ?? rawPosition;
     const occupiedPositions = new Set(ship.memberSlots.map(slot => visualPosition(slot.positionIndex ?? slot.slotIndex)));
@@ -2906,8 +2921,12 @@ function renderSystem2D(entry, data, refreshUi = true) {
     });
     for (let i = 0; i < ship.memberSlots.length; i++) {
       const slot = ship.memberSlots[i];
-      const positionIndex = visualPosition(slot.positionIndex ?? slot.slotIndex);
-      const [mx, my] = allSlots[positionIndex];
+      const rawPosition = slot.positionIndex ?? slot.slotIndex;
+      const positionIndex = visualPosition(rawPosition);
+      const oldPosition = oldSlots[oldOrder ? oldOrder[rawPosition] : positionIndex];
+      const newPosition = allSlots[newOrder[rawPosition] ?? positionIndex];
+      const mx = oldPosition[0] + (newPosition[0] - oldPosition[0]) * easedProgress;
+      const my = oldPosition[1] + (newPosition[1] - oldPosition[1]) * easedProgress;
       const [tip, base1, base2] = shipArrowPoints(mx, my, miniSize, ship.facingDeg);
       ctx.beginPath();
       ctx.moveTo(...tip); ctx.lineTo(...base1); ctx.lineTo(...base2);
@@ -3195,8 +3214,11 @@ function render() {
           warpAnimations.delete(fleet);
         }
       }
+      for (const [fleet, animation] of formationAnimations) {
+        if (now - animation.start >= FORMATION_ANIMATION_DURATION) formationAnimations.delete(fleet);
+      }
     },
-    hasEffects: () => effects.length > 0 || warpAnimations.size > 0,
+    hasEffects: () => effects.length > 0 || warpAnimations.size > 0 || formationAnimations.size > 0,
     repaint: () => render(),
   });
 }
