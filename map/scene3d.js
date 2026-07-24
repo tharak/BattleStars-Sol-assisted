@@ -294,6 +294,7 @@ export function createSystemScene({
       firstLayerHeight: SHIP_FIRST_LAYER_HEIGHT,
       layerSpacing: SHIP_LAYER_SPACING,
       formation,
+      facingDeg,
     });
     const slots = memberSlots || allShipPositions.map((_, slotIndex) => ({ slotIndex, member: null }));
     const positionOrder = formationPositionOrder(formation, allShipPositions.length);

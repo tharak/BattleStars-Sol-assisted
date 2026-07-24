@@ -119,6 +119,18 @@ test("wedge formation inverses the arrow position order", () => {
   assert.equal(FleetShips.formationPositionOrder("wedge", 57)[38], 54);
 });
 
+test("3D fleet positions rotate with fleet facing", () => {
+  const east = FleetShips.layeredFleetShipPositions({
+    x: 0, z: 0, strength: 2, spacing: 1.7, firstLayerHeight: 1.3, layerSpacing: 1,
+    formation: "line", facingDeg: 0,
+  });
+  const south = FleetShips.layeredFleetShipPositions({
+    x: 0, z: 0, strength: 2, spacing: 1.7, firstLayerHeight: 1.3, layerSpacing: 1,
+    formation: "line", facingDeg: 90,
+  });
+  assert.notDeepEqual(east.map(([x, , z]) => [x, z]), south.map(([x, , z]) => [x, z]));
+});
+
 test("Fleet formation state defaults to sphere and only accepts supported formations", () => {
   const world = new World();
   const fleet = ShipRules.spawnFleet(world, { faction: "blue", c: 0, r: 0, dir: 0, label: "B1" });
